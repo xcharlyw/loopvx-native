@@ -5,7 +5,7 @@ import type { Project, Sample } from '../types';
 import { createProject, repairProject } from './project';
 
 export type View = 'arrange' | 'session';
-export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip';
+export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track';
 
 export interface Toast {
   id: number;

@@ -5,7 +5,7 @@ import { engine } from '../audio/engine';
 import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip } from '../lib/actions';
 import { setState, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
-import { Copy, GridIcon, Mixer, More, Scissors, TimelineIcon, Trash, ZoomIn, ZoomOut } from './icons';
+import { Copy, GridIcon, Mixer, More, Pencil, Scissors, TimelineIcon, Trash, ZoomIn, ZoomOut } from './icons';
 import { useSmall } from './hooks';
 import { IconBtn, PillGroup, Spacer, iconColor } from './kit';
 
@@ -58,6 +58,9 @@ export function BottomBar() {
 
       {view === 'arrange' && !selectedClipId && hasSelectedTrack && (
         <PillGroup>
+          <IconBtn accessibilityLabel="Spur umbenennen" onPress={() => setState({ panel: 'track' })}>
+            <Pencil size={16} />
+          </IconBtn>
           <IconBtn accessibilityLabel="Spur löschen" onPress={() => void deleteSelectedTrack(confirmDestructive)}>
             <Trash size={16} color={C.danger} />
           </IconBtn>

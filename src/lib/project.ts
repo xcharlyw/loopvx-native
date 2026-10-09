@@ -78,6 +78,14 @@ export function removeClip(project: Project, clipId: string): Project {
   return { ...project, tracks: project.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) })) };
 }
 
+export const MAX_TRACK_NAME = 40;
+
+/** Rename a track, capped at MAX_TRACK_NAME characters. Trimming and empty-name handling are up to the caller. */
+export function renameTrack(project: Project, trackId: string, name: string): Project {
+  const clean = name.slice(0, MAX_TRACK_NAME);
+  return mapTrack(project, trackId, (t) => ({ ...t, name: clean }));
+}
+
 export function removeTrack(project: Project, trackId: string): Project {
   return { ...project, tracks: project.tracks.filter((t) => t.id !== trackId) };
 }

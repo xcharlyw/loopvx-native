@@ -1,4 +1,4 @@
-import { addClip, audibleGain, createProject, editClip, removeClip, splitClip, removeTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addClip, audibleGain, createProject, editClip, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -18,6 +18,14 @@ describe('project helpers', () => {
     expect(fixed.tracks[3].clips).toEqual([{ id: 'v', sampleId: 's', start: 0, length: 8, offset: 0 }]);
     expect(fixed.tracks[0].clips).toEqual([]);
     expect(repairProject(p)).toBe(p);
+  });
+
+  it('renames only the given track and caps the length', () => {
+    const p = createProject();
+    const next = renameTrack(p, p.tracks[3].id, 'Lead Vocals');
+    expect(next.tracks.map((t) => t.name)).toEqual(['Kick + Bass', 'Top Loop', 'Synth / Lead', 'Lead Vocals']);
+    expect(renameTrack(p, p.tracks[0].id, 'x'.repeat(100)).tracks[0].name).toHaveLength(40);
+    expect(p.tracks[3].name).toBe('Vocals');
   });
 
   it('removes a track and leaves the others untouched', () => {

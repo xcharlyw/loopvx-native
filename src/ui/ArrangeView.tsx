@@ -153,6 +153,7 @@ export function ArrangeView() {
                   key={track.id}
                   style={[s.trackHeader, { height: rowH }, small && s.trackHeaderSm, selected && s.trackHeaderSelected]}
                   onPress={() => setState({ selectedTrackId: track.id })}
+                  onLongPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'track' })}
                 >
                   <View style={s.trackTitle}>
                     <View style={[s.dot, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />

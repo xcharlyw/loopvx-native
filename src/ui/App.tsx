@@ -25,6 +25,7 @@ import { MixerPanel } from './MixerPanel';
 import { ProjectsPanel } from './ProjectsPanel';
 import { PromptBar } from './PromptBar';
 import { SessionView } from './SessionView';
+import { TrackPanel } from './TrackPanel';
 import { TopBar } from './TopBar';
 
 function Shell() {
@@ -52,6 +53,7 @@ function Shell() {
             {panel === 'mixer' && <MixerPanel />}
             {panel === 'projects' && <ProjectsPanel />}
             {panel === 'clip' && <ClipPanel />}
+            {panel === 'track' && <TrackPanel />}
           </View>
         </View>
       </Modal>

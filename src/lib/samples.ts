@@ -1,25 +1,32 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
+import { Platform } from 'react-native';
 import { parseSampleName } from '../audio/timing';
 import { db } from '../storage/db';
 import type { Sample } from '../types';
 import { uid } from './project';
 
-const samplesDir = new Directory(Paths.document, 'samples');
-
-function ensureSamplesDir() {
-  if (!samplesDir.exists) samplesDir.create();
+// `Paths.document`/`Directory` are not implemented on web (expo-file-system is
+// native-only), so this must stay lazy: touching them at module load time
+// crashes the web bundle before anything renders.
+function ensureSamplesDir(): Directory {
+  const dir = new Directory(Paths.document, 'samples');
+  if (!dir.exists) dir.create();
+  return dir;
 }
 
 /**
  * Let the user pick audio files from the device and add them to the library.
- * Google Drive sync (like the web app) lands in a later phase; for now, samples
- * come from the device's file picker and are copied into app storage.
+ * Native only for now (expo-file-system has no web implementation). Google
+ * Drive sync, which will cover web too, lands in a later phase.
  */
 export async function importSamplesFromDevice(): Promise<Sample[]> {
+  if (Platform.OS === 'web') {
+    throw new Error('Sample-Import vom Gerät ist im Web-Build noch nicht verfügbar. Nutze die iOS/Android-App.');
+  }
   const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', multiple: true, copyToCacheDirectory: true });
   if (result.canceled) return [];
-  ensureSamplesDir();
+  const samplesDir = ensureSamplesDir();
   const samples: Sample[] = [];
   for (const picked of result.assets) {
     const id = uid();
@@ -35,7 +42,7 @@ export async function importSamplesFromDevice(): Promise<Sample[]> {
 }
 
 export function deleteSample(sample: Sample): void {
-  if (!sample.uri) return;
+  if (!sample.uri || Platform.OS === 'web') return;
   try {
     new File(sample.uri).delete();
   } catch {

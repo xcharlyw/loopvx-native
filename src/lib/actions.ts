@@ -5,8 +5,8 @@ import { engine } from '../audio/engine';
 import { projectEndBars, sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
 import type { Sample } from '../types';
-import { addClip, findClip, removeClip, removeTrack, setSlot, trackForSample, uid, updateClip } from './project';
-import { errorText, getState, setState, toast, updateProject } from './store';
+import { addClip, editClip, findClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
+import { errorText, getState, setState, toast, updateProject, upsertSample } from './store';
 
 export async function togglePlay() {
   const { project, view, cursor } = getState();
@@ -91,6 +91,38 @@ export function duplicateSelectedClip() {
   const copy = { ...found.clip, id: uid(), start: found.clip.start + found.clip.length };
   updateProject((p) => addClip(p, found.track.id, copy));
   setState({ selectedClipId: copy.id });
+}
+
+/** Split the selected clip at the playhead (Ableton: Cmd+E). */
+export function splitSelectedClip() {
+  const { project, selectedClipId, cursor } = getState();
+  const found = selectedClipId ? findClip(project, selectedClipId) : null;
+  if (!found) return;
+  const rightId = uid();
+  const next = splitClip(project, found.clip.id, cursor, rightId);
+  if (next === project) {
+    toast('Tippe auf die Stelle im Clip, an der geschnitten werden soll, dann auf Teilen.');
+    return;
+  }
+  updateProject(() => next);
+  setState({ selectedClipId: rightId });
+}
+
+/** Move the selected clip by `bars` (arrow keys: a beat, with Shift a bar). */
+export function nudgeSelectedClip(bars: number) {
+  const { project, selectedClipId } = getState();
+  const found = selectedClipId ? findClip(project, selectedClipId) : null;
+  if (!found) return;
+  updateProject((p) => updateClip(p, found.clip.id, editClip(found.clip, 'move', bars, Math.abs(bars))));
+}
+
+/**
+ * Set the tempo a sample was recorded at. Clips warp from it to the project tempo
+ * (re-pitch); `undefined` plays the sample at its own speed.
+ */
+export async function setSampleBpm(sample: Sample, bpm: number | undefined) {
+  await upsertSample({ ...sample, bpm });
+  updateProject((p) => p);
 }
 
 export function scaleSelectedClip(factor: number) {

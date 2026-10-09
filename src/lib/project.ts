@@ -1,3 +1,4 @@
+import { snapBars } from '../audio/timing';
 import type { Clip, Project, Sample, SampleCategory, Track } from '../types';
 
 export const uid = (): string =>
@@ -79,6 +80,38 @@ export function removeClip(project: Project, clipId: string): Project {
 
 export function removeTrack(project: Project, trackId: string): Project {
   return { ...project, tracks: project.tracks.filter((t) => t.id !== trackId) };
+}
+
+/**
+ * Cut a clip in two at `bar` (Ableton's Split, Cmd+E). The right part keeps playing the
+ * sample where the left part stopped. Unchanged when `bar` is not strictly inside the clip.
+ */
+export function splitClip(project: Project, clipId: string, bar: number, rightId: string = uid()): Project {
+  const found = findClip(project, clipId);
+  if (!found) return project;
+  const { clip, track } = found;
+  const cut = bar - clip.start;
+  if (!(cut > 1e-6 && cut < clip.length - 1e-6)) return project;
+  const right: Clip = { ...clip, id: rightId, start: bar, length: clip.length - cut, offset: clip.offset + cut };
+  return mapTrack(project, track.id, (t) => ({
+    ...t,
+    clips: t.clips.flatMap((c) => (c.id === clipId ? [{ ...c, length: cut }, right] : [c])),
+  }));
+}
+
+export type ClipEdit = 'move' | 'start' | 'end';
+
+/**
+ * Where a clip ends up after dragging it (`move`) or one of its edges (`start`/`end`) by
+ * `deltaBars`, snapped to `grid`. Trimming the start keeps the audio in place on the timeline
+ * by shifting the clip's offset into the sample, like dragging a clip edge in Ableton.
+ */
+export function editClip(clip: Clip, mode: ClipEdit, deltaBars: number, grid: number): Pick<Clip, 'start' | 'length' | 'offset'> {
+  const end = clip.start + clip.length;
+  if (mode === 'move') return { start: Math.max(0, snapBars(clip.start + deltaBars, grid)), length: clip.length, offset: clip.offset };
+  if (mode === 'end') return { start: clip.start, length: Math.max(grid, snapBars(end + deltaBars, grid) - clip.start), offset: clip.offset };
+  const start = Math.min(Math.max(0, snapBars(clip.start + deltaBars, grid)), end - grid);
+  return { start, length: end - start, offset: clip.offset + (start - clip.start) };
 }
 
 /** Best track for a sample: first track of the same category, else the selected one. */

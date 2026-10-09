@@ -2,13 +2,21 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } f
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { useFonts } from 'expo-font';
 import { useEffect } from 'react';
-import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
-import { boot, setState, useStore } from '../lib/store';
+import {
+  deleteSelectedClip,
+  duplicateSelectedClip,
+  nudgeSelectedClip,
+  splitSelectedClip,
+  togglePlay,
+} from '../lib/actions';
+import { boot, getState, setState, useStore } from '../lib/store';
 import { getSession } from '../lib/supabase';
 import { ArrangeView } from './ArrangeView';
 import { BottomBar } from './BottomBar';
+import { ClipPanel } from './ClipPanel';
 import { Txt } from './kit';
 import { LibraryPanel } from './LibraryPanel';
 import { MixerPanel } from './MixerPanel';
@@ -41,6 +49,7 @@ function Shell() {
             {panel === 'library' && <LibraryPanel />}
             {panel === 'mixer' && <MixerPanel />}
             {panel === 'projects' && <ProjectsPanel />}
+            {panel === 'clip' && <ClipPanel />}
           </View>
         </View>
       </Modal>
@@ -56,6 +65,41 @@ function Shell() {
   );
 }
 
+/** Ableton-style keys on web: Space play/stop, Cmd/Ctrl+E split, Cmd/Ctrl+D duplicate, Delete, arrows nudge. */
+function useShortcuts() {
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('input, textarea, select')) return;
+      const mod = e.metaKey || e.ctrlKey;
+      const arrange = getState().view === 'arrange';
+      // A focused button already handles Space itself (react-native-web presses it).
+      if (e.code === 'Space' && target !== document.body && target?.closest?.('[tabindex], button, [role="button"]')) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        void togglePlay();
+      } else if (mod && e.key.toLowerCase() === 'e' && arrange) {
+        e.preventDefault();
+        splitSelectedClip();
+      } else if (mod && e.key.toLowerCase() === 'd' && arrange) {
+        e.preventDefault();
+        duplicateSelectedClip();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && arrange) {
+        e.preventDefault();
+        deleteSelectedClip();
+      } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && arrange && getState().selectedClipId) {
+        e.preventDefault();
+        nudgeSelectedClip((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 0.25));
+      } else if (e.key === 'Escape') {
+        setState({ panel: 'none', armedSampleId: null, selectedClipId: null });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+}
+
 export function App() {
   const ready = useStore((st) => st.ready);
   const [fontsLoaded] = useFonts({
@@ -66,6 +110,8 @@ export function App() {
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
   });
+
+  useShortcuts();
 
   useEffect(() => {
     void boot();

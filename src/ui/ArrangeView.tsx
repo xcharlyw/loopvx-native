@@ -1,10 +1,10 @@
 import { memo, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
 import { C, RULER_H, font, layout } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { projectEndBars } from '../audio/timing';
+import { projectEndBars, snapBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
-import { createTrack, mapTrack } from '../lib/project';
+import { addClip, createTrack, editClip, mapTrack, removeClip, updateClip, type ClipEdit } from '../lib/project';
 import { setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Track } from '../types';
 import { Fader } from './Fader';
@@ -16,6 +16,17 @@ import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
 const BOTTOM_PAD = 170;
+/** Mouse/trackpad: clips drag straight away. Touch: a clip must be selected first, so swiping over clips still scrolls. */
+const FINE_POINTER = Platform.OS === 'web' && typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
+/** Web-only style keys RN's types don't know. */
+const web = (style: Record<string, string>) => (Platform.OS === 'web' ? (style as ViewStyle) : undefined);
+
+interface Drag {
+  clipId: string;
+  mode: ClipEdit;
+  dx: number;
+  dy: number;
+}
 
 const Grid = memo(function Grid({ zoom, totalBars, height }: { zoom: number; totalBars: number; height: number }) {
   const labelEvery = zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8;
@@ -64,6 +75,35 @@ export function ArrangeView() {
   const anySolo = project.tracks.some((t) => t.solo);
   const bodyH = Math.max(viewportH, project.tracks.length * rowH + ADD_ROW_H + BOTTOM_PAD);
 
+  const grid = zoom >= 32 ? 0.25 : 1;
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const trackDelta = (index: number, dy: number) =>
+    Math.max(-index, Math.min(project.tracks.length - 1 - index, Math.round(dy / rowH)));
+
+  const onClipDrag = (clip: Clip, index: number, mode: ClipEdit, dx: number, dy: number, phase: DragPhase) => {
+    if (phase === 'move') {
+      setState({ selectedClipId: clip.id, selectedTrackId: project.tracks[index].id });
+      setDrag({ clipId: clip.id, mode, dx, dy });
+      return;
+    }
+    setDrag(null);
+    if (phase === 'cancel') return;
+    const edit = editClip(clip, mode, dx / zoom, grid);
+    const target = project.tracks[index + (mode === 'move' ? trackDelta(index, dy) : 0)];
+    if (target && target.id !== project.tracks[index].id) {
+      updateProject((p) => addClip(removeClip(p, clip.id), target.id, { ...clip, ...edit }));
+      setState({ selectedTrackId: target.id });
+    } else {
+      updateProject((p) => updateClip(p, clip.id, edit));
+    }
+  };
+
+  const onClipTap = (clip: Clip, track: Track, e: GestureResponderEvent) => {
+    setState({ selectedClipId: clip.id, selectedTrackId: track.id });
+    // Like clicking into a clip in Ableton: the playhead jumps there, ready for Split.
+    if (!engine.playing) setCursor(Math.max(0, snapBars(clip.start + tapX(e) / zoom, grid)));
+  };
+
   const onLaneTap = (track: Track, e: GestureResponderEvent) => {
     const bar = Math.max(0, tapX(e) / zoom);
     setState({ selectedTrackId: track.id, selectedClipId: null });
@@ -104,7 +144,7 @@ export function ArrangeView() {
       </View>
 
       <View style={{ flex: 1 }} onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}>
-        <ScrollView contentContainerStyle={{ flexDirection: 'row', height: bodyH }}>
+        <ScrollView scrollEnabled={!drag} contentContainerStyle={{ flexDirection: 'row', height: bodyH }}>
           <View style={{ width: headerW }}>
             {project.tracks.map((track) => {
               const selected = selectedTrackId === track.id;
@@ -155,24 +195,32 @@ export function ArrangeView() {
 
           <Animated.ScrollView
             horizontal
+            scrollEnabled={!drag}
             style={{ flex: 1 }}
             scrollEventThrottle={16}
             onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: Platform.OS !== 'web' })}
           >
             <View style={{ width, height: bodyH }}>
               <Grid zoom={zoom} totalBars={totalBars} height={bodyH} />
-              {project.tracks.map((track) => (
+              {project.tracks.map((track, index) => (
                 <Pressable
                   key={track.id}
-                  style={[s.lane, { width, height: rowH }, selectedTrackId === track.id && s.laneSelected]}
+                  style={[
+                    s.lane,
+                    { width, height: rowH },
+                    selectedTrackId === track.id && s.laneSelected,
+                    drag && track.clips.some((c) => c.id === drag.clipId) && { zIndex: 3 },
+                  ]}
                   onPress={(e) => onLaneTap(track, e)}
                 >
                   {track.clips.map((clip) => {
                     const sample = sampleById.get(clip.sampleId);
+                    const dragging = drag?.clipId === clip.id ? drag : null;
+                    const shown = dragging ? { ...clip, ...editClip(clip, dragging.mode, dragging.dx / zoom, grid) } : clip;
                     return (
                       <ClipView
                         key={clip.id}
-                        clip={clip}
+                        clip={shown}
                         color={track.color}
                         name={sample?.name ?? 'Sample fehlt'}
                         zoom={zoom}
@@ -180,7 +228,10 @@ export function ArrangeView() {
                         projectBpm={project.bpm}
                         sampleBpm={sample?.bpm}
                         selected={selectedClipId === clip.id}
-                        onPress={() => setState({ selectedClipId: clip.id, selectedTrackId: track.id })}
+                        dragging={!!dragging}
+                        liftY={dragging?.mode === 'move' ? trackDelta(index, dragging.dy) * rowH : 0}
+                        onTap={(e) => onClipTap(clip, track, e)}
+                        onDrag={(mode, dx, dy, phase) => onClipDrag(clip, index, mode, dx, dy, phase)}
                       />
                     );
                   })}
@@ -203,6 +254,41 @@ export function ArrangeView() {
   );
 }
 
+type DragPhase = 'move' | 'end' | 'cancel';
+
+/** The responder system's touch record (present on native and react-native-web, missing from RN's event type). */
+interface TouchHistory {
+  indexOfSingleActiveTouch: number;
+  touchBank: ({ startPageX: number; startPageY: number; currentPageX: number; currentPageY: number } | undefined)[];
+}
+
+/** Pan gesture that reports its offset; `claim` decides whether it takes over the touch. */
+function useDrag(claim: 'start' | 'move', enabled: boolean, onDrag: (dx: number, dy: number, phase: DragPhase) => void) {
+  const latest = useRef({ enabled, onDrag });
+  latest.current = { enabled, onDrag };
+  // The gesture's dx/dy restart at 0 when it takes over mid-move; add back the distance travelled before that.
+  const lead = useRef({ dx: 0, dy: 0 });
+  return useMemo(
+    () =>
+      PanResponder.create({
+        onPanResponderGrant: (e) => {
+          const history = (e as unknown as { touchHistory: TouchHistory }).touchHistory;
+          const touch = history.touchBank[history.indexOfSingleActiveTouch];
+          lead.current = touch ? { dx: touch.currentPageX - touch.startPageX, dy: touch.currentPageY - touch.startPageY } : { dx: 0, dy: 0 };
+        },
+        // Edge handles take the touch at once; the clip body only once it moves, so a tap still reaches its Pressable.
+        onStartShouldSetPanResponder: () => claim === 'start' && latest.current.enabled,
+        onMoveShouldSetPanResponderCapture: (_, g) =>
+          claim === 'move' && latest.current.enabled && (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 6),
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderMove: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'move'),
+        onPanResponderRelease: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'end'),
+        onPanResponderTerminate: () => latest.current.onDrag(0, 0, 'cancel'),
+      }).panHandlers,
+    [claim],
+  );
+}
+
 interface ClipViewProps {
   clip: Clip;
   color: string;
@@ -212,28 +298,53 @@ interface ClipViewProps {
   projectBpm: number;
   sampleBpm?: number;
   selected: boolean;
-  onPress: () => void;
+  dragging: boolean;
+  /** Vertical offset while dragging the clip to another track. */
+  liftY: number;
+  onTap: (e: GestureResponderEvent) => void;
+  onDrag: (mode: ClipEdit, dx: number, dy: number, phase: DragPhase) => void;
 }
 
-function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, selected, onPress }: ClipViewProps) {
+function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, selected, dragging, liftY, onTap, onDrag }: ClipViewProps) {
   const w = Math.max(6, clip.length * zoom);
+  const editable = selected || FINE_POINTER;
+  const body = useDrag('move', editable, (dx, dy, phase) => onDrag('move', dx, dy, phase));
+  const startEdge = useDrag('start', editable, (dx, dy, phase) => onDrag('start', dx, dy, phase));
+  const endEdge = useDrag('start', editable, (dx, dy, phase) => onDrag('end', dx, dy, phase));
   return (
-    <Pressable onPress={onPress} style={[s.clip, { left: clip.start * zoom, width: w, backgroundColor: color }]}>
-      <Waveform
-        sampleId={clip.sampleId}
-        width={w - 2}
-        height={height - 2 - 16}
-        zoom={zoom}
-        projectBpm={projectBpm}
-        sampleBpm={sampleBpm}
-        offsetPx={clip.offset * zoom}
-      />
-      <Txt numberOfLines={1} style={s.clipName}>
-        {name.replace(/\.[a-z0-9]+$/i, '')}
-      </Txt>
-      <View pointerEvents="none" style={s.clipResize} />
+    <View
+      {...body}
+      style={[
+        s.clip,
+        { left: clip.start * zoom, width: w, backgroundColor: color, transform: [{ translateY: liftY }] },
+        dragging && s.clipDragging,
+        web({ touchAction: editable ? 'none' : 'auto', cursor: dragging ? 'grabbing' : 'grab' }),
+      ]}
+    >
+      <Pressable onPress={onTap} style={StyleSheet.absoluteFill}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <Waveform
+            sampleId={clip.sampleId}
+            width={w - 2}
+            height={height - 2 - 16}
+            zoom={zoom}
+            projectBpm={projectBpm}
+            sampleBpm={sampleBpm}
+            offsetPx={clip.offset * zoom}
+          />
+          <Txt numberOfLines={1} style={s.clipName}>
+            {name.replace(/\.[a-z0-9]+$/i, '')}
+          </Txt>
+        </View>
+      </Pressable>
+      <View {...startEdge} style={[s.clipEdge, { left: 0 }, web({ cursor: 'ew-resize' })]}>
+        {selected && <View pointerEvents="none" style={[s.clipResize, { left: 4, right: undefined }]} />}
+      </View>
+      <View {...endEdge} style={[s.clipEdge, { right: 0 }, web({ cursor: 'ew-resize' })]}>
+        <View pointerEvents="none" style={s.clipResize} />
+      </View>
       {selected && <View pointerEvents="none" style={s.clipSelected} />}
-    </Pressable>
+    </View>
   );
 }
 
@@ -305,6 +416,8 @@ const s = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: 'rgba(0,0,0,0.45)',
   },
+  clipEdge: { position: 'absolute', top: 0, bottom: 0, width: 14 },
+  clipDragging: { opacity: 0.85, zIndex: 3 },
   clipSelected: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderWidth: 2, borderColor: '#fff', borderRadius: 7 },
   playheadClip: { position: 'absolute', top: 0, bottom: 0, right: 0, overflow: 'hidden', zIndex: 2 },
   playhead: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: C.accent },

@@ -130,6 +130,13 @@ export const Copy = (p: P) => (
     <Path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" />
   </Icon>
 );
+export const Scissors = (p: P) => (
+  <Icon {...p}>
+    <Circle cx="6" cy="6" r="3" />
+    <Circle cx="6" cy="18" r="3" />
+    <Path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12" />
+  </Icon>
+);
 export const Check = (p: P) => (
   <Icon {...p}>
     <Path d="M5 12l5 5 9-10" />

@@ -2,11 +2,12 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, scaleSelectedClip } from '../lib/actions';
+import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip } from '../lib/actions';
 import { setState, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
-import { Copy, GridIcon, Mixer, TimelineIcon, Trash, ZoomIn, ZoomOut } from './icons';
-import { IconBtn, PillGroup, Spacer, Txt, iconColor } from './kit';
+import { Copy, GridIcon, Mixer, More, Scissors, TimelineIcon, Trash, ZoomIn, ZoomOut } from './icons';
+import { useSmall } from './hooks';
+import { IconBtn, PillGroup, Spacer, iconColor } from './kit';
 
 export function BottomBar() {
   const view = useStore((s) => s.view);
@@ -14,6 +15,7 @@ export function BottomBar() {
   const selectedClipId = useStore((s) => s.selectedClipId);
   const hasSelectedTrack = useStore((s) => s.project.tracks.some((t) => t.id === s.selectedTrackId));
   const insets = useSafeAreaInsets();
+  const small = useSmall();
 
   const switchView = (v: 'arrange' | 'session') => {
     if (v === view) return;
@@ -39,17 +41,17 @@ export function BottomBar() {
 
       {view === 'arrange' && selectedClipId && (
         <PillGroup>
-          <IconBtn accessibilityLabel="Halbe Länge" onPress={() => scaleSelectedClip(0.5)}>
-            <Txt>½</Txt>
-          </IconBtn>
-          <IconBtn accessibilityLabel="Doppelte Länge" onPress={() => scaleSelectedClip(2)}>
-            <Txt>×2</Txt>
+          <IconBtn accessibilityLabel="Teilen" onPress={splitSelectedClip}>
+            <Scissors size={16} />
           </IconBtn>
           <IconBtn accessibilityLabel="Duplizieren" onPress={duplicateSelectedClip}>
             <Copy size={16} />
           </IconBtn>
           <IconBtn accessibilityLabel="Löschen" onPress={deleteSelectedClip}>
             <Trash size={16} />
+          </IconBtn>
+          <IconBtn accessibilityLabel="Clip: Länge & Tempo" onPress={() => setState({ panel: 'clip' })}>
+            <More size={16} />
           </IconBtn>
         </PillGroup>
       )}
@@ -64,7 +66,8 @@ export function BottomBar() {
 
       <Spacer />
 
-      {view === 'arrange' && (
+      {/* On a phone the clip tools need the room; zoom comes back once the clip is deselected. */}
+      {view === 'arrange' && !(small && selectedClipId) && (
         <PillGroup>
           <IconBtn accessibilityLabel="Herauszoomen" onPress={() => setState({ zoom: Math.max(8, zoom / 1.4) })}>
             <ZoomOut size={18} />

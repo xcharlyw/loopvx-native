@@ -29,6 +29,7 @@ export async function togglePlay() {
 }
 
 export function setCursor(bars: number) {
+  if (!Number.isFinite(bars)) return;
   setState({ cursor: Math.max(0, bars) });
   if (engine.playing && engine.mode === 'arrange') void engine.play(getState().project, Math.max(0, bars));
 }

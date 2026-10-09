@@ -11,6 +11,7 @@ import { Fader } from './Fader';
 import { usePlayhead, useSmall } from './hooks';
 import { Plus } from './icons';
 import { Mono, MsButton, Txt } from './kit';
+import { tapX } from './events';
 import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
@@ -64,7 +65,7 @@ export function ArrangeView() {
   const bodyH = Math.max(viewportH, project.tracks.length * rowH + ADD_ROW_H + BOTTOM_PAD);
 
   const onLaneTap = (track: Track, e: GestureResponderEvent) => {
-    const bar = Math.max(0, e.nativeEvent.locationX / zoom);
+    const bar = Math.max(0, tapX(e) / zoom);
     setState({ selectedTrackId: track.id, selectedClipId: null });
     const armed = armedSampleId ? sampleById.get(armedSampleId) : undefined;
     if (armed) {
@@ -82,7 +83,7 @@ export function ArrangeView() {
         <View style={[s.corner, { width: headerW }]} />
         <View style={s.rulerClip}>
           <Animated.View style={{ width, height: RULER_H, transform: [{ translateX: Animated.multiply(scrollX, -1) }] }}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={(e) => setCursor(Math.floor(Math.max(0, e.nativeEvent.locationX / zoom)))} />
+            <Pressable style={StyleSheet.absoluteFill} onPress={(e) => setCursor(Math.floor(Math.max(0, tapX(e) / zoom)))} />
             {Array.from({ length: Math.ceil(totalBars / labelEvery) }, (_, i) => i * labelEvery).map((b) => (
               <View key={b} pointerEvents="none" style={[s.rulerLabel, { left: b * zoom }]}>
                 <Mono style={s.rulerText}>{b + 1}</Mono>

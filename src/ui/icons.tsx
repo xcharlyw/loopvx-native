@@ -130,6 +130,16 @@ export const Copy = (p: P) => (
     <Path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" />
   </Icon>
 );
+export const Undo = (p: P) => (
+  <Icon {...p}>
+    <Path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Icon>
+);
+export const Redo = (p: P) => (
+  <Icon {...p}>
+    <Path d="m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </Icon>
+);
 export const Pencil = (p: P) => (
   <Icon {...p}>
     <Path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />

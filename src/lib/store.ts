@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { engine } from '../audio/engine';
 import { db } from '../storage/db';
 import type { Project, Sample } from '../types';
+import { History } from './history';
 import { createProject, repairProject } from './project';
 
 export type View = 'arrange' | 'session';
@@ -28,6 +29,8 @@ export interface AppState {
   armedSampleId: string | null;
   toasts: Toast[];
   ready: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 let state: AppState = {
@@ -42,6 +45,8 @@ let state: AppState = {
   armedSampleId: null,
   toasts: [],
   ready: false,
+  canUndo: false,
+  canRedo: false,
 };
 
 const listeners = new Set<() => void>();
@@ -71,16 +76,68 @@ export function useStore<T>(selector: (s: AppState) => T): T {
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function updateProject(fn: (p: Project) => Project, opts: { reschedule?: boolean } = {}) {
-  const project = { ...fn(state.project), updatedAt: Date.now() };
+/** What undo restores: the project plus the sample tempos (clip warping is stored on the sample). */
+interface Snapshot {
+  project: Project;
+  samples: Sample[];
+}
+
+const history = new History<Snapshot>();
+
+function syncHistory() {
+  setState({ canUndo: history.canUndo, canRedo: history.canRedo });
+}
+
+function commit(project: Project, reschedule: boolean) {
   setState({ project });
   engine.syncMixer(project);
-  if (opts.reschedule !== false) {
+  if (reschedule) {
     if (refreshTimer) clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => void engine.refresh(getState().project), 120);
   }
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => void persist(getState().project), 800);
+}
+
+/** Remember the current state as an undo step. Call before changing something that is not a project update. */
+export function recordHistory(opts: { continuous?: boolean } = {}) {
+  history.record({ project: state.project, samples: state.samples }, opts);
+  syncHistory();
+}
+
+export function updateProject(fn: (p: Project) => Project, opts: { reschedule?: boolean } = {}) {
+  const before = state.project;
+  const changed = fn(before);
+  // Changes with reschedule:false (faders, names, mute/solo, tempo) come in bursts: one undo step per burst.
+  if (changed !== before) {
+    history.record({ project: before, samples: state.samples }, { continuous: opts.reschedule === false });
+  }
+  commit({ ...changed, updatedAt: Date.now() }, opts.reschedule !== false);
+  syncHistory();
+}
+
+function restore(entry: Snapshot) {
+  for (const old of entry.samples) {
+    const current = state.samples.find((x) => x.id === old.id);
+    if (current && current.bpm !== old.bpm) void upsertSample({ ...current, bpm: old.bpm });
+  }
+  const { project } = entry;
+  const clipIds = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+  const selectedClipId = state.selectedClipId && clipIds.has(state.selectedClipId) ? state.selectedClipId : null;
+  const hasTrack = project.tracks.some((t) => t.id === state.selectedTrackId);
+  setState({ selectedClipId, selectedTrackId: hasTrack ? state.selectedTrackId : (project.tracks[0]?.id ?? null) });
+  commit({ ...project, updatedAt: Date.now() }, true);
+  syncHistory();
+}
+
+export function undo() {
+  const entry = history.undo({ project: state.project, samples: state.samples });
+  if (entry) restore(entry);
+}
+
+export function redo() {
+  const entry = history.redo({ project: state.project, samples: state.samples });
+  if (entry) restore(entry);
 }
 
 async function persist(project: Project) {
@@ -92,6 +149,8 @@ async function persist(project: Project) {
 export async function openProject(loaded: Project) {
   const project = repairProject(loaded);
   engine.stop();
+  history.clear();
+  syncHistory();
   setState({ project, selectedClipId: null, selectedTrackId: project.tracks[0]?.id ?? null, cursor: 0, panel: 'none' });
   engine.syncMixer(project);
   await db.setKv('lastProjectId', project.id);

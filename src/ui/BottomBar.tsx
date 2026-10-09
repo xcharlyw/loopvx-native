@@ -3,9 +3,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip } from '../lib/actions';
-import { setState, useStore } from '../lib/store';
+import { redo, setState, undo, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
-import { Copy, GridIcon, Mixer, More, Pencil, Scissors, TimelineIcon, Trash, ZoomIn, ZoomOut } from './icons';
+import { Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
 import { useSmall } from './hooks';
 import { IconBtn, PillGroup, Spacer, iconColor } from './kit';
 
@@ -13,6 +13,8 @@ export function BottomBar() {
   const view = useStore((s) => s.view);
   const zoom = useStore((s) => s.zoom);
   const selectedClipId = useStore((s) => s.selectedClipId);
+  const canUndo = useStore((s) => s.canUndo);
+  const canRedo = useStore((s) => s.canRedo);
   const hasSelectedTrack = useStore((s) => s.project.tracks.some((t) => t.id === s.selectedTrackId));
   const insets = useSafeAreaInsets();
   const small = useSmall();
@@ -24,7 +26,7 @@ export function BottomBar() {
   };
 
   return (
-    <View style={[s.bar, { paddingBottom: 8 + insets.bottom }]}>
+    <View style={[s.bar, small && s.barSm, { paddingBottom: 8 + insets.bottom }]}>
       <PillGroup>
         <IconBtn accessibilityLabel="Mixer" onPress={() => setState({ panel: 'mixer' })}>
           <Mixer size={18} />
@@ -36,6 +38,15 @@ export function BottomBar() {
         </IconBtn>
         <IconBtn accessibilityLabel="Session-Grid" onPress={() => switchView('session')}>
           <GridIcon size={18} color={iconColor(view === 'session')} />
+        </IconBtn>
+      </PillGroup>
+
+      <PillGroup>
+        <IconBtn accessibilityLabel="Rückgängig" disabled={!canUndo} onPress={undo}>
+          <Undo size={16} />
+        </IconBtn>
+        <IconBtn accessibilityLabel="Wiederholen" disabled={!canRedo} onPress={redo}>
+          <Redo size={16} />
         </IconBtn>
       </PillGroup>
 
@@ -61,9 +72,12 @@ export function BottomBar() {
           <IconBtn accessibilityLabel="Spur umbenennen" onPress={() => setState({ panel: 'track' })}>
             <Pencil size={16} />
           </IconBtn>
-          <IconBtn accessibilityLabel="Spur löschen" onPress={() => void deleteSelectedTrack(confirmDestructive)}>
-            <Trash size={16} color={C.danger} />
-          </IconBtn>
+          {/* On a phone the bar is full: delete lives in the track sheet there. */}
+          {!small && (
+            <IconBtn accessibilityLabel="Spur löschen" onPress={() => void deleteSelectedTrack(confirmDestructive)}>
+              <Trash size={16} color={C.danger} />
+            </IconBtn>
+          )}
         </PillGroup>
       )}
 
@@ -85,6 +99,7 @@ export function BottomBar() {
 }
 
 const s = StyleSheet.create({
+  barSm: { gap: 4, paddingHorizontal: 10 },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -6,7 +6,7 @@ import { projectEndBars, sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
 import type { Sample } from '../types';
 import { addClip, editClip, findClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
-import { errorText, getState, setState, toast, updateProject, upsertSample } from './store';
+import { errorText, getState, recordHistory, setState, toast, updateProject, upsertSample } from './store';
 
 export async function togglePlay() {
   const { project, view, cursor } = getState();
@@ -121,8 +121,10 @@ export function nudgeSelectedClip(bars: number) {
  * (re-pitch); `undefined` plays the sample at its own speed.
  */
 export async function setSampleBpm(sample: Sample, bpm: number | undefined) {
+  if (sample.bpm === bpm) return;
+  recordHistory();
   await upsertSample({ ...sample, bpm });
-  updateProject((p) => p);
+  updateProject((p) => p); // no project change: only reschedules the audio
 }
 
 export function scaleSelectedClip(factor: number) {

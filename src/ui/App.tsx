@@ -14,7 +14,7 @@ import {
   splitSelectedClip,
   togglePlay,
 } from '../lib/actions';
-import { boot, getState, setState, useStore } from '../lib/store';
+import { boot, getState, redo, setState, undo, useStore } from '../lib/store';
 import { getSession } from '../lib/supabase';
 import { ArrangeView } from './ArrangeView';
 import { BottomBar } from './BottomBar';
@@ -86,7 +86,7 @@ function useAudioUnlock() {
   }, []);
 }
 
-/** Ableton-style keys on web: Space play/stop, Cmd/Ctrl+E split, Cmd/Ctrl+D duplicate, Delete, arrows nudge. */
+/** Ableton-style keys on web: Space play/stop, Cmd/Ctrl+Z undo (+Shift or Y: redo), Cmd/Ctrl+E split, Cmd/Ctrl+D duplicate, Delete, arrows nudge. */
 function useShortcuts() {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -100,6 +100,13 @@ function useShortcuts() {
       if (e.code === 'Space') {
         e.preventDefault();
         void togglePlay();
+      } else if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        redo();
       } else if (mod && e.key.toLowerCase() === 'e' && arrange) {
         e.preventDefault();
         splitSelectedClip();

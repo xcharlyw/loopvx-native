@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { engine } from '../audio/engine';
+import { preparePageAudio } from '../audio/pageAudio';
 import { C } from '../constants/theme';
 import {
   deleteSelectedClip,
@@ -74,6 +75,7 @@ function useAudioUnlock() {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const onGesture = () => {
+      preparePageAudio(); // iOS pauses the silent player in the background
       if (engine.ctx?.state !== 'running') void engine.unlock().catch(() => undefined);
     };
     const events = ['touchend', 'click', 'keydown'] as const;

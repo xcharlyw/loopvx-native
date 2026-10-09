@@ -31,6 +31,11 @@ interface SessionVoice {
   scene: number;
 }
 
+/** Wait for `promise`, but give up after `ms`: iOS leaves resume() pending on a stuck context. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return Promise.race([promise.catch(() => undefined), new Promise<undefined>((resolve) => setTimeout(resolve, ms))]);
+}
+
 const LOOKAHEAD = 1.0; // seconds of audio scheduled ahead
 const TICK_MS = 100;
 
@@ -109,6 +114,7 @@ export class AudioEngine {
   private sessionOrigin = 0;
   private sessionVoices = new Map<string, SessionVoice>();
   private previewSource: AudioBufferSourceNode | null = null;
+  private unlocking: Promise<AudioContext> | null = null;
   private listeners = new Set<() => void>();
 
   /** Called with the decoded duration so the sample record can be updated. */
@@ -135,10 +141,42 @@ export class AudioEngine {
    * Start audio output. Call from a user gesture (e.g. tapping play): on the web, Safari only lets a
    * context start inside a tap, so everything up to resume() runs synchronously there.
    */
-  async unlock(): Promise<AudioContext> {
+  unlock(): Promise<AudioContext> {
+    // One start at a time: the tap handler and the play button both call this for the same tap.
+    this.unlocking ??= this.startOutput().finally(() => {
+      this.unlocking = null;
+    });
+    return this.unlocking;
+  }
+
+  private async startOutput(): Promise<AudioContext> {
     preparePageAudio();
-    const ctx = this.ctx ?? (await this.ensureContext());
-    if (ctx.state !== 'running') await ctx.resume();
+    let ctx = this.ctx ?? (await this.ensureContext());
+    if (ctx.state !== 'running') await withTimeout(ctx.resume(), 1000);
+    if (ctx.state !== 'running' && Platform.OS === 'web') {
+      // iOS can leave a context stuck "interrupted" after a call or lock; a fresh one starts fine.
+      ctx = await this.rebuildContext();
+      await withTimeout(ctx.resume(), 1000);
+    }
+    if (ctx.state !== 'running') throw new Error(`Audio konnte nicht gestartet werden (${ctx.state}). Bitte noch einmal tippen.`);
+    return ctx;
+  }
+
+  /** Replace the AudioContext (and everything wired to it). Decoded buffers stay: they are context-independent. */
+  private async rebuildContext(): Promise<AudioContext> {
+    const wasPlaying = this.playing;
+    this.stopPreview();
+    this.stopAll();
+    this.playing = false;
+    const old = this.ctx;
+    this.ctx = null;
+    this.master = null;
+    this.analyser = null;
+    this.trackGains.clear();
+    void old?.close().catch(() => undefined);
+    const ctx = await this.ensureContext();
+    if (this.project) this.syncMixer(this.project);
+    if (wasPlaying) this.emit();
     return ctx;
   }
 

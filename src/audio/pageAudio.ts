@@ -1,28 +1,30 @@
 import { Platform } from 'react-native';
 
-let prepared = false;
+// Kept in a module variable: a detached element that iOS paused can otherwise be collected.
+let silent: HTMLAudioElement | null = null;
 
 /**
  * iOS mutes Web Audio while the ring/silent switch is on, unless the page says it plays media.
  * Safari 17+ has `navigator.audioSession` for that; otherwise iOS switches over once an <audio>
- * element plays, so loop a silent one. Must run inside a tap.
+ * element plays, so loop a silent one. Must run inside a tap. Safe to call on every tap: iOS
+ * pauses the element when the screen locks, the app is switched or a call comes in, and this
+ * starts it again.
  */
 export function preparePageAudio() {
-  if (prepared || Platform.OS !== 'web' || typeof navigator === 'undefined') return;
-  prepared = true;
+  if (Platform.OS !== 'web' || typeof navigator === 'undefined') return;
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
-  if (session) session.type = 'playback';
+  if (session && session.type !== 'playback') session.type = 'playback';
   // Chrome, Firefox etc. on iOS are WebKit views too, where audioSession may exist without taking
   // effect, so iOS also gets the silent <audio> either way.
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   if (!ios) return;
-  const el = document.createElement('audio');
-  el.src = silentWavUrl();
-  el.loop = true;
-  el.setAttribute('playsinline', '');
-  void el.play().catch(() => {
-    prepared = false;
-  });
+  if (!silent) {
+    silent = document.createElement('audio');
+    silent.src = silentWavUrl();
+    silent.loop = true;
+    silent.setAttribute('playsinline', '');
+  }
+  if (silent.paused) void silent.play().catch(() => undefined);
 }
 
 /** 0.1 s of 8-bit mono silence. */

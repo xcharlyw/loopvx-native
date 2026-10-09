@@ -3,18 +3,17 @@ import { Platform } from 'react-native';
 let prepared = false;
 
 /**
- * iOS Safari mutes Web Audio while the ring/silent switch is on, unless the page says it plays
- * media. Safari 17+ has `navigator.audioSession` for that; older iOS switches over once an
- * <audio> element plays, so loop a silent one. Must run inside a tap.
+ * iOS mutes Web Audio while the ring/silent switch is on, unless the page says it plays media.
+ * Safari 17+ has `navigator.audioSession` for that; otherwise iOS switches over once an <audio>
+ * element plays, so loop a silent one. Must run inside a tap.
  */
 export function preparePageAudio() {
   if (prepared || Platform.OS !== 'web' || typeof navigator === 'undefined') return;
   prepared = true;
   const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
-  if (session) {
-    session.type = 'playback';
-    return;
-  }
+  if (session) session.type = 'playback';
+  // Chrome, Firefox etc. on iOS are WebKit views too, where audioSession may exist without taking
+  // effect, so iOS also gets the silent <audio> either way.
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
   if (!ios) return;
   const el = document.createElement('audio');

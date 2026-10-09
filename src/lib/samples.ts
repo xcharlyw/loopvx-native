@@ -49,6 +49,12 @@ export async function sampleSource(sample: Sample): Promise<string | ArrayBuffer
   return sample.uri;
 }
 
+/** The raw audio file, for uploading to Drive. */
+export async function readSampleData(sample: Sample): Promise<ArrayBuffer> {
+  if (!sample.uri) throw new Error(`Audio für "${sample.name}" nicht gefunden`);
+  return new File(sample.uri).arrayBuffer();
+}
+
 export async function deleteSample(sample: Sample): Promise<void> {
   if (!sample.uri) return;
   try {

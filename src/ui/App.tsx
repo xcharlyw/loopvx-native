@@ -16,6 +16,7 @@ import {
 } from '../lib/actions';
 import { boot, getState, redo, setState, undo, useStore } from '../lib/store';
 import { getSession } from '../lib/supabase';
+import { startSync } from '../lib/sync';
 import { ArrangeView } from './ArrangeView';
 import { BottomBar } from './BottomBar';
 import { ClipPanel } from './ClipPanel';
@@ -143,9 +144,9 @@ export function App() {
   useAudioUnlock();
 
   useEffect(() => {
-    void boot();
-    // Restores the login, and on web finishes a Google sign-in that just redirected back with ?code=.
-    void getSession();
+    // getSession restores the login (on web it also finishes a Google sign-in that just redirected
+    // back with ?code=), then Drive sync starts.
+    void Promise.all([boot(), getSession()]).then(startSync);
   }, []);
 
   return (

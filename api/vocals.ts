@@ -1,7 +1,8 @@
 // Vercel Function: generates vocals with the ElevenLabs Music API.
 // The API key never reaches the browser. Requests must carry a Supabase session token,
-// optionally restricted to ALLOWED_EMAILS, so nobody else can spend your credits.
+// optionally restricted to ALLOWED_EMAILS (see _lib/auth.ts), so nobody else can spend your credits.
 import { unzipSync } from 'fflate';
+import { authorize, text } from './_lib/auth';
 
 const ELEVEN = 'https://api.elevenlabs.io/v1';
 
@@ -12,27 +13,6 @@ interface Body {
   key?: string;
   bars?: number;
   vocalsOnly?: boolean;
-}
-
-function text(status: number, message: string): Response {
-  return new Response(message, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-}
-
-async function authorize(req: Request): Promise<string | null> {
-  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
-  const anon = process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !anon) return 'Supabase ist auf dem Server nicht konfiguriert';
-  const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-  if (!token) return 'Bitte zuerst anmelden';
-  const res = await fetch(`${url}/auth/v1/user`, { headers: { apikey: anon, Authorization: `Bearer ${token}` } });
-  if (!res.ok) return 'Sitzung ungültig, bitte neu anmelden';
-  const user = (await res.json()) as { email?: string };
-  const allowed = (process.env.ALLOWED_EMAILS ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (allowed.length && !allowed.includes((user.email ?? '').toLowerCase())) return 'Dieser Account ist nicht freigeschaltet';
-  return null;
 }
 
 export function buildPrompt(b: Body): string {

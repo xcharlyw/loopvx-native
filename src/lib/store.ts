@@ -14,6 +14,15 @@ export interface Toast {
   kind: 'info' | 'error';
 }
 
+export interface SyncStatus {
+  /** off: not signed in with Drive access. */
+  state: 'off' | 'idle' | 'syncing' | 'error';
+  lastSyncAt?: number;
+  error?: string;
+  /** The error needs a new Google sign-in (Drive access revoked or expired). */
+  needsSignIn?: boolean;
+}
+
 export interface AppState {
   project: Project;
   samples: Sample[];
@@ -31,6 +40,7 @@ export interface AppState {
   ready: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  sync: SyncStatus;
 }
 
 let state: AppState = {
@@ -47,6 +57,7 @@ let state: AppState = {
   ready: false,
   canUndo: false,
   canRedo: false,
+  sync: { state: 'off' },
 };
 
 const listeners = new Set<() => void>();
@@ -143,7 +154,33 @@ export function redo() {
 async function persist(project: Project) {
   await db.putProject(project);
   await db.setKv('lastProjectId', project.id);
-  // Supabase cross-device sync lands in a later phase, like Drive sync.
+}
+
+/** Write a pending autosave right away (before a sync reads the saved projects). */
+export async function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  await persist(state.project);
+}
+
+/**
+ * Swap in a newer copy of the open project (synced from another device) without closing panels.
+ * Undo steps belonged to the old copy, so they go.
+ */
+export function replaceOpenProject(loaded: Project) {
+  const project = repairProject(loaded);
+  history.clear();
+  syncHistory();
+  const clipIds = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+  const hasTrack = project.tracks.some((t) => t.id === state.selectedTrackId);
+  setState({
+    project,
+    selectedClipId: state.selectedClipId && clipIds.has(state.selectedClipId) ? state.selectedClipId : null,
+    selectedTrackId: hasTrack ? state.selectedTrackId : (project.tracks[0]?.id ?? null),
+  });
+  engine.syncMixer(project);
+  void engine.refresh(project);
 }
 
 export async function openProject(loaded: Project) {
@@ -163,15 +200,17 @@ export function setSamples(samples: Sample[]) {
   setState({ samples });
 }
 
-export async function upsertSample(sample: Sample): Promise<void> {
-  await db.putSample(sample);
-  const others = state.samples.filter((s) => s.id !== sample.id);
-  setSamples([...others, sample]);
+/** Save a sample's metadata. `touch: false` for facts that are the same on every device (duration). */
+export async function upsertSample(sample: Sample, opts: { touch?: boolean } = {}): Promise<void> {
+  const next = opts.touch === false ? sample : { ...sample, updatedAt: Date.now() };
+  await db.putSample(next);
+  const others = state.samples.filter((s) => s.id !== next.id);
+  setSamples([...others, next]);
 }
 
 engine.onDuration = (id, duration) => {
   const s = state.samples.find((x) => x.id === id);
-  if (s) void upsertSample({ ...s, duration });
+  if (s) void upsertSample({ ...s, duration }, { touch: false });
 };
 
 // ---------------- toasts ----------------

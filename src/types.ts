@@ -20,6 +20,8 @@ export interface Sample {
   uri?: string;
   size?: number;
   addedAt: number;
+  /** Last change of the metadata (tempo, key, category); drives Drive sync. Falls back to addedAt. */
+  updatedAt?: number;
 }
 
 export interface Clip {

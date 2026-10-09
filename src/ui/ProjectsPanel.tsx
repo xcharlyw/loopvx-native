@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
+import { driveLinked } from '../lib/drive';
 import { createProject } from '../lib/project';
 import { errorText, getState, openProject, toast, updateProject, useStore } from '../lib/store';
+import { resetSync, syncNow } from '../lib/sync';
 import { signIn, signOut, useSession } from '../lib/supabase';
 import { db } from '../storage/db';
 import type { Project } from '../types';
@@ -77,18 +79,22 @@ export function ProjectsPanel() {
 
       <Section title="Account & Cloud-Sync">
         {session ? (
-          <View style={s.row}>
-            <Txt numberOfLines={1} style={{ flex: 1, fontSize: 13 }}>
-              {session.user.email}
-            </Txt>
-            <Btn small onPress={() => void signOut()}>
-              Abmelden
-            </Btn>
-          </View>
+          <>
+            <View style={s.row}>
+              <Txt numberOfLines={1} style={{ flex: 1, fontSize: 13 }}>
+                {session.user.email}
+              </Txt>
+              <Btn small onPress={() => void signOut().then(resetSync)}>
+                Abmelden
+              </Btn>
+            </View>
+            <DriveSync />
+          </>
         ) : (
           <>
             <Txt style={[s.note, { marginBottom: 13 }]}>
-              Anmelden, um Projekte zwischen Handy und Desktop zu synchronisieren und AI-Vocals zu erzeugen.
+              Mit Google anmelden: Projekte und Samples landen in deinem Google Drive (Ordner „LOOPVX“) und sind auf Handy und PC
+              gleich. Außerdem für AI-Vocals.
             </Txt>
             <View style={{ flexDirection: 'row' }}>
               <Btn kind="primary" onPress={() => void signIn().catch((e) => toast(errorText(e), 'error'))}>
@@ -99,6 +105,53 @@ export function ProjectsPanel() {
         )}
       </Section>
     </Sheet>
+  );
+}
+
+/** Drive sync status, last sync time and a manual sync button. */
+function DriveSync() {
+  const sync = useStore((st) => st.sync);
+  const [linked, setLinked] = useState<boolean | null>(null);
+  useEffect(() => {
+    void driveLinked().then(setLinked);
+  }, [sync.state]);
+
+  if (linked === null) return null;
+  if (!linked || sync.needsSignIn) {
+    return (
+      <View style={{ marginTop: 12 }}>
+        <Txt style={[s.note, { marginBottom: 10 }]}>
+          {sync.needsSignIn ? sync.error : 'Google Drive ist noch nicht verbunden. Einmal neu mit Google anmelden und den Drive-Zugriff erlauben.'}
+        </Txt>
+        <View style={{ flexDirection: 'row' }}>
+          <Btn kind="primary" onPress={() => void signIn().then(() => syncNow({ manual: true })).catch((e) => toast(errorText(e), 'error'))}>
+            Google Drive verbinden
+          </Btn>
+        </View>
+      </View>
+    );
+  }
+
+  const status =
+    sync.state === 'syncing'
+      ? 'Synchronisiere …'
+      : sync.state === 'error'
+        ? `Fehler: ${sync.error}`
+        : sync.lastSyncAt
+          ? `Synchronisiert um ${new Date(sync.lastSyncAt).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}`
+          : 'Noch nicht synchronisiert';
+  return (
+    <View style={{ marginTop: 12, gap: 10 }}>
+      <View style={s.row}>
+        <Txt numberOfLines={2} style={[s.note, { flex: 1 }, sync.state === 'error' && { color: C.danger }]}>
+          {`Google Drive · ${status}`}
+        </Txt>
+        <Btn small disabled={sync.state === 'syncing'} onPress={() => void syncNow({ manual: true })}>
+          Jetzt synchronisieren
+        </Btn>
+      </View>
+      <Txt style={s.note}>Ordner „LOOPVX“ in deinem Google Drive. Änderungen werden automatisch nach ein paar Sekunden abgeglichen.</Txt>
+    </View>
   );
 }
 

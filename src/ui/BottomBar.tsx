@@ -18,6 +18,12 @@ export function BottomBar() {
   return (
     <View style={styles.bar}>
       <View style={styles.group}>
+        <Pressable style={styles.btn} onPress={() => setState({ panel: 'mixer' })}>
+          <Text style={styles.btnText}>🎚</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.group}>
         <Pressable style={[styles.btn, view === 'arrange' && styles.btnOn]} onPress={() => switchView('arrange')}>
           <Text style={styles.btnText}>Arrange</Text>
         </Pressable>

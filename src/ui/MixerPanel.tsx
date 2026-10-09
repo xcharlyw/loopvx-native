@@ -31,6 +31,26 @@ function useLevel(): number {
 
 const toDb = (g: number) => (g <= 0.0001 ? '-∞' : `${(20 * Math.log10(g)).toFixed(1)} dB`);
 
+const FADER_LEN = 140;
+
+/** A vertical fader, built from the (horizontal-only) community Slider rotated 90°. */
+function VFader({ value, max, color, onChange }: { value: number; max: number; color: string; onChange: (v: number) => void }) {
+  return (
+    <View style={styles.vfaderBox}>
+      <Slider
+        style={[styles.vfaderSlider, { width: FADER_LEN }]}
+        minimumValue={0}
+        maximumValue={max}
+        value={value}
+        onValueChange={onChange}
+        minimumTrackTintColor={color}
+        maximumTrackTintColor={Colors.border}
+        thumbTintColor={Colors.text}
+      />
+    </View>
+  );
+}
+
 export function MixerPanel() {
   const project = useStore((s) => s.project);
   const [master, setMaster] = useState(1);
@@ -62,12 +82,13 @@ export function MixerPanel() {
             }}
             minimumTrackTintColor={Colors.accent}
             maximumTrackTintColor={Colors.border}
+            thumbTintColor={Colors.text}
           />
           <Text style={styles.db}>{toDb(master)}</Text>
         </View>
         {level >= 0.99 && <Text style={styles.danger}>Clipping! Spuren leiser machen.</Text>}
 
-        <View style={styles.strips}>
+        <ScrollView horizontal contentContainerStyle={styles.strips}>
           {project.tracks.map((t) => (
             <View key={t.id} style={styles.strip}>
               <View style={[styles.stripName, { borderTopColor: t.color }]}>
@@ -75,14 +96,11 @@ export function MixerPanel() {
                   {t.name}
                 </Text>
               </View>
-              <Slider
-                style={styles.fader}
-                minimumValue={0}
-                maximumValue={1.5}
+              <VFader
                 value={t.volume}
-                onValueChange={(v) => updateProject((p) => mapTrack(p, t.id, (x) => ({ ...x, volume: v })), { reschedule: false })}
-                minimumTrackTintColor={t.color}
-                maximumTrackTintColor={Colors.border}
+                max={1.5}
+                color={t.color}
+                onChange={(v) => updateProject((p) => mapTrack(p, t.id, (x) => ({ ...x, volume: v })), { reschedule: false })}
               />
               <Text style={styles.stripDb}>{toDb(t.volume)}</Text>
               <View style={styles.msRow}>
@@ -101,7 +119,7 @@ export function MixerPanel() {
               </View>
             </View>
           ))}
-        </View>
+        </ScrollView>
 
         <Text style={styles.footnote}>
           Startwerte für Hard Techno: Kick + Bass 0 dB, Top Loop −6 dB, Vocals −6 dB, Synth −9 dB.
@@ -114,21 +132,22 @@ export function MixerPanel() {
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: Colors.surface },
   head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.three, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  title: { color: Colors.text, fontSize: 16, fontWeight: '700' },
+  title: { color: Colors.text, fontSize: 18, fontWeight: '700' },
   close: { color: Colors.textSecondary, fontSize: 18 },
   body: { padding: Spacing.three, gap: Spacing.two },
   sectionTitle: { color: Colors.text, fontSize: 13, fontWeight: '600' },
-  meter: { height: 6, borderRadius: 3, backgroundColor: Colors.surfaceRaised, overflow: 'hidden' },
+  meter: { height: 4, borderRadius: 2, backgroundColor: Colors.surfaceRaised, overflow: 'hidden' },
   meterFill: { height: '100%', backgroundColor: Colors.accent },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   masterFader: { flex: 1, height: 36 },
   db: { color: Colors.textSecondary, fontSize: 12, fontFamily: 'monospace', width: 64, textAlign: 'right' },
   danger: { color: Colors.danger, fontSize: 12 },
-  strips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginTop: Spacing.two },
-  strip: { width: 110, gap: 4, padding: Spacing.one, backgroundColor: Colors.surfaceRaised, borderRadius: 8 },
-  stripName: { borderTopWidth: 2, paddingBottom: 4 },
-  stripNameText: { color: Colors.text, fontSize: 11 },
-  fader: { height: 32 },
+  strips: { gap: Spacing.two, marginTop: Spacing.two, paddingBottom: Spacing.one },
+  strip: { width: 92, alignItems: 'center', gap: 6, paddingTop: 6, backgroundColor: Colors.surfaceRaised, borderRadius: 8, paddingBottom: Spacing.one },
+  stripName: { alignSelf: 'stretch', borderTopWidth: 3, paddingTop: 6, paddingBottom: 2, alignItems: 'center' },
+  stripNameText: { color: Colors.text, fontSize: 11, fontWeight: '600' },
+  vfaderBox: { height: FADER_LEN + 24, width: 36, alignItems: 'center', justifyContent: 'center' },
+  vfaderSlider: { height: 36, transform: [{ rotate: '-90deg' }] },
   stripDb: { color: Colors.textSecondary, fontSize: 10, fontFamily: 'monospace' },
   msRow: { flexDirection: 'row', gap: 4 },
   ms: { width: 24, height: 20, borderRadius: 4, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center' },

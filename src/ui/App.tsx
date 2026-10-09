@@ -27,11 +27,13 @@ export function App() {
       <View style={styles.main}>{view === 'arrange' ? <ArrangeView /> : <SessionView />}</View>
       <BottomBar />
 
-      <Modal visible={panel !== 'none'} animationType="slide" transparent onRequestClose={() => setState({ panel: 'none' })}>
-        <Pressable style={styles.backdrop} onPress={() => setState({ panel: 'none' })} />
-        <View style={styles.sheet}>
-          {panel === 'library' && <LibraryPanel />}
-          {panel === 'mixer' && <MixerPanel />}
+      <Modal visible={panel !== 'none'} animationType="fade" transparent onRequestClose={() => setState({ panel: 'none' })}>
+        <View style={styles.modalRow}>
+          <Pressable style={styles.backdrop} onPress={() => setState({ panel: 'none' })} />
+          <View style={styles.sheet}>
+            {panel === 'library' && <LibraryPanel />}
+            {panel === 'mixer' && <MixerPanel />}
+          </View>
         </View>
       </Modal>
 
@@ -49,8 +51,16 @@ export function App() {
 const styles = StyleSheet.create({
   app: { flex: 1, backgroundColor: Colors.background },
   main: { flex: 1, minHeight: 0 },
+  modalRow: { flex: 1, flexDirection: 'row' },
   backdrop: { flex: 1, backgroundColor: '#00000099' },
-  sheet: { height: '75%', backgroundColor: Colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
+  sheet: {
+    width: '92%',
+    maxWidth: 420,
+    backgroundColor: Colors.surface,
+    borderLeftWidth: 1,
+    borderLeftColor: Colors.border,
+    overflow: 'hidden',
+  },
   toasts: { position: 'absolute', bottom: 70, left: 0, right: 0, alignItems: 'center', gap: 6 },
   toast: { backgroundColor: Colors.surfaceRaised, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
   toastError: { backgroundColor: Colors.danger },

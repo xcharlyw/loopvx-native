@@ -46,6 +46,18 @@ export function ArrangeView() {
     <ScrollView style={styles.outer}>
       <ScrollView horizontal>
         <View style={{ width: HEADER_W + width }}>
+          <View style={styles.loopStrip}>
+            <View
+              style={[
+                styles.loopRegion,
+                {
+                  left: HEADER_W + project.loop.start * zoom,
+                  width: (project.loop.end - project.loop.start) * zoom,
+                  opacity: project.loop.enabled ? 1 : 0.25,
+                },
+              ]}
+            />
+          </View>
           <View style={styles.ruler}>
             <View style={{ width: HEADER_W }} />
             <View style={{ width, height: 24 }}>
@@ -54,23 +66,13 @@ export function ArrangeView() {
                   {b + 1}
                 </Text>
               ))}
-              <View
-                style={[
-                  styles.loopRegion,
-                  {
-                    left: project.loop.start * zoom,
-                    width: (project.loop.end - project.loop.start) * zoom,
-                    opacity: project.loop.enabled ? 1 : 0.25,
-                  },
-                ]}
-              />
             </View>
           </View>
 
           {project.tracks.map((track) => (
             <View key={track.id} style={styles.row}>
               <Pressable
-                style={[styles.header, selectedTrackId === track.id && styles.headerSelected]}
+                style={[styles.header, selectedTrackId === track.id && styles.headerSelected, selectedTrackId === track.id && styles.headerAccent]}
                 onPress={() => setState({ selectedTrackId: track.id })}
               >
                 <View style={styles.headerTop}>
@@ -158,9 +160,10 @@ function ClipView({
 
 const styles = StyleSheet.create({
   outer: { flex: 1, backgroundColor: Colors.background },
+  loopStrip: { height: 4 },
+  loopRegion: { position: 'absolute', top: 0, bottom: 0, backgroundColor: Colors.accent },
   ruler: { flexDirection: 'row', height: 24, backgroundColor: Colors.surface },
   rulerLabel: { position: 'absolute', top: 4, fontSize: 10, color: Colors.textSecondary },
-  loopRegion: { position: 'absolute', top: 0, bottom: 0, backgroundColor: Colors.accent, opacity: 0.18 },
   row: { flexDirection: 'row', height: ROW_H, borderBottomWidth: 1, borderBottomColor: Colors.border },
   header: {
     width: HEADER_W,
@@ -171,6 +174,7 @@ const styles = StyleSheet.create({
     borderRightColor: Colors.border,
   },
   headerSelected: { backgroundColor: Colors.surfaceRaised },
+  headerAccent: { borderLeftWidth: 3, borderLeftColor: Colors.accent },
   headerTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   trackName: { color: Colors.text, fontSize: 12, flexShrink: 1 },

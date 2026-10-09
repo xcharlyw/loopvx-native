@@ -6,7 +6,7 @@ import { engine } from '../audio/engine';
 import { formatBarPosition, formatClock, secondsPerBar } from '../audio/timing';
 import { setCursor, togglePlay } from '../lib/actions';
 import { KEYS } from '../lib/project';
-import { setState, updateProject, useStore } from '../lib/store';
+import { setState, toast, updateProject, useStore } from '../lib/store';
 import { useEngine, usePlayhead } from './hooks';
 
 export function TopBar() {
@@ -35,49 +35,59 @@ export function TopBar() {
         <Text style={styles.logoAccent}>{APP_NAME.slice(-2)}</Text>
       </Text>
 
-      <Text style={styles.projectName} numberOfLines={1}>
-        {project.name}
-      </Text>
+      <View style={styles.pill}>
+        <Text style={styles.projectName} numberOfLines={1}>
+          {project.name}
+        </Text>
+      </View>
 
       <View style={styles.spacer} />
 
-      <Pressable style={[styles.iconBtn, project.loop.enabled && styles.iconBtnOn]} onPress={() => updateProject((p) => ({ ...p, loop: { ...p.loop, enabled: !p.loop.enabled } }))}>
-        <Text style={styles.iconText}>↻</Text>
-      </Pressable>
-      <Pressable style={styles.iconBtn} onPress={() => setCursor(0)}>
-        <Text style={styles.iconText}>⏮</Text>
-      </Pressable>
-      <Pressable style={styles.playBtn} onPress={() => void togglePlay()}>
-        <Text style={styles.iconText}>{playing ? '■' : '▶'}</Text>
-      </Pressable>
-
-      <View style={styles.pill}>
-        <Text style={styles.mono}>{formatBarPosition(pos)}</Text>
-        <Text style={styles.monoMuted}>{formatClock(pos * secondsPerBar(project.bpm))}</Text>
+      <View style={styles.transport}>
+        <Pressable style={styles.iconBtn} onPress={() => setCursor(0)}>
+          <Text style={styles.iconText}>⏮</Text>
+        </Pressable>
+        <Pressable style={styles.iconBtn} onPress={() => void togglePlay()}>
+          <Text style={styles.iconText}>{playing ? '■' : '▶'}</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.iconBtn, project.loop.enabled && styles.iconBtnOn]}
+          onPress={() => updateProject((p) => ({ ...p, loop: { ...p.loop, enabled: !p.loop.enabled } }))}
+        >
+          <Text style={styles.iconText}>↻</Text>
+        </Pressable>
       </View>
 
       <View style={styles.pill}>
-        <TextInput
-          style={styles.bpmInput}
-          keyboardType="decimal-pad"
-          value={bpmText ?? String(project.bpm)}
-          onFocus={() => setBpmText(String(project.bpm))}
-          onChangeText={setBpmText}
-          onBlur={commitBpm}
-          onSubmitEditing={commitBpm}
-        />
+        <Text style={styles.monoMuted}>{formatClock(pos * secondsPerBar(project.bpm))}</Text>
+        <Text style={styles.mono}>{formatBarPosition(pos)}</Text>
+      </View>
+
+      <View style={styles.pill}>
+        <View style={styles.bpmInputBox}>
+          <TextInput
+            style={styles.bpmInput}
+            keyboardType="decimal-pad"
+            value={bpmText ?? String(project.bpm)}
+            onFocus={() => setBpmText(String(project.bpm))}
+            onChangeText={setBpmText}
+            onBlur={commitBpm}
+            onSubmitEditing={commitBpm}
+          />
+        </View>
         <Text style={styles.monoMuted}>BPM</Text>
       </View>
 
       <Pressable style={styles.pill} onPress={cycleKey}>
         <Text style={styles.mono}>{project.key}</Text>
+        <Text style={styles.chevron}>▾</Text>
       </Pressable>
 
+      <Pressable style={styles.pill} onPress={() => toast('Export kommt in einer späteren Phase.')}>
+        <Text style={styles.pillText}>Export</Text>
+      </Pressable>
       <Pressable style={styles.pill} onPress={() => setState({ panel: 'library' })}>
         <Text style={styles.pillText}>Library</Text>
-      </Pressable>
-      <Pressable style={styles.pill} onPress={() => setState({ panel: 'mixer' })}>
-        <Text style={styles.pillText}>Mixer</Text>
       </Pressable>
     </View>
   );
@@ -95,10 +105,10 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
     flexWrap: 'wrap',
   },
-  logo: { color: Colors.text, fontWeight: '700', fontSize: 16 },
+  logo: { color: Colors.text, fontWeight: '700', fontSize: 18, letterSpacing: 0.5 },
   logoAccent: { color: Colors.accent },
-  projectName: { color: Colors.textSecondary, fontSize: 13, maxWidth: 100 },
   spacer: { flex: 1 },
+  transport: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -106,28 +116,23 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceRaised,
     borderRadius: 999,
     paddingHorizontal: Spacing.two,
-    paddingVertical: 6,
+    paddingVertical: 8,
   },
-  pillText: { color: Colors.text, fontSize: 12 },
-  mono: { color: Colors.text, fontSize: 12, fontFamily: 'monospace' },
-  monoMuted: { color: Colors.textSecondary, fontSize: 11, fontFamily: 'monospace' },
-  bpmInput: { color: Colors.text, fontSize: 12, fontFamily: 'monospace', minWidth: 32, padding: 0 },
+  projectName: { color: Colors.text, fontSize: 13, fontWeight: '600', maxWidth: 110 },
+  pillText: { color: Colors.text, fontSize: 13 },
+  mono: { color: Colors.text, fontSize: 13, fontFamily: 'monospace' },
+  monoMuted: { color: Colors.textSecondary, fontSize: 12, fontFamily: 'monospace' },
+  bpmInputBox: { width: 32, overflow: 'hidden' },
+  bpmInput: { color: Colors.text, fontSize: 13, fontFamily: 'monospace', width: 32, padding: 0 },
+  chevron: { color: Colors.textSecondary, fontSize: 10 },
   iconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.surfaceRaised,
   },
   iconBtnOn: { backgroundColor: Colors.accent },
-  playBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.accent,
-  },
   iconText: { color: Colors.text, fontSize: 14 },
 });

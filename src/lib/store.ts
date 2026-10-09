@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { engine } from '../audio/engine';
 import { db } from '../storage/db';
 import type { Project, Sample } from '../types';
-import { createProject } from './project';
+import { createProject, repairProject } from './project';
 
 export type View = 'arrange' | 'session';
 export type Panel = 'none' | 'library' | 'mixer' | 'projects';
@@ -89,7 +89,8 @@ async function persist(project: Project) {
   // Supabase cross-device sync lands in a later phase, like Drive sync.
 }
 
-export async function openProject(project: Project) {
+export async function openProject(loaded: Project) {
+  const project = repairProject(loaded);
   engine.stop();
   setState({ project, selectedClipId: null, selectedTrackId: project.tracks[0]?.id ?? null, cursor: 0, panel: 'none' });
   engine.syncMixer(project);
@@ -132,8 +133,8 @@ export function errorText(e: unknown): string {
 export async function boot() {
   const [samples, projects, lastId] = await Promise.all([db.getSamples(), db.getProjects(), db.getKv<string>('lastProjectId')]);
   setSamples(samples);
-  const project = projects.find((p) => p.id === lastId) ?? projects[0];
-  if (project) setState({ project });
+  const last = projects.find((p) => p.id === lastId) ?? projects[0];
+  if (last) setState({ project: repairProject(last) });
   setState({ ready: true, selectedTrackId: getState().project.tracks[0]?.id ?? null });
   engine.syncMixer(getState().project);
 }

@@ -1,10 +1,23 @@
-import { addClip, audibleGain, createProject, removeClip, setSlot, trackForSample, updateClip } from './project';
+import { addClip, audibleGain, createProject, removeClip, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
     const p = createProject();
     expect(p.tracks.map((t) => t.category)).toEqual(['kick', 'top', 'synth', 'vocal']);
     expect(p.tracks.every((t) => t.slots.length === p.sceneCount)).toBe(true);
+  });
+
+  it('repairs clips saved with a NaN position (stored as null)', () => {
+    const p = createProject();
+    const broken = addClip(
+      addClip(p, p.tracks[3].id, { id: 'v', sampleId: 's', start: null as unknown as number, length: 8, offset: NaN }),
+      p.tracks[0].id,
+      { id: 'k', sampleId: 's', start: 4, length: null as unknown as number, offset: 0 },
+    );
+    const fixed = repairProject(broken);
+    expect(fixed.tracks[3].clips).toEqual([{ id: 'v', sampleId: 's', start: 0, length: 8, offset: 0 }]);
+    expect(fixed.tracks[0].clips).toEqual([]);
+    expect(repairProject(p)).toBe(p);
   });
 
   it('adds, updates and removes clips immutably', () => {

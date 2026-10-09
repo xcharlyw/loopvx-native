@@ -86,6 +86,25 @@ export function trackForSample(project: Project, sample: Sample, selectedTrackId
   );
 }
 
+/**
+ * Repair clips whose numbers went non-finite (a NaN playhead once placed clips at NaN, which
+ * JSON stores as null): move them to bar 1 and drop clips without a usable length.
+ */
+export function repairProject(project: Project): Project {
+  const ok = (v: number) => Number.isFinite(v);
+  const broken = project.tracks.some((t) => t.clips.some((c) => !ok(c.start) || !ok(c.length) || !ok(c.offset)));
+  if (!broken) return project;
+  return {
+    ...project,
+    tracks: project.tracks.map((t) => ({
+      ...t,
+      clips: t.clips
+        .filter((c) => ok(c.length) && c.length > 0)
+        .map((c) => ({ ...c, start: ok(c.start) ? c.start : 0, offset: ok(c.offset) ? c.offset : 0 })),
+    })),
+  };
+}
+
 export function addClip(project: Project, trackId: string, clip: Clip): Project {
   return mapTrack(project, trackId, (t) => ({ ...t, clips: [...t.clips, clip] }));
 }

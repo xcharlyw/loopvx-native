@@ -40,6 +40,11 @@ describe('tempo math', () => {
 describe('planClip', () => {
   const clip = { id: 'c', sampleId: 's', start: 4, length: 8, offset: 0 };
 
+  it('skips clips with a broken position instead of scheduling NaN', () => {
+    expect(planClip({ ...clip, start: NaN }, 0, 16, 2)).toBeNull();
+    expect(planClip({ ...clip, offset: null as unknown as number }, 0, 16, 2)).toBeNull();
+  });
+
   it('returns null outside the window', () => {
     expect(planClip(clip, 0, 4, 2)).toBeNull();
     expect(planClip(clip, 12, 16, 2)).toBeNull();

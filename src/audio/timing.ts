@@ -61,6 +61,8 @@ export interface ClipPlan {
 
 /** Which part of a clip sounds inside the window [fromBar, toBar). */
 export function planClip(clip: Clip, fromBar: number, toBar: number, loopBars: number): ClipPlan | null {
+  // A clip with a broken position would hand NaN to AudioBufferSourceNode.start(), which throws.
+  if (![clip.start, clip.length, clip.offset, fromBar, toBar].every(Number.isFinite)) return null;
   const clipEnd = clip.start + clip.length;
   const begin = Math.max(clip.start, fromBar);
   const end = Math.min(clipEnd, toBar);

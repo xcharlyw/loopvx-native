@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { formatBarPosition } from '../audio/timing';
-import { errorText, toast, useStore } from '../lib/store';
+import { errorText, setState, toast, useStore } from '../lib/store';
+import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
 import { useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
@@ -36,6 +37,11 @@ export function PromptBar() {
 
   const submit = async () => {
     if (busy || (!prompt.trim() && !lyrics.trim())) return;
+    if (!(await getSession())) {
+      toast('Bitte zuerst mit Google anmelden.');
+      setState({ panel: 'projects' });
+      return;
+    }
     setBusy(true);
     toast('Vocal wird generiert, das kann bis zu einer Minute dauern …');
     try {

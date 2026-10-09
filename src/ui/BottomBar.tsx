@@ -2,8 +2,9 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { deleteSelectedClip, duplicateSelectedClip, scaleSelectedClip } from '../lib/actions';
+import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, scaleSelectedClip } from '../lib/actions';
 import { setState, useStore } from '../lib/store';
+import { confirmDestructive } from './confirm';
 import { Copy, GridIcon, Mixer, TimelineIcon, Trash, ZoomIn, ZoomOut } from './icons';
 import { IconBtn, PillGroup, Spacer, Txt, iconColor } from './kit';
 
@@ -11,6 +12,7 @@ export function BottomBar() {
   const view = useStore((s) => s.view);
   const zoom = useStore((s) => s.zoom);
   const selectedClipId = useStore((s) => s.selectedClipId);
+  const hasSelectedTrack = useStore((s) => s.project.tracks.some((t) => t.id === s.selectedTrackId));
   const insets = useSafeAreaInsets();
 
   const switchView = (v: 'arrange' | 'session') => {
@@ -48,6 +50,14 @@ export function BottomBar() {
           </IconBtn>
           <IconBtn accessibilityLabel="Löschen" onPress={deleteSelectedClip}>
             <Trash size={16} />
+          </IconBtn>
+        </PillGroup>
+      )}
+
+      {view === 'arrange' && !selectedClipId && hasSelectedTrack && (
+        <PillGroup>
+          <IconBtn accessibilityLabel="Spur löschen" onPress={() => void deleteSelectedTrack(confirmDestructive)}>
+            <Trash size={16} color={C.danger} />
           </IconBtn>
         </PillGroup>
       )}

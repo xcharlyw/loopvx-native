@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { createProject } from '../lib/project';
 import { errorText, getState, openProject, toast, updateProject, useStore } from '../lib/store';
@@ -7,19 +7,9 @@ import { signIn, signOut, useSession } from '../lib/supabase';
 import { db } from '../storage/db';
 import type { Project } from '../types';
 import { Plus, Trash } from './icons';
+import { confirmDestructive } from './confirm';
 import { Btn, IconBtn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
-
-function confirmDelete(name: string): Promise<boolean> {
-  const text = `„${name}“ löschen?`;
-  if (Platform.OS === 'web') return Promise.resolve(window.confirm(text));
-  return new Promise((resolve) =>
-    Alert.alert(text, undefined, [
-      { text: 'Abbrechen', style: 'cancel', onPress: () => resolve(false) },
-      { text: 'Löschen', style: 'destructive', onPress: () => resolve(true) },
-    ]),
-  );
-}
 
 export function ProjectsPanel() {
   const current = useStore((st) => st.project);
@@ -44,7 +34,7 @@ export function ProjectsPanel() {
   };
 
   const remove = async (p: Project) => {
-    if (!(await confirmDelete(p.name))) return;
+    if (!(await confirmDestructive(`„${p.name}“ löschen?`))) return;
     await db.deleteProject(p.id);
     if (p.id === getState().project.id) await openProject(createProject());
     await reload();

@@ -1,4 +1,4 @@
-import { addClip, audibleGain, createProject, removeClip, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addClip, audibleGain, createProject, removeClip, removeTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -18,6 +18,14 @@ describe('project helpers', () => {
     expect(fixed.tracks[3].clips).toEqual([{ id: 'v', sampleId: 's', start: 0, length: 8, offset: 0 }]);
     expect(fixed.tracks[0].clips).toEqual([]);
     expect(repairProject(p)).toBe(p);
+  });
+
+  it('removes a track and leaves the others untouched', () => {
+    const p = createProject();
+    const next = removeTrack(p, p.tracks[1].id);
+    expect(next.tracks.map((t) => t.category)).toEqual(['kick', 'synth', 'vocal']);
+    expect(next.tracks[0]).toBe(p.tracks[0]);
+    expect(p.tracks).toHaveLength(4);
   });
 
   it('adds, updates and removes clips immutably', () => {

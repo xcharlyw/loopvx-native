@@ -77,6 +77,10 @@ export function removeClip(project: Project, clipId: string): Project {
   return { ...project, tracks: project.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) })) };
 }
 
+export function removeTrack(project: Project, trackId: string): Project {
+  return { ...project, tracks: project.tracks.filter((t) => t.id !== trackId) };
+}
+
 /** Best track for a sample: first track of the same category, else the selected one. */
 export function trackForSample(project: Project, sample: Sample, selectedTrackId?: string | null): Track | undefined {
   return (

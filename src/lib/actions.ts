@@ -5,7 +5,7 @@ import { engine } from '../audio/engine';
 import { projectEndBars, sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
 import type { Sample } from '../types';
-import { addClip, findClip, removeClip, setSlot, trackForSample, uid, updateClip } from './project';
+import { addClip, findClip, removeClip, removeTrack, setSlot, trackForSample, uid, updateClip } from './project';
 import { errorText, getState, setState, toast, updateProject } from './store';
 
 export async function togglePlay() {
@@ -68,6 +68,20 @@ export function deleteSelectedClip() {
   if (!id) return;
   updateProject((p) => removeClip(p, id));
   setState({ selectedClipId: null });
+}
+
+/** Remove the selected track (after asking) and select its neighbour. */
+export async function deleteSelectedTrack(confirm: (title: string, message?: string) => Promise<boolean>) {
+  const { project, selectedTrackId } = getState();
+  const index = project.tracks.findIndex((t) => t.id === selectedTrackId);
+  const track = project.tracks[index];
+  if (!track) return;
+  const clips = track.clips.length + track.slots.filter(Boolean).length;
+  const message = clips ? `Die Spur enthält ${clips === 1 ? '1 Clip' : `${clips} Clips`}, die mit gelöscht werden.` : undefined;
+  if (!(await confirm(`Spur „${track.name}“ löschen?`, message))) return;
+  updateProject((p) => removeTrack(p, track.id));
+  const rest = getState().project.tracks;
+  setState({ selectedTrackId: rest[Math.min(index, rest.length - 1)]?.id ?? null, selectedClipId: null });
 }
 
 export function duplicateSelectedClip() {

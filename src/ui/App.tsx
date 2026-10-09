@@ -4,6 +4,7 @@ import { useFonts } from 'expo-font';
 import { useEffect } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { engine } from '../audio/engine';
 import { C } from '../constants/theme';
 import {
   deleteSelectedClip,
@@ -65,6 +66,22 @@ function Shell() {
   );
 }
 
+/**
+ * Web: start audio on the first tap anywhere, and again after iOS paused it (lock screen, call).
+ * Safari only allows that inside a gesture, and a later async step (decoding, loading) is too late.
+ */
+function useAudioUnlock() {
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onGesture = () => {
+      if (engine.ctx?.state !== 'running') void engine.unlock().catch(() => undefined);
+    };
+    const events = ['touchend', 'click', 'keydown'] as const;
+    events.forEach((ev) => window.addEventListener(ev, onGesture, true));
+    return () => events.forEach((ev) => window.removeEventListener(ev, onGesture, true));
+  }, []);
+}
+
 /** Ableton-style keys on web: Space play/stop, Cmd/Ctrl+E split, Cmd/Ctrl+D duplicate, Delete, arrows nudge. */
 function useShortcuts() {
   useEffect(() => {
@@ -112,6 +129,7 @@ export function App() {
   });
 
   useShortcuts();
+  useAudioUnlock();
 
   useEffect(() => {
     void boot();

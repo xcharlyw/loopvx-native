@@ -9,9 +9,11 @@ import {
   GainNode,
   OfflineAudioContext,
 } from 'react-native-audio-api';
+import { Platform } from 'react-native';
 import type { Project, Sample, Track } from '../types';
 import { audibleGain } from '../lib/project';
 import { sampleSource } from '../lib/samples';
+import { preparePageAudio } from './pageAudio';
 import { loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
@@ -112,11 +114,13 @@ export class AudioEngine {
   /** Called with the decoded duration so the sample record can be updated. */
   onDuration?: (sampleId: string, duration: number) => void;
 
-  /** Create/activate the AudioContext and its session. Call from a user gesture (e.g. tapping play). */
-  async unlock(): Promise<AudioContext> {
-    if (!this.ctx) {
+  /** Create the AudioContext (suspended until `unlock`); enough for decoding. */
+  private async ensureContext(): Promise<AudioContext> {
+    if (!this.ctx && Platform.OS !== 'web') {
       AudioManager.setAudioSessionOptions({ iosCategory: 'playback' });
       await AudioManager.setAudioSessionActivity(true);
+    }
+    if (!this.ctx) {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
       this.analyser = this.ctx.createAnalyser();
@@ -124,8 +128,18 @@ export class AudioEngine {
       this.master.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
     }
-    if (this.ctx.state !== 'running') await this.ctx.resume();
     return this.ctx;
+  }
+
+  /**
+   * Start audio output. Call from a user gesture (e.g. tapping play): on the web, Safari only lets a
+   * context start inside a tap, so everything up to resume() runs synchronously there.
+   */
+  async unlock(): Promise<AudioContext> {
+    preparePageAudio();
+    const ctx = this.ctx ?? (await this.ensureContext());
+    if (ctx.state !== 'running') await ctx.resume();
+    return ctx;
   }
 
   subscribe(fn: () => void): () => void {
@@ -148,7 +162,8 @@ export class AudioEngine {
     const sample = this.samples.get(sampleId);
     if (!sample) throw new Error('Sample nicht in der Library');
     const p = (async () => {
-      const ctx = await this.unlock();
+      // Decoding works on a suspended context, so loading waveforms never starts audio outside a tap.
+      const ctx = await this.ensureContext();
       const buffer = await ctx.decodeAudioData(await sampleSource(sample));
       this.buffers.set(sampleId, buffer);
       if (sample.duration !== buffer.duration) this.onDuration?.(sampleId, buffer.duration);
@@ -357,8 +372,8 @@ export class AudioEngine {
   // ---------------- preview ----------------
 
   async preview(sample: Sample, projectBpm: number) {
-    const buffer = await this.loadBuffer(sample.id);
     const ctx = await this.unlock();
+    const buffer = await this.loadBuffer(sample.id);
     this.stopPreview();
     const src = ctx.createBufferSource({ pitchCorrection: false });
     src.buffer = buffer;

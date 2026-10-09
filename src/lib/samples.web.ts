@@ -43,6 +43,13 @@ export async function importSamplesFromDevice(): Promise<Sample[]> {
   return samples;
 }
 
+/** Persist generated audio (e.g. an AI vocal) and register the sample. */
+export async function storeSampleAudio(sample: Sample, data: ArrayBuffer, ext: string): Promise<Sample> {
+  await tx('readwrite', (st) => st.put(new Blob([data], { type: ext === 'wav' ? 'audio/wav' : 'audio/mpeg' }), sample.id));
+  await db.putSample(sample);
+  return sample;
+}
+
 /** What the audio engine decodes: the web AudioContext only takes an ArrayBuffer. */
 export async function sampleSource(sample: Sample): Promise<string | ArrayBuffer> {
   const blob = await tx<Blob | undefined>('readonly', (st) => st.get(sample.id));

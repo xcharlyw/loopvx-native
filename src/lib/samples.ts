@@ -32,6 +32,17 @@ export async function importSamplesFromDevice(): Promise<Sample[]> {
   return samples;
 }
 
+/** Persist generated audio (e.g. an AI vocal) and register the sample. */
+export async function storeSampleAudio(sample: Sample, data: ArrayBuffer, ext: string): Promise<Sample> {
+  const file = new File(ensureSamplesDir(), `${sample.id.replace(/[^\w-]/g, '_')}.${ext}`);
+  if (file.exists) file.delete();
+  file.create();
+  file.write(new Uint8Array(data));
+  const stored = { ...sample, uri: file.uri };
+  await db.putSample(stored);
+  return stored;
+}
+
 /** What the audio engine decodes: a local file URI on native. */
 export async function sampleSource(sample: Sample): Promise<string | ArrayBuffer> {
   if (!sample.uri) throw new Error(`Audio für "${sample.name}" nicht gefunden`);

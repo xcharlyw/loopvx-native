@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { createProject } from '../lib/project';
-import { getState, openProject, updateProject, useStore } from '../lib/store';
+import { errorText, getState, openProject, toast, updateProject, useStore } from '../lib/store';
+import { signIn, signOut, useSession } from '../lib/supabase';
 import { db } from '../storage/db';
 import type { Project } from '../types';
 import { Plus, Trash } from './icons';
@@ -23,6 +24,7 @@ function confirmDelete(name: string): Promise<boolean> {
 export function ProjectsPanel() {
   const current = useStore((st) => st.project);
   const [projects, setProjects] = useState<Project[]>([]);
+  const session = useSession();
 
   const reload = async () => {
     const byId = new Map((await db.getProjects()).map((p) => [p.id, p]));
@@ -84,7 +86,27 @@ export function ProjectsPanel() {
       </Section>
 
       <Section title="Account & Cloud-Sync">
-        <Txt style={s.note}>Supabase ist nicht eingerichtet. Projekte werden nur auf diesem Gerät gespeichert.</Txt>
+        {session ? (
+          <View style={s.row}>
+            <Txt numberOfLines={1} style={{ flex: 1, fontSize: 13 }}>
+              {session.user.email}
+            </Txt>
+            <Btn small onPress={() => void signOut()}>
+              Abmelden
+            </Btn>
+          </View>
+        ) : (
+          <>
+            <Txt style={[s.note, { marginBottom: 13 }]}>
+              Anmelden, um Projekte zwischen Handy und Desktop zu synchronisieren und AI-Vocals zu erzeugen.
+            </Txt>
+            <View style={{ flexDirection: 'row' }}>
+              <Btn kind="primary" onPress={() => void signIn().catch((e) => toast(errorText(e), 'error'))}>
+                Mit Google anmelden
+              </Btn>
+            </View>
+          </>
+        )}
       </Section>
     </Sheet>
   );
@@ -107,4 +129,5 @@ const s = StyleSheet.create({
   item: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.lineSoft },
   meta: { ...mono(), fontSize: 11, color: C.muted },
   note: { color: C.muted, fontSize: 13 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
 });

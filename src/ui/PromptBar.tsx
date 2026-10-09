@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { formatBarPosition } from '../audio/timing';
-import { toast, useStore } from '../lib/store';
+import { errorText, toast, useStore } from '../lib/store';
+import { generateVocal } from '../lib/vocals';
 import { useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
 import { Btn, Chip, IconBtn, Spacer, Txt } from './kit';
@@ -20,6 +21,7 @@ export function PromptBar() {
   const [lyrics, setLyrics] = useState('');
   const [bars, setBars] = useState(8);
   const [vocalsOnly, setVocalsOnly] = useState(true);
+  const [busy, setBusy] = useState(false);
 
   if (!open) {
     return (
@@ -32,9 +34,18 @@ export function PromptBar() {
     );
   }
 
-  const submit = () => {
-    if (!prompt.trim() && !lyrics.trim()) return;
-    toast('AI-Vocals brauchen den Supabase-Login und den ElevenLabs-Key – beides ist in der App noch nicht angebunden.', 'error');
+  const submit = async () => {
+    if (busy || (!prompt.trim() && !lyrics.trim())) return;
+    setBusy(true);
+    toast('Vocal wird generiert, das kann bis zu einer Minute dauern …');
+    try {
+      const s = await generateVocal({ prompt, lyrics, bars, vocalsOnly });
+      toast(`„${s.name}“ liegt auf der Vocal-Spur bei Takt ${Math.floor(cursor) + 1}`);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const boxW = Math.min(600, width - 24);
@@ -65,8 +76,8 @@ export function PromptBar() {
             value={prompt}
             onChangeText={setPrompt}
           />
-          <Pressable style={s.send} onPress={submit} accessibilityLabel="Generieren">
-            <ArrowUp size={18} color={C.accentInk} />
+          <Pressable style={[s.send, busy && { opacity: 0.4 }]} onPress={() => void submit()} disabled={busy} accessibilityLabel="Generieren">
+            {busy ? <ActivityIndicator size="small" color={C.accentInk} /> : <ArrowUp size={18} color={C.accentInk} />}
           </Pressable>
         </View>
         <View style={s.lyrics}>

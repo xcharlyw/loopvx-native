@@ -6,6 +6,7 @@ import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-n
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
 import { boot, setState, useStore } from '../lib/store';
+import { getSession } from '../lib/supabase';
 import { ArrangeView } from './ArrangeView';
 import { BottomBar } from './BottomBar';
 import { Txt } from './kit';
@@ -68,6 +69,8 @@ export function App() {
 
   useEffect(() => {
     void boot();
+    // Restores the login, and on web finishes a Google sign-in that just redirected back with ?code=.
+    void getSession();
   }, []);
 
   return (

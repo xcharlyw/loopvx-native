@@ -11,6 +11,7 @@ import {
 } from 'react-native-audio-api';
 import type { Project, Sample, Track } from '../types';
 import { audibleGain } from '../lib/project';
+import { sampleSource } from '../lib/samples';
 import { loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
@@ -146,10 +147,9 @@ export class AudioEngine {
     if (pending) return pending;
     const sample = this.samples.get(sampleId);
     if (!sample) throw new Error('Sample nicht in der Library');
-    if (!sample.uri) throw new Error(`Audio für "${sample.name}" nicht gefunden`);
     const p = (async () => {
       const ctx = await this.unlock();
-      const buffer = await ctx.decodeAudioData(sample.uri!);
+      const buffer = await ctx.decodeAudioData(await sampleSource(sample));
       this.buffers.set(sampleId, buffer);
       if (sample.duration !== buffer.duration) this.onDuration?.(sampleId, buffer.duration);
       return buffer;

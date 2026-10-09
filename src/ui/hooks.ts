@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { engine } from '../audio/engine';
 import { useStore } from '../lib/store';
 
@@ -23,4 +24,9 @@ export function usePlayhead(): number {
   }, [playing]);
   const cursor = useStore((s) => s.cursor);
   return playing ? pos : cursor;
+}
+
+/** The original's `@media (max-width: 720px)` breakpoint. */
+export function useSmall(): boolean {
+  return useWindowDimensions().width <= 720;
 }

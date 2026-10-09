@@ -1,196 +1,209 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { CategoryColors, Colors, Spacing } from '../constants/theme';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { placeSample } from '../lib/actions';
-import { CATEGORY_LABELS } from '../lib/project';
+import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
 import { deleteSample, importSamplesFromDevice } from '../lib/samples';
 import { errorText, getState, setSamples, setState, toast, upsertSample, useStore } from '../lib/store';
+import { db } from '../storage/db';
 import type { Sample, SampleCategory } from '../types';
 import { useEngine } from './hooks';
+import { Check, Play, Plus, Stop, Upload } from './icons';
+import { Btn, Chip, IconBtn, Section, Txt } from './kit';
+import { Sheet } from './Sheet';
 
 const FILTERS: (SampleCategory | 'all')[] = ['all', 'kick', 'top', 'synth', 'vocal', 'other'];
 
 export function LibraryPanel() {
-  const samples = useStore((s) => s.samples);
-  const project = useStore((s) => s.project);
-  const view = useStore((s) => s.view);
+  const samples = useStore((st) => st.samples);
+  const project = useStore((st) => st.project);
+  const view = useStore((st) => st.view);
   const [filter, setFilter] = useState<SampleCategory | 'all'>('all');
   const [query, setQuery] = useState('');
+  const [tempoMatch, setTempoMatch] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
   const previewing = useEngine(() => engine.isPreviewing());
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
     return samples
-      .filter((s) => filter === 'all' || s.category === filter)
-      .filter((s) => !q || s.name.toLowerCase().includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [samples, filter, query]);
+      .filter((x) => filter === 'all' || x.category === filter)
+      .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.folder ?? '').toLowerCase().includes(q))
+      .filter((x) => !tempoMatch || !x.bpm || Math.abs(x.bpm - project.bpm) <= 2)
+      .sort((a, b) => (a.folder ?? '').localeCompare(b.folder ?? '') || a.name.localeCompare(b.name));
+  }, [samples, filter, query, tempoMatch, project.bpm]);
 
-  const doImport = async () => {
-    setImporting(true);
+  const upload = async () => {
     try {
       const added = await importSamplesFromDevice();
-      if (added.length) {
-        setSamples([...getState().samples, ...added]);
-        toast(`${added.length} Sample(s) hinzugefügt`);
-      }
+      if (!added.length) return;
+      setSamples([...getState().samples, ...added]);
+      toast(`${added.length} Datei(en) hinzugefügt`);
     } catch (e) {
       toast(errorText(e), 'error');
-    } finally {
-      setImporting(false);
     }
   };
 
-  const togglePreview = async (s: Sample) => {
-    if (previewing && previewId === s.id) {
+  const togglePreview = async (x: Sample) => {
+    if (previewing && previewId === x.id) {
       engine.stopPreview();
       setPreviewId(null);
       return;
     }
     try {
-      setPreviewId(s.id);
-      await engine.preview(s, project.bpm);
+      setPreviewId(x.id);
+      await engine.preview(x, project.bpm);
     } catch (e) {
       toast(errorText(e), 'error');
     }
   };
 
-  const add = (s: Sample) => {
+  const add = (x: Sample) => {
     if (view === 'session') {
-      setState({ armedSampleId: s.id, panel: 'none' });
+      setState({ armedSampleId: x.id, panel: 'none' });
       toast('Tippe jetzt auf einen leeren Slot');
       return;
     }
-    void placeSample(s);
+    void placeSample(x);
     setState({ panel: 'none' });
   };
 
-  const remove = (s: Sample) => {
-    deleteSample(s);
-    setSamples(getState().samples.filter((x) => x.id !== s.id));
-    setEditing(null);
-  };
-
   return (
-    <View style={styles.sheet}>
-      <View style={styles.head}>
-        <Text style={styles.title}>Library</Text>
-        <Pressable onPress={() => setState({ panel: 'none' })}>
-          <Text style={styles.close}>✕</Text>
-        </Pressable>
-      </View>
+    <Sheet title="Library">
+      <Section title="Google Drive">
+        <Txt style={s.note}>Drive ist noch nicht eingerichtet. Samples kannst du direkt vom Gerät hochladen.</Txt>
+        <View style={[s.row, { marginTop: 10 }]}>
+          <Btn small onPress={() => void upload()}>
+            <Upload size={14} />
+            Vom Gerät hochladen
+          </Btn>
+        </View>
+      </Section>
 
-      <View style={styles.body}>
-        <Pressable style={styles.importBtn} onPress={() => void doImport()} disabled={importing}>
-          <Text style={styles.importBtnText}>{importing ? 'Importiere …' : '+ Samples vom Gerät importieren'}</Text>
-        </Pressable>
-        <Text style={styles.note}>Google-Drive-Sync folgt in einer späteren Phase.</Text>
+      <TextInput style={s.search} placeholder="Suchen …" placeholderTextColor={C.dim} value={query} onChangeText={setQuery} />
+      <ScrollView horizontal style={s.filtersScroll} contentContainerStyle={s.filters}>
+        {FILTERS.map((f) => (
+          <Chip key={f} variant={filter === f ? 'on' : 'ghost'} onPress={() => setFilter(f)}>
+            {f === 'all' ? 'Alle' : CATEGORY_LABELS[f]}
+          </Chip>
+        ))}
+        <Chip variant={tempoMatch ? 'on' : 'ghost'} onPress={() => setTempoMatch(!tempoMatch)}>
+          {`${project.bpm} BPM`}
+        </Chip>
+      </ScrollView>
 
-        <TextInput style={styles.search} placeholder="Suchen …" placeholderTextColor={Colors.textSecondary} value={query} onChangeText={setQuery} />
+      {list.length === 0 && <Txt style={[s.muted, { marginVertical: 14 }]}>Keine Samples gefunden.</Txt>}
 
-        <ScrollView horizontal style={styles.filters} contentContainerStyle={{ gap: 6 }}>
-          {FILTERS.map((f) => (
-            <Pressable key={f} style={[styles.chip, filter === f && styles.chipOn]} onPress={() => setFilter(f)}>
-              <Text style={styles.chipText}>{f === 'all' ? 'Alle' : CATEGORY_LABELS[f]}</Text>
+      {list.map((x) => (
+        <View key={x.id} style={s.sample}>
+          <View style={s.sampleMain}>
+            <IconBtn onPress={() => void togglePreview(x)} accessibilityLabel="Vorhören">
+              {previewing && previewId === x.id ? <Stop size={14} /> : <Play size={14} />}
+            </IconBtn>
+            <Pressable style={s.sampleName} onPress={() => setEditing(editing === x.id ? null : x.id)}>
+              <Txt numberOfLines={1} style={{ fontSize: 13 }}>
+                {x.name.replace(/\.[a-z0-9]+$/i, '')}
+              </Txt>
+              <Txt numberOfLines={1} style={s.meta}>
+                <Txt style={[s.meta, { color: CATEGORY_COLORS[x.category] }]}>●</Txt> {x.bpm ? `${x.bpm} BPM` : 'One-Shot'}
+                {x.key ? ` · ${x.key}` : ''}
+                {x.folder ? ` · ${x.folder}` : ''}
+              </Txt>
             </Pressable>
-          ))}
-        </ScrollView>
-
-        <ScrollView style={{ flex: 1 }}>
-          {list.length === 0 && <Text style={styles.note}>Keine Samples gefunden.</Text>}
-          {list.map((s) => (
-            <View key={s.id}>
-              <View style={styles.sampleRow}>
-                <Pressable style={styles.playBtn} onPress={() => void togglePreview(s)}>
-                  <Text style={styles.playBtnText}>{previewing && previewId === s.id ? '■' : '▶'}</Text>
-                </Pressable>
-                <Pressable style={styles.sampleInfo} onPress={() => setEditing(editing === s.id ? null : s.id)}>
-                  <Text style={styles.sampleName} numberOfLines={1}>
-                    {s.name.replace(/\.[a-z0-9]+$/i, '')}
-                  </Text>
-                  <Text style={styles.sampleMeta}>
-                    <Text style={{ color: CategoryColors[s.category] }}>● </Text>
-                    {s.bpm ? `${s.bpm} BPM` : 'One-Shot'}
-                    {s.key ? ` · ${s.key}` : ''}
-                  </Text>
-                </Pressable>
-                <Pressable style={styles.addBtn} onPress={() => add(s)}>
-                  <Text style={styles.addBtnText}>+</Text>
-                </Pressable>
-              </View>
-              {editing === s.id && <SampleEditor sample={s} onDone={() => setEditing(null)} onDelete={() => remove(s)} />}
-            </View>
-          ))}
-        </ScrollView>
-      </View>
-    </View>
+            <Btn small onPress={() => add(x)} accessibilityLabel="Hinzufügen">
+              <Plus size={14} />
+            </Btn>
+          </View>
+          {editing === x.id && <SampleEditor sample={x} onDone={() => setEditing(null)} />}
+        </View>
+      ))}
+    </Sheet>
   );
 }
 
-function SampleEditor({ sample, onDone, onDelete }: { sample: Sample; onDone: () => void; onDelete: () => void }) {
+function SampleEditor({ sample, onDone }: { sample: Sample; onDone: () => void }) {
   const [bpm, setBpm] = useState(sample.bpm ? String(sample.bpm) : '');
+  const [key, setKey] = useState(sample.key ?? '');
   const [category, setCategory] = useState<SampleCategory>(sample.category);
   const categories = Object.keys(CATEGORY_LABELS) as SampleCategory[];
+  const keys = ['', ...KEYS, ...(key && !KEYS.includes(key) ? [key] : [])];
 
   const save = async () => {
-    const v = Number(bpm);
-    await upsertSample({ ...sample, bpm: v >= 40 && v <= 250 ? v : undefined, category });
+    const v = Number(bpm.replace(',', '.'));
+    await upsertSample({ ...sample, bpm: v >= 40 && v <= 250 ? v : undefined, key: key || undefined, category });
     onDone();
   };
+  const remove = async () => {
+    await deleteSample(sample);
+    await db.deleteSample(sample.id);
+    setSamples(getState().samples.filter((x) => x.id !== sample.id));
+    onDone();
+  };
+  const cycle = <T,>(list: T[], current: T) => list[(list.indexOf(current) + 1) % list.length];
 
   return (
-    <View style={styles.editor}>
-      <TextInput style={styles.editField} keyboardType="decimal-pad" placeholder="BPM" placeholderTextColor={Colors.textSecondary} value={bpm} onChangeText={setBpm} />
-      <ScrollView horizontal contentContainerStyle={{ gap: 6 }}>
-        {categories.map((c) => (
-          <Pressable key={c} style={[styles.chip, category === c && styles.chipOn]} onPress={() => setCategory(c)}>
-            <Text style={styles.chipText}>{CATEGORY_LABELS[c]}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-      <View style={styles.editActions}>
-        <Pressable style={styles.deleteBtn} onPress={onDelete}>
-          <Text style={styles.deleteBtnText}>Entfernen</Text>
-        </Pressable>
-        <Pressable style={styles.saveBtn} onPress={() => void save()}>
-          <Text style={styles.saveBtnText}>Speichern</Text>
-        </Pressable>
-      </View>
+    <View style={s.edit}>
+      <TextInput style={[s.field, s.fieldInput]} inputMode="decimal" placeholder="BPM" placeholderTextColor={C.dim} value={bpm} onChangeText={setBpm} />
+      <Pressable style={s.field} onPress={() => setKey(cycle(keys, key))}>
+        <Txt numberOfLines={1} style={s.fieldText}>
+          {key || 'Tonart'}
+        </Txt>
+      </Pressable>
+      <Pressable style={s.field} onPress={() => setCategory(cycle(categories, category))}>
+        <Txt numberOfLines={1} style={s.fieldText}>
+          {CATEGORY_LABELS[category]}
+        </Txt>
+      </Pressable>
+      <Btn small kind="danger" style={s.cell} onPress={() => void remove()}>
+        Entfernen
+      </Btn>
+      <View style={s.cell} />
+      <Btn small kind="primary" style={s.cell} onPress={() => void save()}>
+        <Check size={14} color={C.accentInk} />
+        Speichern
+      </Btn>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  sheet: { flex: 1, backgroundColor: Colors.surface },
-  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: Spacing.three, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  title: { color: Colors.text, fontSize: 16, fontWeight: '700' },
-  close: { color: Colors.textSecondary, fontSize: 18 },
-  body: { flex: 1, padding: Spacing.three, gap: Spacing.two },
-  importBtn: { backgroundColor: Colors.accent, borderRadius: 8, padding: Spacing.two, alignItems: 'center' },
-  importBtnText: { color: '#0b0b0d', fontWeight: '700', fontSize: 13 },
-  note: { color: Colors.textSecondary, fontSize: 12 },
-  search: { backgroundColor: Colors.surfaceRaised, borderRadius: 8, padding: Spacing.two, color: Colors.text },
-  filters: { flexGrow: 0 },
-  chip: { backgroundColor: Colors.surfaceRaised, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  chipOn: { backgroundColor: Colors.accent },
-  chipText: { color: Colors.text, fontSize: 12 },
-  sampleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, paddingVertical: Spacing.one },
-  playBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
-  playBtnText: { color: Colors.text, fontSize: 11 },
-  sampleInfo: { flex: 1 },
-  sampleName: { color: Colors.text, fontSize: 13 },
-  sampleMeta: { color: Colors.textSecondary, fontSize: 11 },
-  addBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
-  addBtnText: { color: '#0b0b0d', fontSize: 16, fontWeight: '700' },
-  editor: { backgroundColor: Colors.surfaceRaised, borderRadius: 8, padding: Spacing.two, gap: Spacing.two, marginBottom: Spacing.one },
-  editField: { backgroundColor: Colors.surface, borderRadius: 6, padding: 8, color: Colors.text },
-  editActions: { flexDirection: 'row', justifyContent: 'space-between' },
-  deleteBtn: { backgroundColor: Colors.danger, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 },
-  deleteBtnText: { color: '#fff', fontSize: 12 },
-  saveBtn: { backgroundColor: Colors.accent, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6 },
-  saveBtnText: { color: '#0b0b0d', fontSize: 12, fontWeight: '700' },
+const s = StyleSheet.create({
+  note: { color: C.muted, fontSize: 13 },
+  muted: { color: C.muted },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  search: {
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.line,
+    backgroundColor: C.panel,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    color: C.text,
+    ...font(400),
+    fontSize: 14,
+    outlineWidth: 0,
+  },
+  filtersScroll: { flexGrow: 0 },
+  filters: { gap: 6, paddingBottom: 8 },
+  sample: { borderBottomWidth: 1, borderBottomColor: C.lineSoft },
+  sampleMain: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  sampleName: { flex: 1, minWidth: 0 },
+  meta: { ...mono(), fontSize: 11, color: C.muted },
+  edit: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 10 },
+  field: {
+    flexBasis: '31%',
+    flexGrow: 1,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.line,
+    backgroundColor: C.panel2,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+  },
+  fieldInput: { color: C.text, ...font(400), fontSize: 14, outlineWidth: 0 },
+  fieldText: { fontSize: 14 },
+  cell: { flexBasis: '31%', flexGrow: 1 },
 });

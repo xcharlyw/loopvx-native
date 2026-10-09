@@ -1,35 +1,70 @@
-import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
-import { Colors, Spacing } from '../constants/theme';
+import { memo, useMemo, useRef, useState } from 'react';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { C, RULER_H, font, layout } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { projectEndBars, snapBars } from '../audio/timing';
+import { projectEndBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
 import { createTrack, mapTrack } from '../lib/project';
 import { setState, updateProject, useStore } from '../lib/store';
-import type { Clip, SampleCategory, Track } from '../types';
-import { usePlayhead } from './hooks';
+import type { Clip, Track } from '../types';
+import { Fader } from './Fader';
+import { usePlayhead, useSmall } from './hooks';
+import { Plus } from './icons';
+import { Mono, MsButton, Txt } from './kit';
+import { Waveform } from './Waveform';
 
-const HEADER_W = 112;
-const ROW_H = 60;
+const ADD_ROW_H = 44;
+const BOTTOM_PAD = 170;
+
+const Grid = memo(function Grid({ zoom, totalBars, height }: { zoom: number; totalBars: number; height: number }) {
+  const labelEvery = zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8;
+  const barStep = labelEvery === 1 ? 1 : 4;
+  const lines: { x: number; strong: boolean }[] = [];
+  if (zoom >= 32) for (let i = 0; i < totalBars * 4; i++) if (i % (barStep * 4) !== 0) lines.push({ x: (i * zoom) / 4, strong: false });
+  for (let b = 0; b < totalBars; b += barStep) lines.push({ x: b * zoom, strong: true });
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { height }]}>
+      {lines.map((l, i) => (
+        <View key={i} style={[s.gridLine, { left: l.x, backgroundColor: l.strong ? '#24242a' : '#18181c' }]} />
+      ))}
+    </View>
+  );
+});
+
+/** Drawn above the sticky headers' right border, like the original (it starts 1px left of the lanes). */
+function Playhead({ zoom, headerW, scrollX }: { zoom: number; headerW: number; scrollX: Animated.Value }) {
+  const pos = usePlayhead();
+  return (
+    <View pointerEvents="none" style={[s.playheadClip, { left: headerW - 1 }]}>
+      <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX: Animated.multiply(scrollX, -1) }] }]}>
+        <View style={[s.playhead, { left: pos * zoom }]} />
+      </Animated.View>
+    </View>
+  );
+}
 
 export function ArrangeView() {
-  const project = useStore((s) => s.project);
-  const zoom = useStore((s) => s.zoom);
-  const samples = useStore((s) => s.samples);
-  const selectedTrackId = useStore((s) => s.selectedTrackId);
-  const selectedClipId = useStore((s) => s.selectedClipId);
-  const armedSampleId = useStore((s) => s.armedSampleId);
-  const pos = usePlayhead();
+  const project = useStore((st) => st.project);
+  const zoom = useStore((st) => st.zoom);
+  const samples = useStore((st) => st.samples);
+  const selectedTrackId = useStore((st) => st.selectedTrackId);
+  const selectedClipId = useStore((st) => st.selectedClipId);
+  const armedSampleId = useStore((st) => st.armedSampleId);
+  const small = useSmall();
+  const { headerW, rowH } = layout(small);
+  const [viewportH, setViewportH] = useState(0);
+  const scrollX = useRef(new Animated.Value(0)).current;
 
   const totalBars = Math.max(64, Math.ceil(projectEndBars(project)) + 16);
   const width = totalBars * zoom;
-  const grid = zoom >= 32 ? 0.25 : 1;
-  const sampleById = useMemo(() => new Map(samples.map((s) => [s.id, s])), [samples]);
-  const anySolo = project.tracks.some((t) => t.solo);
+  const labelEvery = zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8;
+  const sampleById = useMemo(() => new Map(samples.map((x) => [x.id, x])), [samples]);
   const isEmpty = project.tracks.every((t) => t.clips.length === 0);
+  const anySolo = project.tracks.some((t) => t.solo);
+  const bodyH = Math.max(viewportH, project.tracks.length * rowH + ADD_ROW_H + BOTTOM_PAD);
 
   const onLaneTap = (track: Track, e: GestureResponderEvent) => {
-    const bar = Math.max(0, snapBars(e.nativeEvent.locationX / zoom, grid));
+    const bar = Math.max(0, e.nativeEvent.locationX / zoom);
     setState({ selectedTrackId: track.id, selectedClipId: null });
     const armed = armedSampleId ? sampleById.get(armedSampleId) : undefined;
     if (armed) {
@@ -39,163 +74,239 @@ export function ArrangeView() {
     if (!engine.playing) setCursor(Math.floor(bar));
   };
 
-  const addTrack = (category: SampleCategory) =>
-    updateProject((p) => ({ ...p, tracks: [...p.tracks, createTrack(category, p.sceneCount)] }), { reschedule: false });
+  const loop = project.loop;
 
   return (
-    <ScrollView style={styles.outer}>
-      <ScrollView horizontal>
-        <View style={{ width: HEADER_W + width }}>
-          <View style={styles.loopStrip}>
+    <View style={s.arrange}>
+      <View style={s.rulerRow}>
+        <View style={[s.corner, { width: headerW }]} />
+        <View style={s.rulerClip}>
+          <Animated.View style={{ width, height: RULER_H, transform: [{ translateX: Animated.multiply(scrollX, -1) }] }}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={(e) => setCursor(Math.floor(Math.max(0, e.nativeEvent.locationX / zoom)))} />
+            {Array.from({ length: Math.ceil(totalBars / labelEvery) }, (_, i) => i * labelEvery).map((b) => (
+              <View key={b} pointerEvents="none" style={[s.rulerLabel, { left: b * zoom }]}>
+                <Mono style={s.rulerText}>{b + 1}</Mono>
+              </View>
+            ))}
             <View
+              pointerEvents="none"
               style={[
-                styles.loopRegion,
-                {
-                  left: HEADER_W + project.loop.start * zoom,
-                  width: (project.loop.end - project.loop.start) * zoom,
-                  opacity: project.loop.enabled ? 1 : 0.25,
-                },
+                s.loopRegion,
+                { left: loop.start * zoom, width: (loop.end - loop.start) * zoom },
+                !loop.enabled && s.loopRegionOff,
               ]}
             />
-          </View>
-          <View style={styles.ruler}>
-            <View style={{ width: HEADER_W }} />
-            <View style={{ width, height: 24 }}>
-              {Array.from({ length: Math.ceil(totalBars / 4) }, (_, i) => i * 4).map((b) => (
-                <Text key={b} style={[styles.rulerLabel, { left: b * zoom }]}>
-                  {b + 1}
-                </Text>
-              ))}
-            </View>
-          </View>
-
-          {project.tracks.map((track) => (
-            <View key={track.id} style={styles.row}>
-              <Pressable
-                style={[styles.header, selectedTrackId === track.id && styles.headerSelected, selectedTrackId === track.id && styles.headerAccent]}
-                onPress={() => setState({ selectedTrackId: track.id })}
-              >
-                <View style={styles.headerTop}>
-                  <View style={[styles.dot, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
-                  <Text style={styles.trackName} numberOfLines={1}>
-                    {track.name}
-                  </Text>
-                </View>
-                <View style={styles.msRow}>
-                  <Pressable
-                    style={[styles.ms, track.muted && styles.msOn]}
-                    onPress={() => updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, muted: !t.muted })), { reschedule: false })}
-                  >
-                    <Text style={styles.msText}>M</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.ms, track.solo && styles.msOn]}
-                    onPress={() => updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, solo: !t.solo })), { reschedule: false })}
-                  >
-                    <Text style={styles.msText}>S</Text>
-                  </Pressable>
-                </View>
-              </Pressable>
-
-              <Pressable
-                style={[styles.lane, { width }, selectedTrackId === track.id && styles.laneSelected]}
-                onPress={(e) => onLaneTap(track, e)}
-              >
-                {track.clips.map((clip) => (
-                  <ClipView
-                    key={clip.id}
-                    clip={clip}
-                    color={track.color}
-                    name={sampleById.get(clip.sampleId)?.name ?? 'Sample fehlt'}
-                    zoom={zoom}
-                    selected={selectedClipId === clip.id}
-                    onPress={() => setState({ selectedClipId: clip.id, selectedTrackId: track.id })}
-                  />
-                ))}
-              </Pressable>
-            </View>
-          ))}
-
-          <Pressable style={styles.addTrack} onPress={() => addTrack('other')}>
-            <Text style={styles.addTrackText}>+ Spur</Text>
-          </Pressable>
-
-          <View style={[styles.playhead, { left: HEADER_W + pos * zoom }]} />
+            <View pointerEvents="none" style={[s.loopHandle, { left: loop.start * zoom - 1 }]} />
+            <View pointerEvents="none" style={[s.loopHandle, { left: loop.end * zoom - 1 }]} />
+          </Animated.View>
         </View>
-      </ScrollView>
-      {isEmpty && (
-        <Text style={styles.emptyHint}>
-          Öffne die Library und tippe auf ein Sample – es landet automatisch auf der passenden Spur (Kick, Top, Synth oder
-          Vocals).
-        </Text>
-      )}
-    </ScrollView>
+      </View>
+
+      <View style={{ flex: 1 }} onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}>
+        <ScrollView contentContainerStyle={{ flexDirection: 'row', height: bodyH }}>
+          <View style={{ width: headerW }}>
+            {project.tracks.map((track) => {
+              const selected = selectedTrackId === track.id;
+              return (
+                <Pressable
+                  key={track.id}
+                  style={[s.trackHeader, { height: rowH }, small && s.trackHeaderSm, selected && s.trackHeaderSelected]}
+                  onPress={() => setState({ selectedTrackId: track.id })}
+                >
+                  <View style={s.trackTitle}>
+                    <View style={[s.dot, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
+                    <Txt numberOfLines={1} style={s.trackName}>
+                      {track.name}
+                    </Txt>
+                  </View>
+                  <View style={s.trackControls}>
+                    <MsButton
+                      label="M"
+                      on={track.muted}
+                      onPress={() => updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, muted: !t.muted })), { reschedule: false })}
+                    />
+                    <MsButton
+                      label="S"
+                      on={track.solo}
+                      onPress={() => updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, solo: !t.solo })), { reschedule: false })}
+                    />
+                    {!small && (
+                      <Fader
+                        value={track.volume}
+                        max={1.5}
+                        onChange={(v) => updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, volume: v })), { reschedule: false })}
+                      />
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
+            <View style={[s.trackHeader, { height: ADD_ROW_H }]}>
+              <Pressable
+                style={s.addTrack}
+                onPress={() => updateProject((p) => ({ ...p, tracks: [...p.tracks, createTrack('other', p.sceneCount)] }), { reschedule: false })}
+              >
+                <Plus size={14} color={C.dim} />
+                <Txt style={s.addTrackText}>Spur</Txt>
+              </Pressable>
+            </View>
+          </View>
+
+          <Animated.ScrollView
+            horizontal
+            style={{ flex: 1 }}
+            scrollEventThrottle={16}
+            onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: Platform.OS !== 'web' })}
+          >
+            <View style={{ width, height: bodyH }}>
+              <Grid zoom={zoom} totalBars={totalBars} height={bodyH} />
+              {project.tracks.map((track) => (
+                <Pressable
+                  key={track.id}
+                  style={[s.lane, { width, height: rowH }, selectedTrackId === track.id && s.laneSelected]}
+                  onPress={(e) => onLaneTap(track, e)}
+                >
+                  {track.clips.map((clip) => {
+                    const sample = sampleById.get(clip.sampleId);
+                    return (
+                      <ClipView
+                        key={clip.id}
+                        clip={clip}
+                        color={track.color}
+                        name={sample?.name ?? 'Sample fehlt'}
+                        zoom={zoom}
+                        height={rowH - 1 - 12}
+                        projectBpm={project.bpm}
+                        sampleBpm={sample?.bpm}
+                        selected={selectedClipId === clip.id}
+                        onPress={() => setState({ selectedClipId: clip.id, selectedTrackId: track.id })}
+                      />
+                    );
+                  })}
+                </Pressable>
+              ))}
+              {isEmpty && (
+                <View pointerEvents="none" style={[s.emptyHint, { left: 0.4 * (headerW + width) - 140, top: 0.45 * (bodyH + RULER_H) - RULER_H - 42 }]}>
+                  <Txt style={s.emptyText}>
+                    Öffne die <Txt style={[s.emptyText, font(700)]}>Library</Txt>, verbinde deinen Drive-Ordner und tippe auf ein Sample.
+                    {'\n'}Es landet automatisch auf der passenden Spur: Kick, Top, Synth oder Vocals.
+                  </Txt>
+                </View>
+              )}
+            </View>
+          </Animated.ScrollView>
+          <Playhead zoom={zoom} headerW={headerW} scrollX={scrollX} />
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
-function ClipView({
-  clip,
-  color,
-  name,
-  zoom,
-  selected,
-  onPress,
-}: {
+interface ClipViewProps {
   clip: Clip;
   color: string;
   name: string;
   zoom: number;
+  height: number;
+  projectBpm: number;
+  sampleBpm?: number;
   selected: boolean;
   onPress: () => void;
-}) {
-  const w = Math.max(10, clip.length * zoom);
+}
+
+function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, selected, onPress }: ClipViewProps) {
+  const w = Math.max(6, clip.length * zoom);
   return (
-    <Pressable onPress={onPress} style={[styles.clip, { left: clip.start * zoom, width: w, backgroundColor: color }, selected && styles.clipSelected]}>
-      <Text style={styles.clipName} numberOfLines={1}>
+    <Pressable onPress={onPress} style={[s.clip, { left: clip.start * zoom, width: w, backgroundColor: color }]}>
+      <Waveform
+        sampleId={clip.sampleId}
+        width={w - 2}
+        height={height - 2 - 16}
+        zoom={zoom}
+        projectBpm={projectBpm}
+        sampleBpm={sampleBpm}
+        offsetPx={clip.offset * zoom}
+      />
+      <Txt numberOfLines={1} style={s.clipName}>
         {name.replace(/\.[a-z0-9]+$/i, '')}
-      </Text>
+      </Txt>
+      <View pointerEvents="none" style={s.clipResize} />
+      {selected && <View pointerEvents="none" style={s.clipSelected} />}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  outer: { flex: 1, backgroundColor: Colors.background },
-  loopStrip: { height: 4 },
-  loopRegion: { position: 'absolute', top: 0, bottom: 0, backgroundColor: Colors.accent },
-  ruler: { flexDirection: 'row', height: 24, backgroundColor: Colors.surface },
-  rulerLabel: { position: 'absolute', top: 4, fontSize: 10, color: Colors.textSecondary },
-  row: { flexDirection: 'row', height: ROW_H, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  header: {
-    width: HEADER_W,
-    padding: Spacing.one,
-    justifyContent: 'space-between',
-    backgroundColor: Colors.surface,
-    borderRightWidth: 1,
-    borderRightColor: Colors.border,
+const s = StyleSheet.create({
+  arrange: { flex: 1, minHeight: 0, backgroundColor: C.bg2 },
+  rulerRow: { flexDirection: 'row', height: RULER_H, zIndex: 5 },
+  corner: { backgroundColor: C.bg, borderRightWidth: 1, borderBottomWidth: 1, borderColor: C.lineSoft },
+  rulerClip: { flex: 1, overflow: 'hidden', backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.lineSoft },
+  rulerLabel: { position: 'absolute', top: 6, height: 22, paddingLeft: 4, borderLeftWidth: 1, borderLeftColor: C.line },
+  rulerText: { fontSize: 11, color: C.dim, letterSpacing: 0 },
+  loopRegion: {
+    position: 'absolute',
+    top: 0,
+    height: 6,
+    backgroundColor: 'rgba(198,255,61,0.55)',
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
   },
-  headerSelected: { backgroundColor: Colors.surfaceRaised },
-  headerAccent: { borderLeftWidth: 3, borderLeftColor: Colors.accent },
-  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  trackName: { color: Colors.text, fontSize: 12, flexShrink: 1 },
-  msRow: { flexDirection: 'row', gap: 4 },
-  ms: { width: 20, height: 18, borderRadius: 4, backgroundColor: Colors.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
-  msOn: { backgroundColor: Colors.accent },
-  msText: { fontSize: 10, color: Colors.text, fontWeight: '700' },
-  lane: { backgroundColor: Colors.background },
-  laneSelected: { backgroundColor: Colors.surface },
+  loopRegionOff: { backgroundColor: 'rgba(139,139,147,0.35)' },
+  loopHandle: { position: 'absolute', top: 0, width: 2, height: 12, backgroundColor: C.accent },
+  gridLine: { position: 'absolute', top: 0, bottom: 0, width: 1 },
+  trackHeader: {
+    backgroundColor: C.bg,
+    borderRightWidth: 1,
+    borderRightColor: C.lineSoft,
+    borderBottomWidth: 1,
+    borderBottomColor: C.lineSoft,
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
+    justifyContent: 'center',
+    gap: 6,
+    paddingLeft: 12,
+    paddingRight: 10,
+  },
+  trackHeaderSm: { paddingLeft: 8, paddingRight: 6 },
+  trackHeaderSelected: { backgroundColor: C.bg2, borderLeftColor: C.accent },
+  trackTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, overflow: 'hidden' },
+  dot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  trackName: { ...font(600), fontSize: 13, flexShrink: 1 },
+  trackControls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  addTrack: { flexDirection: 'row', alignItems: 'center', gap: 8, height: ADD_ROW_H },
+  addTrackText: { color: C.dim, fontSize: 13 },
+  lane: { borderBottomWidth: 1, borderBottomColor: C.lineSoft },
+  laneSelected: { backgroundColor: 'rgba(255,255,255,0.015)' },
   clip: {
     position: 'absolute',
-    top: 4,
-    bottom: 4,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    justifyContent: 'center',
+    top: 6,
+    bottom: 6,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.35)',
   },
-  clipSelected: { borderWidth: 2, borderColor: Colors.text },
-  clipName: { fontSize: 10, color: '#0b0b0d', fontWeight: '600' },
-  addTrack: { height: 36, justifyContent: 'center', paddingLeft: Spacing.two },
-  addTrackText: { color: Colors.textSecondary, fontSize: 12 },
-  playhead: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: Colors.accent },
-  emptyHint: { padding: Spacing.four, color: Colors.textSecondary, fontSize: 13, textAlign: 'center' },
+  clipName: {
+    position: 'absolute',
+    top: 3,
+    left: 6,
+    right: 14,
+    fontSize: 11,
+    ...font(600),
+    color: 'rgba(0,0,0,0.75)',
+  },
+  clipResize: {
+    position: 'absolute',
+    right: 4,
+    top: '35%',
+    height: '30%',
+    width: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  clipSelected: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderWidth: 2, borderColor: '#fff', borderRadius: 7 },
+  playheadClip: { position: 'absolute', top: 0, bottom: 0, right: 0, overflow: 'hidden', zIndex: 2 },
+  playhead: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: C.accent },
+  emptyHint: { position: 'absolute', width: 280 },
+  emptyText: { color: C.dim, textAlign: 'center', lineHeight: 21 },
 });

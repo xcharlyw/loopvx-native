@@ -1,23 +1,40 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Colors, Spacing } from '../constants/theme';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { C, font, layout, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { placeSample, sceneToArrangement } from '../lib/actions';
 import { setSlot } from '../lib/project';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
-import { useEngine } from './hooks';
+import { useEngine, useSmall } from './hooks';
+import { Play, Stop, TimelineIcon } from './icons';
+import { Btn, IconBtn, Spacer, Txt } from './kit';
 
-const SLOT_W = 96;
-const SCENE_COL_W = 44;
+const GAP = 6;
+
+function PulseDot() {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.2, duration: 800, useNativeDriver: false }),
+        Animated.timing(opacity, { toValue: 1, duration: 800, useNativeDriver: false }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [opacity]);
+  return <Animated.View style={[s.pulse, { opacity }]} />;
+}
 
 export function SessionView() {
-  const project = useStore((s) => s.project);
-  const samples = useStore((s) => s.samples);
-  const armedSampleId = useStore((s) => s.armedSampleId);
+  const project = useStore((st) => st.project);
+  const samples = useStore((st) => st.samples);
+  const armedSampleId = useStore((st) => st.armedSampleId);
   useEngine(() => engine.sessionVersion);
   const active = engine.activeSlots();
   const [editing, setEditing] = useState(false);
-  const sampleById = new Map(samples.map((s) => [s.id, s]));
+  const { slotW } = layout(useSmall());
+  const sampleById = new Map(samples.map((x) => [x.id, x]));
   const armed = armedSampleId ? sampleById.get(armedSampleId) : undefined;
 
   const run = (p: Promise<unknown>) => void p.catch((e) => toast(errorText(e), 'error'));
@@ -43,39 +60,45 @@ export function SessionView() {
   };
 
   return (
-    <ScrollView style={styles.outer}>
-      <View style={styles.toolbar}>
-        <Text style={styles.hint}>{armed ? `Tippe auf einen Slot für „${armed.name}"` : 'Clips starten immer auf den nächsten Takt.'}</Text>
+    <ScrollView style={s.session} contentContainerStyle={{ padding: 12 }}>
+      <View style={[s.row, { marginBottom: 10 }]}>
+        <Txt style={s.hint}>{armed ? `Tippe auf einen Slot für „${armed.name}“` : 'Clips starten immer auf den nächsten Takt.'}</Txt>
+        <Spacer />
         {armed && (
-          <Pressable style={styles.btn} onPress={() => setState({ armedSampleId: null })}>
-            <Text style={styles.btnText}>Abbrechen</Text>
-          </Pressable>
+          <Btn small onPress={() => setState({ armedSampleId: null })}>
+            Abbrechen
+          </Btn>
         )}
-        <Pressable style={[styles.btn, editing && styles.btnPrimary]} onPress={() => setEditing(!editing)}>
-          <Text style={styles.btnText}>{editing ? 'Fertig' : 'Slots leeren'}</Text>
-        </Pressable>
+        <Btn small kind={editing ? 'primary' : 'default'} onPress={() => setEditing(!editing)}>
+          {editing ? 'Fertig' : 'Slots leeren'}
+        </Btn>
       </View>
 
       <ScrollView horizontal>
-        <View>
-          <View style={styles.headRow}>
-            <View style={{ width: SCENE_COL_W }} />
+        <View style={{ gap: GAP }}>
+          <View style={s.gridRow}>
+            <View style={{ width: 44 }} />
             {project.tracks.map((t) => (
-              <View key={t.id} style={[styles.sessionHead, { borderTopColor: t.color }]}>
-                <Text style={styles.sessionHeadText} numberOfLines={1}>
+              <View key={t.id} style={[s.head, { width: slotW, borderTopColor: t.color }]}>
+                <Txt numberOfLines={1} style={s.headText}>
                   {t.name}
-                </Text>
-                <Pressable style={styles.stopTrackBtn} onPress={() => engine.stopTrack(t.id)}>
-                  <Text style={styles.stopTrackText}>■</Text>
-                </Pressable>
+                </Txt>
+                <IconBtn style={s.headStop} onPress={() => engine.stopTrack(t.id)}>
+                  <Stop size={12} />
+                </IconBtn>
               </View>
             ))}
           </View>
 
           {Array.from({ length: project.sceneCount }, (_, scene) => (
-            <View key={scene} style={styles.sceneRow}>
-              <Pressable style={styles.sceneBtn} onPress={() => run(engine.launchScene(getState().project, scene))}>
-                <Text style={styles.sceneBtnText}>▶ {scene + 1}</Text>
+            <View key={scene} style={s.gridRow}>
+              <Pressable style={s.sceneBtn} onPress={() => run(engine.launchScene(getState().project, scene))}>
+                <View style={s.sceneCell}>
+                  <Play size={14} color={C.muted} />
+                </View>
+                <View style={s.sceneCell}>
+                  <Txt style={s.sceneNum}>{scene + 1}</Txt>
+                </View>
               </Pressable>
               {project.tracks.map((t) => {
                 const slot = t.slots[scene];
@@ -85,16 +108,25 @@ export function SessionView() {
                   <Pressable
                     key={t.id}
                     style={[
-                      styles.slot,
-                      slot && { backgroundColor: editing ? Colors.surfaceRaised : t.color },
-                      playing && styles.slotPlaying,
-                      armed && !slot && styles.slotArmed,
+                      s.slot,
+                      { width: slotW },
+                      slot && { borderStyle: 'solid', backgroundColor: editing ? '#3a3a40' : t.color },
+                      armed && !slot && { borderColor: C.accent },
+                      playing && s.slotPlaying,
                     ]}
                     onPress={() => onSlot(t.id, scene)}
                   >
-                    <Text style={[styles.slotText, slot && !editing && { color: '#0b0b0d' }]} numberOfLines={2}>
+                    <Txt
+                      numberOfLines={2}
+                      style={[
+                        s.slotText,
+                        slot && { color: editing ? '#fff' : '#111', ...font(600) },
+                        armed && !slot && { color: C.accent },
+                      ]}
+                    >
                       {slot ? (sample?.name.replace(/\.[a-z0-9]+$/i, '') ?? 'Sample fehlt') : '+'}
-                    </Text>
+                    </Txt>
+                    {playing && <PulseDot />}
                   </Pressable>
                 );
               })}
@@ -103,13 +135,14 @@ export function SessionView() {
         </View>
       </ScrollView>
 
-      <View style={styles.toolbar}>
-        <Text style={styles.hint}>Szene ins Arrangement übernehmen (am Playhead):</Text>
+      <View style={[s.row, { marginTop: 14 }]}>
+        <Txt style={s.hint}>Szene ins Arrangement übernehmen (am Playhead):</Txt>
         {Array.from({ length: project.sceneCount }, (_, scene) =>
           project.tracks.some((t) => t.slots[scene]) ? (
-            <Pressable key={scene} style={styles.btn} onPress={() => run(sceneToArrangement(scene))}>
-              <Text style={styles.btnText}>→ {scene + 1}</Text>
-            </Pressable>
+            <Btn key={scene} small onPress={() => run(sceneToArrangement(scene))}>
+              <TimelineIcon size={12} />
+              {String(scene + 1)}
+            </Btn>
           ) : null,
         )}
       </View>
@@ -117,42 +150,47 @@ export function SessionView() {
   );
 }
 
-const styles = StyleSheet.create({
-  outer: { flex: 1, backgroundColor: Colors.background, padding: Spacing.two },
-  toolbar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.one, marginBottom: Spacing.two },
-  hint: { color: Colors.textSecondary, fontSize: 12, flexShrink: 1 },
-  btn: { backgroundColor: Colors.surfaceRaised, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  btnPrimary: { backgroundColor: Colors.accent },
-  btnText: { color: Colors.text, fontSize: 12 },
-  headRow: { flexDirection: 'row' },
-  sessionHead: {
-    width: SLOT_W,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
-    borderTopWidth: 2,
-    backgroundColor: Colors.surface,
+const s = StyleSheet.create({
+  session: { flex: 1, minHeight: 0, backgroundColor: C.bg },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  hint: { color: C.muted, fontSize: 12 },
+  gridRow: { flexDirection: 'row', gap: GAP },
+  head: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 6,
+    height: 40,
+    paddingLeft: 10,
+    paddingRight: 8,
+    borderRadius: 10,
+    backgroundColor: C.panel,
+    borderTopWidth: 3,
   },
-  sessionHeadText: { color: Colors.text, fontSize: 12, flex: 1 },
-  stopTrackBtn: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  stopTrackText: { color: Colors.textSecondary, fontSize: 10 },
-  sceneRow: { flexDirection: 'row' },
-  sceneBtn: { width: SCENE_COL_W, height: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface, borderRightWidth: 1, borderBottomWidth: 1, borderColor: Colors.border },
-  sceneBtnText: { color: Colors.textSecondary, fontSize: 10 },
-  slot: {
-    width: SLOT_W,
+  headText: { ...font(600), fontSize: 12, flexShrink: 1 },
+  headStop: { minWidth: 26, height: 26, paddingHorizontal: 0 },
+  sceneBtn: {
+    width: 44,
     height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.surface,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: Colors.border,
-    padding: 4,
+    borderRadius: 10,
+    backgroundColor: C.panel,
+    borderWidth: 1,
+    borderColor: C.line,
   },
-  slotPlaying: { borderColor: Colors.accent, borderWidth: 2 },
-  slotArmed: { backgroundColor: Colors.surfaceRaised },
-  slotText: { color: Colors.textSecondary, fontSize: 11, textAlign: 'center' },
+  // The original is a 2-row CSS grid (place-items: center): each row is half the button.
+  sceneCell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  sceneNum: { ...mono(), fontSize: 11, color: C.muted },
+  slot: {
+    height: 52,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: C.line,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
+  },
+  slotPlaying: { borderWidth: 2, borderColor: '#fff', paddingVertical: 5, paddingHorizontal: 9 },
+  slotText: { fontSize: 11, color: C.dim },
+  pulse: { position: 'absolute', right: 8, top: 8, width: 8, height: 8, borderRadius: 4, backgroundColor: '#111' },
 });

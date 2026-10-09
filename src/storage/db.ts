@@ -22,6 +22,16 @@ export const db = {
     await AsyncStorage.setItem(SAMPLES_KEY, JSON.stringify(next));
   },
 
+  async deleteSample(id: string): Promise<void> {
+    const samples = await db.getSamples();
+    await AsyncStorage.setItem(SAMPLES_KEY, JSON.stringify(samples.filter((s) => s.id !== id)));
+  },
+
+  async deleteProject(id: string): Promise<void> {
+    const projects = await db.getProjects();
+    await AsyncStorage.setItem(PROJECTS_KEY, JSON.stringify(projects.filter((p) => p.id !== id)));
+  },
+
   async getProjects(): Promise<Project[]> {
     return readJson<Project[]>(PROJECTS_KEY, []);
   },

@@ -1,13 +1,17 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Colors, Spacing } from '../constants/theme';
-import { deleteSelectedClip, duplicateSelectedClip, scaleSelectedClip } from '../lib/actions';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
+import { deleteSelectedClip, duplicateSelectedClip, scaleSelectedClip } from '../lib/actions';
 import { setState, useStore } from '../lib/store';
+import { Copy, GridIcon, Mixer, TimelineIcon, Trash, ZoomIn, ZoomOut } from './icons';
+import { IconBtn, PillGroup, Spacer, Txt, iconColor } from './kit';
 
 export function BottomBar() {
   const view = useStore((s) => s.view);
   const zoom = useStore((s) => s.zoom);
   const selectedClipId = useStore((s) => s.selectedClipId);
+  const insets = useSafeAreaInsets();
 
   const switchView = (v: 'arrange' | 'session') => {
     if (v === view) return;
@@ -16,69 +20,64 @@ export function BottomBar() {
   };
 
   return (
-    <View style={styles.bar}>
-      <View style={styles.group}>
-        <Pressable style={styles.btn} onPress={() => setState({ panel: 'mixer' })}>
-          <Text style={styles.btnText}>🎚</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.group}>
-        <Pressable style={[styles.btn, view === 'arrange' && styles.btnOn]} onPress={() => switchView('arrange')}>
-          <Text style={styles.btnText}>Arrange</Text>
-        </Pressable>
-        <Pressable style={[styles.btn, view === 'session' && styles.btnOn]} onPress={() => switchView('session')}>
-          <Text style={styles.btnText}>Session</Text>
-        </Pressable>
-      </View>
+    <View style={[s.bar, { paddingBottom: 8 + insets.bottom }]}>
+      <PillGroup>
+        <IconBtn accessibilityLabel="Mixer" onPress={() => setState({ panel: 'mixer' })}>
+          <Mixer size={18} />
+        </IconBtn>
+      </PillGroup>
+      <PillGroup>
+        <IconBtn accessibilityLabel="Arrangement" onPress={() => switchView('arrange')}>
+          <TimelineIcon size={18} color={iconColor(view === 'arrange')} />
+        </IconBtn>
+        <IconBtn accessibilityLabel="Session-Grid" onPress={() => switchView('session')}>
+          <GridIcon size={18} color={iconColor(view === 'session')} />
+        </IconBtn>
+      </PillGroup>
 
       {view === 'arrange' && selectedClipId && (
-        <View style={styles.group}>
-          <Pressable style={styles.btn} onPress={() => scaleSelectedClip(0.5)}>
-            <Text style={styles.btnText}>½</Text>
-          </Pressable>
-          <Pressable style={styles.btn} onPress={() => scaleSelectedClip(2)}>
-            <Text style={styles.btnText}>×2</Text>
-          </Pressable>
-          <Pressable style={styles.btn} onPress={duplicateSelectedClip}>
-            <Text style={styles.btnText}>Dup</Text>
-          </Pressable>
-          <Pressable style={styles.btn} onPress={deleteSelectedClip}>
-            <Text style={styles.btnText}>Del</Text>
-          </Pressable>
-        </View>
+        <PillGroup>
+          <IconBtn accessibilityLabel="Halbe Länge" onPress={() => scaleSelectedClip(0.5)}>
+            <Txt>½</Txt>
+          </IconBtn>
+          <IconBtn accessibilityLabel="Doppelte Länge" onPress={() => scaleSelectedClip(2)}>
+            <Txt>×2</Txt>
+          </IconBtn>
+          <IconBtn accessibilityLabel="Duplizieren" onPress={duplicateSelectedClip}>
+            <Copy size={16} />
+          </IconBtn>
+          <IconBtn accessibilityLabel="Löschen" onPress={deleteSelectedClip}>
+            <Trash size={16} />
+          </IconBtn>
+        </PillGroup>
       )}
 
-      <View style={styles.spacer} />
+      <Spacer />
 
       {view === 'arrange' && (
-        <View style={styles.group}>
-          <Pressable style={styles.btn} onPress={() => setState({ zoom: Math.max(8, zoom / 1.4) })}>
-            <Text style={styles.btnText}>−</Text>
-          </Pressable>
-          <Pressable style={styles.btn} onPress={() => setState({ zoom: Math.min(240, zoom * 1.4) })}>
-            <Text style={styles.btnText}>+</Text>
-          </Pressable>
-        </View>
+        <PillGroup>
+          <IconBtn accessibilityLabel="Herauszoomen" onPress={() => setState({ zoom: Math.max(8, zoom / 1.4) })}>
+            <ZoomOut size={18} />
+          </IconBtn>
+          <IconBtn accessibilityLabel="Hineinzoomen" onPress={() => setState({ zoom: Math.min(240, zoom * 1.4) })}>
+            <ZoomIn size={18} />
+          </IconBtn>
+        </PillGroup>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-    backgroundColor: Colors.surface,
+    gap: 8,
+    paddingTop: 8,
+    paddingHorizontal: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    borderTopColor: C.lineSoft,
+    backgroundColor: C.bg,
+    zIndex: 5,
   },
-  group: { flexDirection: 'row', gap: 4 },
-  spacer: { flex: 1 },
-  btn: { backgroundColor: Colors.surfaceRaised, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  btnOn: { backgroundColor: Colors.accent },
-  btnText: { color: Colors.text, fontSize: 12 },
 });

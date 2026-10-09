@@ -1,5 +1,9 @@
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
 import { engine } from '../audio/engine';
-import { sampleLengthBars } from '../audio/timing';
+import { projectEndBars, sampleLengthBars } from '../audio/timing';
+import { encodeWav } from '../audio/wav';
 import type { Sample } from '../types';
 import { addClip, findClip, removeClip, setSlot, trackForSample, uid, updateClip } from './project';
 import { errorText, getState, setState, toast, updateProject } from './store';
@@ -102,5 +106,41 @@ export async function sceneToArrangement(scene: number) {
   toast(`Szene ${scene + 1} ins Arrangement übernommen`);
 }
 
-// WAV export (like the web app's exportWav) needs expo-sharing + a native WAV encoder
-// and lands with the rest of phase 2.
+export async function exportWav() {
+  const { project } = getState();
+  const region = project.loop.enabled
+    ? { from: project.loop.start, to: project.loop.end }
+    : { from: 0, to: projectEndBars(project) };
+  if (!project.tracks.some((t) => t.clips.length)) {
+    toast('Nichts zu exportieren – lege zuerst Clips ins Arrangement.');
+    return;
+  }
+  toast('Export läuft …');
+  try {
+    const buffer = await engine.render(project, region);
+    const channels: Float32Array[] = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+    const wav = encodeWav({ sampleRate: buffer.sampleRate, channels });
+    const name = `${project.name.replace(/[^\w\s-]/g, '').trim() || 'loopvx'} ${project.bpm}bpm.wav`;
+    await saveWav(wav, name);
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+async function saveWav(wav: ArrayBuffer, name: string) {
+  if (Platform.OS === 'web') {
+    const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
+  }
+  const file = new File(Paths.cache, name);
+  if (file.exists) file.delete();
+  file.create();
+  file.write(new Uint8Array(wav));
+  await Sharing.shareAsync(file.uri, { mimeType: 'audio/wav', dialogTitle: name, UTI: 'com.microsoft.waveform-audio' });
+}

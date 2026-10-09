@@ -1,30 +1,43 @@
-import { Platform } from 'react-native';
-import { BRAND_COLOR } from '../config';
-import type { SampleCategory } from '../types';
+import type { TextStyle } from 'react-native';
 
-/** Dark, Suno-studio-style palette. LOOPVX is dark-first; a light theme is not a current goal. */
-export const Colors = {
-  background: '#0b0b0d',
-  surface: '#15151a',
-  surfaceRaised: '#1d1d24',
-  border: '#2a2a32',
-  text: '#f2f2f5',
-  textSecondary: '#8c8c96',
-  accent: BRAND_COLOR,
+/** Design tokens, copied 1:1 from the original web app's `:root` in styles.css. */
+export const C = {
+  bg: '#0d0d0f',
+  bg2: '#121214',
+  panel: '#18181b',
+  panel2: '#1f1f23',
+  line: '#26262b',
+  lineSoft: '#1b1b1f',
+  text: '#ececef',
+  muted: '#8b8b93',
+  dim: '#5b5b63',
+  accent: '#c6ff3d',
+  accentInk: '#0d0d0f',
   danger: '#ff5a5a',
+  mute: '#ff9a3d',
 } as const;
 
-export const CategoryColors: Record<SampleCategory, string> = {
-  kick: '#ff5a36',
-  top: '#ffc53d',
-  synth: '#3dd6ff',
-  vocal: BRAND_COLOR,
-  other: '#b28cff',
-};
+export const RADIUS = 14;
+export const RULER_H = 28;
 
-export const Fonts = Platform.select({
-  ios: { mono: 'ui-monospace', sans: 'system-ui' },
-  default: { mono: 'monospace', sans: 'normal' },
+/** Breakpoint-dependent sizes (the original's `@media (max-width: 720px)`). */
+export const layout = (small: boolean) => ({
+  headerW: small ? 112 : 176,
+  rowH: small ? 60 : 68,
+  slotW: small ? 118 : 150,
 });
 
-export const Spacing = { half: 2, one: 4, two: 8, three: 16, four: 24, five: 32 } as const;
+type Weight = 400 | 500 | 600 | 700;
+
+const INTER: Record<Weight, string> = {
+  400: 'Inter_400Regular',
+  500: 'Inter_500Medium',
+  600: 'Inter_600SemiBold',
+  700: 'Inter_700Bold',
+};
+
+/** Custom fonts need one family per weight on native, so weights go through here. */
+export const font = (weight: Weight = 400): TextStyle => ({ fontFamily: INTER[weight] });
+export const mono = (weight: 400 | 500 = 400): TextStyle => ({
+  fontFamily: weight === 500 ? 'JetBrainsMono_500Medium' : 'JetBrainsMono_400Regular',
+});

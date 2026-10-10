@@ -1,4 +1,4 @@
-import { generatePattern, PATTERN_STYLES, seededRandom } from './patterns';
+import { DRUM_STYLES, generatePattern, PATTERN_STYLES, seededRandom } from './patterns';
 
 describe('generatePattern', () => {
   it('is deterministic per seed and varies across seeds', () => {
@@ -8,7 +8,7 @@ describe('generatePattern', () => {
   });
 
   it('keeps every style inside the clip with valid notes', () => {
-    for (const { id } of PATTERN_STYLES) {
+    for (const { id } of [...PATTERN_STYLES, ...DRUM_STYLES]) {
       for (const bars of [1, 2, 3, 4, 8]) {
         const notes = generatePattern(id, { root: 9, bars, seed: 7 });
         expect(notes.length).toBeGreaterThan(0);
@@ -51,5 +51,20 @@ describe('generatePattern', () => {
       expect(v).toBeGreaterThanOrEqual(0);
       expect(v).toBeLessThan(1);
     }
+  });
+});
+
+describe('drum patterns', () => {
+  it('put every hit on C3, the sample instrument root', () => {
+    for (const { id } of DRUM_STYLES) expect(generatePattern(id, { root: 7, bars: 2, seed: 9 }).every((n) => n.pitch === 60)).toBe(true);
+  });
+
+  it('kick is four on the floor', () => {
+    const beats = generatePattern('kick', { root: 0, bars: 1, seed: 1 }).filter((n) => n.velocity === 1).map((n) => n.start);
+    expect(beats).toEqual([0, 0.25, 0.5, 0.75]);
+  });
+
+  it('offbeat hat sits between the kicks', () => {
+    expect(generatePattern('hat', { root: 0, bars: 1, seed: 1 }).map((n) => n.start)).toEqual([0.125, 0.375, 0.625, 0.875]);
   });
 });

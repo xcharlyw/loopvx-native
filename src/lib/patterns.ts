@@ -3,7 +3,7 @@ import type { Note } from '../types';
 // Pattern generator for MIDI clips: hard techno building blocks in a minor key.
 // Pure and seeded, so "Würfeln" gives a new variation and tests stay deterministic.
 
-export type PatternStyle = 'rumble' | 'offbeat' | 'acid' | 'arp' | 'stabs';
+export type PatternStyle = 'rumble' | 'offbeat' | 'acid' | 'arp' | 'stabs' | 'kick' | 'hat' | 'clap' | 'hats16';
 
 export const PATTERN_STYLES: { id: PatternStyle; label: string }[] = [
   { id: 'rumble', label: 'Rumble' },
@@ -12,6 +12,16 @@ export const PATTERN_STYLES: { id: PatternStyle; label: string }[] = [
   { id: 'arp', label: 'Arp' },
   { id: 'stabs', label: 'Stabs' },
 ];
+
+/** For sample instruments: one drum sound per track, on the sample's own pitch (C3). */
+export const DRUM_STYLES: { id: PatternStyle; label: string }[] = [
+  { id: 'kick', label: 'Kick 4/4' },
+  { id: 'hat', label: 'Offbeat-Hat' },
+  { id: 'clap', label: 'Clap 2 & 4' },
+  { id: 'hats16', label: '16tel-Hats' },
+];
+
+export const isDrumStyle = (style: PatternStyle) => DRUM_STYLES.some((d) => d.id === style);
 
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -115,12 +125,41 @@ function stabs(root: number, rand: () => number): Note[] {
   return chosen.flatMap((step) => chord.map((p) => note(p, step, 1, 0.85)));
 }
 
-const PHRASE_BARS: Record<PatternStyle, number> = { rumble: 2, offbeat: 2, acid: 2, arp: 4, stabs: 1 };
+const DRUM = 60; // C3: a sample instrument's original pitch
+
+/** Four on the floor; now and then a ghost kick before the next bar. */
+function kick(_root: number, rand: () => number): Note[] {
+  const notes = Array.from({ length: 8 }, (_, beat) => note(DRUM, beat * 4, 1, 1));
+  if (rand() < 0.5) notes.push(note(DRUM, 31, 1, 0.55));
+  return notes;
+}
+
+/** Open hat on every off-beat. */
+const hat = (): Note[] => Array.from({ length: 8 }, (_, beat) => note(DRUM, beat * 4 + 2, 1, 0.8));
+
+/** Clap on beats 2 and 4, sometimes a flam into the last one. */
+function clap(_root: number, rand: () => number): Note[] {
+  const notes = Array.from({ length: 4 }, (_, i) => note(DRUM, i * 8 + 4, 1, 0.9));
+  if (rand() < 0.5) notes.push(note(DRUM, 27, 1, 0.5));
+  return notes;
+}
+
+/** Closed hats in 16ths: accented off-beats, some steps left out. */
+function hats16(_root: number, rand: () => number): Note[] {
+  const notes: Note[] = [];
+  for (let i = 0; i < 32; i++) {
+    if (i % 4 === 2) notes.push(note(DRUM, i, 1, 0.95));
+    else if (rand() < 0.8) notes.push(note(DRUM, i, 1, i % 2 ? 0.45 + rand() * 0.15 : 0.6));
+  }
+  return notes;
+}
+
+const PHRASE_BARS: Record<PatternStyle, number> = { rumble: 2, offbeat: 2, acid: 2, arp: 4, stabs: 1, kick: 2, hat: 2, clap: 2, hats16: 2 };
 
 /** A pattern of `style` in the minor key on `root` (0 = C … 11 = B), filling `bars` bars. */
 export function generatePattern(style: PatternStyle, opts: { root: number; bars: number; seed: number }): Note[] {
   const rand = seededRandom(opts.seed);
   const root = ((Math.round(opts.root) % 12) + 12) % 12;
-  const make = { rumble, offbeat, acid, arp, stabs }[style];
+  const make = { rumble, offbeat, acid, arp, stabs, kick, hat, clap, hats16 }[style];
   return repeat(make(root, rand), PHRASE_BARS[style], Math.max(STEP, opts.bars));
 }

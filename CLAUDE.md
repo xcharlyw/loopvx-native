@@ -89,6 +89,9 @@ use WaveShaper/Convolver/StereoPanner, which react-native-audio-api implements n
 has heard on a phone yet).
 
 MIDI notes: a clip with `notes` is a MIDI clip and plays its track's instrument (`track.synth`: an
-oscillator, or `wave: 'sample'` = a library sample, original pitch on C3 = 60, Ableton naming).
+oscillator; `wave: 'sample'` = a library sample, original pitch on C3 = 60, Ableton naming;
+`'kick'` / `'noise'` = synthesized drums). Drum instruments get drum patterns and ring out like
+one-shots (`noteHold`). Track effects incl. `pump` (beat ducking, scheduled per window like the
+metronome) live in `mixgraph.ts`.
 Effects (`track.fx`) change through `updateProject(…, { reschedule: false })`: `syncMixer` applies
 them to the running graph, rescheduling would restart every voice.

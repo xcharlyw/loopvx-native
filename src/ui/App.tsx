@@ -20,6 +20,7 @@ import { startSync } from '../lib/sync';
 import { ArrangeView } from './ArrangeView';
 import { BottomBar } from './BottomBar';
 import { ClipPanel } from './ClipPanel';
+import { ExportPanel } from './ExportPanel';
 import { Txt } from './kit';
 import { LibraryPanel } from './LibraryPanel';
 import { MixerPanel } from './MixerPanel';
@@ -55,6 +56,7 @@ function Shell() {
             {panel === 'projects' && <ProjectsPanel />}
             {panel === 'clip' && <ClipPanel />}
             {panel === 'track' && <TrackPanel />}
+            {panel === 'export' && <ExportPanel />}
           </View>
         </View>
       </Modal>

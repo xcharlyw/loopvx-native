@@ -1,11 +1,13 @@
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import { zipSync } from 'fflate';
 import { Platform } from 'react-native';
 import { engine } from '../audio/engine';
 import { projectEndBars, sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
-import type { Sample } from '../types';
+import type { Project, Sample } from '../types';
 import { addClip, editClip, findClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
+import { readSampleData } from './samples';
 import { errorText, getState, recordHistory, setState, toast, updateProject, upsertSample } from './store';
 
 export async function togglePlay() {
@@ -155,31 +157,74 @@ export async function sceneToArrangement(scene: number) {
   toast(`Szene ${scene + 1} ins Arrangement übernommen`);
 }
 
+/** What gets exported: the loop when it is on, otherwise the whole arrangement. */
+export function exportRegion(project = getState().project): { from: number; to: number } {
+  return project.loop.enabled ? { from: project.loop.start, to: project.loop.end } : { from: 0, to: projectEndBars(project) };
+}
+
+const fileSafe = (name: string, fallback: string) => name.replace(/[^\w\s+.-]/g, '').trim() || fallback;
+
+async function renderWav(project: Project, region: { from: number; to: number }): Promise<Uint8Array> {
+  const buffer = await engine.render(project, region);
+  const channels: Float32Array[] = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+  return new Uint8Array(encodeWav({ sampleRate: buffer.sampleRate, channels }));
+}
+
 export async function exportWav() {
   const { project } = getState();
-  const region = project.loop.enabled
-    ? { from: project.loop.start, to: project.loop.end }
-    : { from: 0, to: projectEndBars(project) };
   if (!project.tracks.some((t) => t.clips.length)) {
     toast('Nichts zu exportieren – lege zuerst Clips ins Arrangement.');
     return;
   }
   toast('Export läuft …');
   try {
-    const buffer = await engine.render(project, region);
-    const channels: Float32Array[] = [];
-    for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
-    const wav = encodeWav({ sampleRate: buffer.sampleRate, channels });
-    const name = `${project.name.replace(/[^\w\s-]/g, '').trim() || 'loopvx'} ${project.bpm}bpm.wav`;
-    await saveWav(wav, name);
+    const wav = await renderWav(project, exportRegion(project));
+    await saveFile(wav, `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm.wav`, 'audio/wav', 'com.microsoft.waveform-audio');
   } catch (e) {
     toast(errorText(e), 'error');
   }
 }
 
-async function saveWav(wav: ArrayBuffer, name: string) {
+/** One WAV per track (post-fader, mute and solo ignored), zipped: drag them straight into Ableton. */
+export async function exportStems() {
+  const { project } = getState();
+  const region = exportRegion(project);
+  const tracks = project.tracks.filter((t) => t.clips.some((c) => c.start < region.to && c.start + c.length > region.from));
+  if (!tracks.length) {
+    toast('Im Exportbereich liegen keine Clips.');
+    return;
+  }
+  toast(`Stems werden gerendert (${tracks.length} Spuren) …`);
+  try {
+    const files: Record<string, Uint8Array> = {};
+    for (const [i, track] of tracks.entries()) {
+      const solo = { ...project, tracks: [{ ...track, muted: false, solo: false }] };
+      files[`${String(i + 1).padStart(2, '0')} ${fileSafe(track.name, 'Spur')}.wav`] = await renderWav(solo, region);
+    }
+    // level 0: WAV barely compresses, and storing is instant.
+    const zip = zipSync(files, { level: 0 });
+    await saveFile(zip, `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Stems.zip`, 'application/zip', 'public.zip-archive');
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Save a sample's original audio file (e.g. an AI vocal) to the device. */
+export async function downloadSample(sample: Sample) {
+  try {
+    const data = new Uint8Array(await readSampleData(sample));
+    const ext = (/\.([a-z0-9]{2,5})$/i.exec(sample.name)?.[1] ?? 'wav').toLowerCase();
+    await saveFile(data, sample.name, ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'application/octet-stream', 'public.audio');
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Web: download through a link. Native: write to the cache and open the share sheet. */
+async function saveFile(data: Uint8Array, name: string, mimeType: string, uti: string) {
   if (Platform.OS === 'web') {
-    const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+    const url = URL.createObjectURL(new Blob([data as BlobPart], { type: mimeType }));
     const a = document.createElement('a');
     a.href = url;
     a.download = name;
@@ -190,6 +235,6 @@ async function saveWav(wav: ArrayBuffer, name: string) {
   const file = new File(Paths.cache, name);
   if (file.exists) file.delete();
   file.create();
-  file.write(new Uint8Array(wav));
-  await Sharing.shareAsync(file.uri, { mimeType: 'audio/wav', dialogTitle: name, UTI: 'com.microsoft.waveform-audio' });
+  file.write(data);
+  await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: name, UTI: uti });
 }

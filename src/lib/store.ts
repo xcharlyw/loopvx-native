@@ -6,7 +6,7 @@ import { History } from './history';
 import { createProject, repairProject } from './project';
 
 export type View = 'arrange' | 'session';
-export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track';
+export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export';
 
 export interface Toast {
   id: number;

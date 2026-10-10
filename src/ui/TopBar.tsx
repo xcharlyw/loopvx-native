@@ -4,7 +4,7 @@ import { APP_NAME } from '../config';
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { formatBarPosition, formatClock, secondsPerBar } from '../audio/timing';
-import { exportWav, setCursor, togglePlay } from '../lib/actions';
+import { setCursor, togglePlay } from '../lib/actions';
 import { KEYS } from '../lib/project';
 import { setState, updateProject, useStore } from '../lib/store';
 import { useEngine, usePlayhead, useSmall } from './hooks';
@@ -89,7 +89,7 @@ export function TopBar() {
       {small && (
         <>
           <Spacer />
-          <Pill style={sm.pill} accessibilityLabel="Als WAV exportieren" onPress={() => void exportWav()}>
+          <Pill style={sm.pill} accessibilityLabel="Exportieren" onPress={() => setState({ panel: 'export' })}>
             <Export size={16} />
           </Pill>
           <Pill style={sm.pill} accessibilityLabel="Sample-Library" onPress={() => setState({ panel: 'library' })}>
@@ -133,7 +133,7 @@ export function TopBar() {
       {!small && (
         <>
           <Spacer />
-          <Pill accessibilityLabel="Als WAV exportieren" onPress={() => void exportWav()}>
+          <Pill accessibilityLabel="Exportieren" onPress={() => setState({ panel: 'export' })}>
             <Export size={16} />
             <Txt>Export</Txt>
           </Pill>

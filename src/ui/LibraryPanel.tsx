@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { placeSample } from '../lib/actions';
+import { downloadSample, placeSample } from '../lib/actions';
 import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
 import { deleteSample, importSamplesFromDevice } from '../lib/samples';
 import { errorText, getState, setSamples, setState, toast, upsertSample, useStore } from '../lib/store';
@@ -159,7 +159,9 @@ function SampleEditor({ sample, onDone }: { sample: Sample; onDone: () => void }
       <Btn small kind="danger" style={s.cell} onPress={() => void remove()}>
         Entfernen
       </Btn>
-      <View style={s.cell} />
+      <Btn small style={s.cell} onPress={() => void downloadSample(sample)}>
+        Download
+      </Btn>
       <Btn small kind="primary" style={s.cell} onPress={() => void save()}>
         <Check size={14} color={C.accentInk} />
         Speichern

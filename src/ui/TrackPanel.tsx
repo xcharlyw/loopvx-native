@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { engine } from '../audio/engine';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
-import { SAMPLER_PRESET } from '../audio/synth';
+import { isDrumWave, KICK_PRESET, NOISE_PRESET, SAMPLER_PRESET } from '../audio/synth';
 import { C, font, mono } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
 import { DEFAULT_SYNTH, MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
@@ -33,16 +33,21 @@ export function TrackPanel() {
     updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), ...patch } })), { merge: true });
   const value = draft ?? track.name;
   const isSampler = synth.wave === 'sample';
+  const isDrum = isDrumWave(synth.wave);
   const fx = trackFx(track.fx);
   /** Effect knobs act on the running mix (no rescheduling); a drag is one undo step. */
   const setFx = (patch: TrackFx) =>
     updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, ...patch } })), { reschedule: false });
-  /** Switching between oscillator and sample also swaps in sensible settings for the other kind. */
+  /** Switching instrument kind also swaps in settings that suit it (a kick wants no sustain, a hat a highpass). */
   const pickWave = (wave: SynthSettings['wave']) => {
     if (wave === synth.wave) return;
-    if (wave === 'sample') setSynth({ ...SAMPLER_PRESET, sampleId: synth.sampleId ?? samples[0]?.id });
-    else if (isSampler) setSynth({ ...DEFAULT_SYNTH, wave, sampleId: synth.sampleId });
+    const sampleId = synth.sampleId;
+    if (wave === 'sample') setSynth({ ...SAMPLER_PRESET, sampleId: sampleId ?? samples[0]?.id });
+    else if (wave === 'kick') setSynth({ ...KICK_PRESET, sampleId });
+    else if (wave === 'noise') setSynth({ ...NOISE_PRESET, sampleId });
+    else if (isDrum) setSynth({ ...DEFAULT_SYNTH, wave, sampleId });
     else setSynth({ wave });
+    if (wave === 'kick' || wave === 'noise') void engine.previewNote({ ...synth, ...(wave === 'kick' ? KICK_PRESET : NOISE_PRESET) }, 60);
   };
 
   const change = (text: string) => {
@@ -185,15 +190,22 @@ export function TrackPanel() {
             </View>
           </>
         )}
-        <Param label="Filter" value={Math.log10(synth.cutoff)} min={Math.log10(80)} max={Math.log10(16000)} text={hz(synth.cutoff)} onChange={(v) => setSynth({ cutoff: Math.round(10 ** v) })} />
+        {(synth.wave === 'kick' || synth.wave === 'noise') && (
+          <Txt style={[s.note, { marginTop: 12 }]}>
+            {synth.wave === 'kick'
+              ? 'Synthetische Kick: auf C3 sitzt der Bauch bei 50 Hz, höhere Noten stimmen sie höher. Länge über Decay, Härte über Drive bei den Effekten.'
+              : 'Rauschen durch einen Highpass: kurzer Decay = Hi-Hat, längerer Decay und tieferer Filter = Snare oder Riser.'}
+          </Txt>
+        )}
+        <Param label={synth.wave === 'noise' ? 'Highpass' : 'Filter'} value={Math.log10(synth.cutoff)} min={Math.log10(80)} max={Math.log10(16000)} text={hz(synth.cutoff)} onChange={(v) => setSynth({ cutoff: Math.round(10 ** v) })} />
         <Param label="Resonanz" value={synth.resonance} min={0.5} max={15} text={synth.resonance.toFixed(1)} onChange={(v) => setSynth({ resonance: Math.round(v * 10) / 10 })} />
         <Param label="Attack" value={synth.attack} min={0.001} max={1} text={sec(synth.attack)} onChange={(v) => setSynth({ attack: v })} />
         <Param label="Decay" value={synth.decay} min={0.01} max={1.5} text={sec(synth.decay)} onChange={(v) => setSynth({ decay: v })} />
         <Param label="Sustain" value={synth.sustain} min={0} max={1} text={`${Math.round(synth.sustain * 100)} %`} onChange={(v) => setSynth({ sustain: v })} />
         <Param label="Release" value={synth.release} min={0.005} max={2} text={sec(synth.release)} onChange={(v) => setSynth({ release: v })} />
         <View style={[s.buttons, { marginTop: 10 }]}>
-          <Btn small onPress={() => void engine.previewNote(synth, isSampler ? 60 : 48)}>
-            {isSampler ? 'Anhören (C3)' : 'Anhören (C2)'}
+          <Btn small onPress={() => void engine.previewNote(synth, isDrum ? 60 : 48)}>
+            {isDrum ? 'Anhören (C3)' : 'Anhören (C2)'}
           </Btn>
           <Btn small onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: undefined })))}>
             Zurücksetzen
@@ -219,6 +231,8 @@ const WAVES: { wave: SynthSettings['wave']; label: string }[] = [
   { wave: 'triangle', label: 'Triangle' },
   { wave: 'sine', label: 'Sine' },
   { wave: 'sample', label: 'Sample' },
+  { wave: 'kick', label: 'Kick' },
+  { wave: 'noise', label: 'Noise / Hat' },
 ];
 
 const pct = (v: number) => (v ? `${Math.round(v * 100)} %` : 'Aus');

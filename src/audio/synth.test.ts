@@ -1,4 +1,4 @@
-import { adsrPoints, pitchRate, SAMPLE_ROOT, voicePeak } from './synth';
+import { adsrPoints, isDrumWave, kickSweep, noiseSamples, noteHold, pitchRate, SAMPLE_ROOT, voicePeak } from './synth';
 
 describe('adsrPoints', () => {
   const env = { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 };
@@ -39,5 +39,27 @@ describe('sample instrument', () => {
   it('gives samples more level than stacked oscillators', () => {
     expect(voicePeak({ wave: 'sample' }, 1)).toBeGreaterThan(voicePeak({ wave: 'sawtooth' }, 1));
     expect(voicePeak({ wave: 'sine' }, 0.5)).toBeCloseTo(0.125);
+  });
+});
+
+describe('synthesized drums', () => {
+  it('kick drops from a click to a 50 Hz body on C3, tuned by the note', () => {
+    const k = kickSweep(60);
+    expect(k.to).toBeCloseTo(50);
+    expect(k.from).toBeGreaterThan(300);
+    expect(kickSweep(72).to).toBeCloseTo(100);
+  });
+  it('kick and noise ring out their decay even for short notes; synths follow the note', () => {
+    expect(noteHold({ wave: 'kick', attack: 0.001, decay: 0.45 }, 0.1)).toBeCloseTo(0.451);
+    expect(noteHold({ wave: 'noise', attack: 0.001, decay: 0.05 }, 0.2)).toBe(0.2);
+    expect(noteHold({ wave: 'sawtooth', attack: 0.001, decay: 0.45 }, 0.1)).toBe(0.1);
+    expect(isDrumWave('kick') && isDrumWave('noise') && isDrumWave('sample') && !isDrumWave('sine')).toBe(true);
+  });
+  it('noise is deterministic and spans [-1, 1)', () => {
+    const n = noiseSamples(5000);
+    expect(noiseSamples(5000)).toEqual(n);
+    expect(Math.min(...n)).toBeLessThan(-0.99);
+    expect(Math.max(...n)).toBeGreaterThan(0.99);
+    expect(Math.max(...n)).toBeLessThan(1);
   });
 });

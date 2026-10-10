@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Line, Rect } from 'react-native-svg';
 import { engine } from '../audio/engine';
+import { isDrumWave } from '../audio/synth';
 import { C, mono } from '../constants/theme';
 import { exportMidiClip } from '../lib/actions';
 import { noteName } from '../lib/midi';
@@ -45,9 +46,9 @@ export function PianoRollPanel() {
   const project = useStore((st) => st.project);
   const selectedClipId = useStore((st) => st.selectedClipId);
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
-  const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? [], found?.track.synth?.wave === 'sample'));
+  const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? [], !!found?.track.synth && isDrumWave(found.track.synth.wave)));
   const [noteLen, setNoteLen] = useState(1 / 16);
-  const sampler = found?.track.synth?.wave === 'sample';
+  const sampler = !!found?.track.synth && isDrumWave(found.track.synth.wave); // drum styles, C3 centred
   const [picked, setStyle] = useState(sampler ? lastDrum : lastStyle);
   // The instrument may change while the roll is open: drum styles only for sample instruments.
   const style = sampler === isDrumStyle(picked) ? picked : sampler ? lastDrum : lastStyle;

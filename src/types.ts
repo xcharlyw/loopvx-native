@@ -41,8 +41,11 @@ export interface Note {
 
 /** The track's built-in instrument for its MIDI clips: one oscillator, a lowpass filter and an ADSR. */
 export interface SynthSettings {
-  /** An oscillator, or 'sample': the library sample `sampleId` played chromatically. */
-  wave: 'sawtooth' | 'square' | 'sine' | 'triangle' | 'sample';
+  /**
+   * An oscillator; 'sample': the library sample `sampleId` played chromatically; 'kick': a synthesized
+   * kick (sine with a pitch drop); 'noise': white noise through a highpass (hats, snares, risers).
+   */
+  wave: 'sawtooth' | 'square' | 'sine' | 'triangle' | 'sample' | 'kick' | 'noise';
   /** wave 'sample': which sample; it sounds at its original pitch on C3 (60). */
   sampleId?: string;
   /** wave 'sample': every note plays the whole sample, whatever its length (drums). */

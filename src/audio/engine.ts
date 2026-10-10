@@ -17,7 +17,7 @@ import { arrangementSampleIds, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
-import { adsrPoints, pitchRate, voicePeak } from './synth';
+import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, voicePeak } from './synth';
 import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
@@ -95,9 +95,22 @@ function startVoice(
 /** A playing sound: a sample voice or a synth note. Both stop and report their end the same way. */
 type Voice = AudioBufferSourceNode | OscillatorNode;
 
+const noiseBuffers = new WeakMap<AnyContext, AudioBuffer>();
+
+/** One second of white noise per context, looped by noise voices. */
+function noiseBuffer(ctx: AnyContext): AudioBuffer {
+  let b = noiseBuffers.get(ctx);
+  if (!b) {
+    b = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    b.copyToChannel(noiseSamples(ctx.sampleRate), 0);
+    noiseBuffers.set(ctx, b);
+  }
+  return b;
+}
+
 /**
- * One instrument note: oscillator (or the instrument's sample, re-pitched) -> lowpass -> ADSR gain
- * -> destination. A sample instrument without its sample loaded stays silent (null).
+ * One instrument note: oscillator, synthesized kick, noise or the instrument's sample (re-pitched)
+ * -> filter -> ADSR gain -> destination. A sample instrument without its sample stays silent (null).
  */
 function startSynthVoice(
   ctx: AnyContext,
@@ -119,14 +132,28 @@ function startSynthVoice(
     // One-shot: the sample plays out (drums); otherwise the note length gates it like a synth.
     if (synth.oneShot) hold = Math.max(hold, buffer.duration / src.playbackRate.value);
     osc = src;
+  } else if (synth.wave === 'noise') {
+    const src = ctx.createBufferSource({ pitchCorrection: false });
+    src.buffer = noiseBuffer(ctx);
+    src.loop = true;
+    osc = src;
+  } else if (synth.wave === 'kick') {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    const sweep = kickSweep(pitch);
+    o.frequency.setValueAtTime(sweep.from, when);
+    o.frequency.exponentialRampToValueAtTime(sweep.to, when + sweep.time);
+    osc = o;
   } else {
     const o = ctx.createOscillator();
     o.type = synth.wave;
     o.frequency.value = midiToHz(pitch);
     osc = o;
   }
+  hold = noteHold(synth, hold);
   const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
+  // Noise is shaped from below (hats); everything else is a lowpass synth.
+  filter.type = synth.wave === 'noise' ? 'highpass' : 'lowpass';
   filter.frequency.value = synth.cutoff;
   filter.Q.value = synth.resonance;
   const amp = ctx.createGain();

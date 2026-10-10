@@ -49,6 +49,14 @@ export async function sampleSource(sample: Sample): Promise<string | ArrayBuffer
   return sample.uri;
 }
 
+/** Let the user pick any one file (e.g. a .loopvx project backup) and read it. */
+export async function pickFile(): Promise<{ name: string; data: ArrayBuffer } | null> {
+  const result = await DocumentPicker.getDocumentAsync({ type: '*/*', multiple: false, copyToCacheDirectory: true });
+  if (result.canceled || !result.assets[0]) return null;
+  const picked = result.assets[0];
+  return { name: picked.name, data: await new File(picked.uri).arrayBuffer() };
+}
+
 /** The raw audio file, for uploading to Drive. */
 export async function readSampleData(sample: Sample): Promise<ArrayBuffer> {
   if (!sample.uri) throw new Error(`Audio für "${sample.name}" nicht gefunden`);

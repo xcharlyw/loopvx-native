@@ -57,6 +57,15 @@ export async function sampleSource(sample: Sample): Promise<string | ArrayBuffer
   return blob.arrayBuffer();
 }
 
+/** Let the user pick any one file (e.g. a .loopvx project backup) and read it. */
+export async function pickFile(): Promise<{ name: string; data: ArrayBuffer } | null> {
+  const result = await DocumentPicker.getDocumentAsync({ type: '*/*', multiple: false });
+  if (result.canceled || !result.assets[0]) return null;
+  const picked = result.assets[0];
+  const blob: Blob = picked.file ?? (await (await fetch(picked.uri)).blob());
+  return { name: picked.name, data: await blob.arrayBuffer() };
+}
+
 /** The raw audio file, for uploading to Drive. */
 export async function readSampleData(sample: Sample): Promise<ArrayBuffer> {
   const blob = await tx<Blob | undefined>('readonly', (st) => st.get(sample.id));

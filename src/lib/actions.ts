@@ -5,10 +5,12 @@ import { Platform } from 'react-native';
 import { engine } from '../audio/engine';
 import { projectEndBars, sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
+import { db } from '../storage/db';
 import type { Project, Sample } from '../types';
+import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { addClip, editClip, findClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
-import { readSampleData } from './samples';
-import { errorText, getState, recordHistory, setState, toast, updateProject, upsertSample } from './store';
+import { pickFile, readSampleData, storeSampleAudio } from './samples';
+import { errorText, getState, openProject, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
 export async function togglePlay() {
   const { project, view, cursor } = getState();
@@ -216,6 +218,50 @@ export async function downloadSample(sample: Sample) {
     const data = new Uint8Array(await readSampleData(sample));
     const ext = (/\.([a-z0-9]{2,5})$/i.exec(sample.name)?.[1] ?? 'wav').toLowerCase();
     await saveFile(data, sample.name, ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'application/octet-stream', 'public.audio');
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Save a project and the audio of every sample it uses as one ".loopvx" file. */
+export async function exportProjectFile(project: Project) {
+  const ids = usedSampleIds(project);
+  const packed: PackedSample[] = [];
+  const missing: string[] = [];
+  for (const sample of getState().samples.filter((x) => ids.has(x.id))) {
+    try {
+      packed.push({ sample, data: new Uint8Array(await readSampleData(sample)) });
+    } catch {
+      missing.push(sample.name);
+    }
+  }
+  if (missing.length) toast(`Ohne Audio gesichert: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ' …' : ''}`, 'error');
+  try {
+    await saveFile(packProject(project, packed), `${fileSafe(project.name, 'loopvx')}.loopvx`, 'application/zip', 'public.zip-archive');
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Open a ".loopvx" file: its samples join the library, the project opens (as a copy if it already exists here). */
+export async function importProjectFile() {
+  try {
+    const picked = await pickFile();
+    if (!picked) return;
+    const { project, samples } = unpackProject(new Uint8Array(picked.data));
+    const have = new Set(getState().samples.map((x) => x.id));
+    for (const { sample, data } of samples) {
+      if (have.has(sample.id)) continue;
+      const ext = (/\.([a-z0-9]{2,5})$/i.exec(sample.name)?.[1] ?? 'wav').toLowerCase();
+      await storeSampleAudio(sample, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer, ext);
+    }
+    setSamples(await db.getSamples());
+    const exists = (await db.getProjects()).some((x) => x.id === project.id);
+    const opened = exists ? { ...project, id: uid(), name: `${project.name} (Kopie)` } : project;
+    const saved = { ...opened, updatedAt: Date.now() };
+    await db.putProject(saved);
+    await openProject(saved);
+    toast(`„${saved.name}“ geöffnet${samples.length ? ` (${samples.length} Samples)` : ''}.`);
   } catch (e) {
     toast(errorText(e), 'error');
   }

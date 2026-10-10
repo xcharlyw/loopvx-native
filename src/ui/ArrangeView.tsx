@@ -1,13 +1,13 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { C, RULER_H, font, layout } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
 import { addClip, createTrack, editClip, mapTrack, removeClip, updateClip, type ClipEdit } from '../lib/project';
 import { getState, setState, updateProject, useStore } from '../lib/store';
-import type { Clip, Track } from '../types';
+import type { Clip, Note, Track } from '../types';
 import { Fader } from './Fader';
 import { usePlayhead, useSmall } from './hooks';
 import { Plus } from './icons';
@@ -136,6 +136,11 @@ export function ArrangeView() {
   };
 
   const onClipTap = (clip: Clip, track: Track, e: GestureResponderEvent) => {
+    // A second tap on a selected MIDI clip opens its notes.
+    if (clip.notes && selectedClipId === clip.id) {
+      setState({ panel: 'piano' });
+      return;
+    }
     setState({ selectedClipId: clip.id, selectedTrackId: track.id });
     // Like clicking into a clip in Ableton: the playhead jumps there, ready for Split.
     if (!engine.playing) setCursor(Math.max(0, snapBars(clip.start + tapX(e) / zoom, grid)));
@@ -296,7 +301,7 @@ export function ArrangeView() {
                         key={clip.id}
                         clip={shown}
                         color={track.color}
-                        name={sample?.name ?? 'Sample fehlt'}
+                        name={clip.notes ? `MIDI · ${clip.notes.length} ${clip.notes.length === 1 ? 'Note' : 'Noten'}` : (sample?.name ?? 'Sample fehlt')}
                         zoom={zoom}
                         height={rowH - 1 - 12}
                         projectBpm={project.bpm}
@@ -329,6 +334,29 @@ export function ArrangeView() {
 }
 
 type DragPhase = 'move' | 'end' | 'cancel';
+
+/** A MIDI clip's notes in miniature, scaled to the pitch range they use (at least an octave). */
+function MidiPreview({ notes, width, height, zoom }: { notes: Note[]; width: number; height: number; zoom: number }) {
+  if (!notes.length || width <= 0 || height <= 0) return null;
+  const lo = Math.min(...notes.map((n) => n.pitch));
+  const hi = Math.max(lo + 11, Math.max(...notes.map((n) => n.pitch)));
+  const rowH = height / (hi - lo + 1);
+  return (
+    <Svg width={width} height={height} style={{ position: 'absolute', left: 0, top: 16 }} pointerEvents="none">
+      {notes.map((n, i) => (
+        <Rect
+          key={i}
+          x={n.start * zoom}
+          y={(hi - n.pitch) * rowH}
+          width={Math.max(2, n.length * zoom - 1)}
+          height={Math.max(2, rowH - 1)}
+          rx={1}
+          fill="rgba(0,0,0,0.6)"
+        />
+      ))}
+    </Svg>
+  );
+}
 
 /** The responder system's touch record (present on native and react-native-web, missing from RN's event type). */
 interface TouchHistory {
@@ -398,18 +426,22 @@ function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, sele
     >
       <Pressable onPress={onTap} style={StyleSheet.absoluteFill}>
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <Waveform
-            sampleId={clip.sampleId}
-            width={w - 2}
-            height={height - 2 - 16}
-            zoom={zoom}
-            projectBpm={projectBpm}
-            sampleBpm={sampleBpm}
-            offsetPx={clip.offset * zoom}
-            gain={dbToGain(clip.gainDb ?? 0)}
-            fadeInPx={fades.fadeIn * zoom}
-            fadeOutPx={fades.fadeOut * zoom}
-          />
+          {clip.notes ? (
+            <MidiPreview notes={clip.notes} width={w - 2} height={height - 2 - 16} zoom={zoom} />
+          ) : (
+            <Waveform
+              sampleId={clip.sampleId}
+              width={w - 2}
+              height={height - 2 - 16}
+              zoom={zoom}
+              projectBpm={projectBpm}
+              sampleBpm={sampleBpm}
+              offsetPx={clip.offset * zoom}
+              gain={dbToGain(clip.gainDb ?? 0)}
+              fadeInPx={fades.fadeIn * zoom}
+              fadeOutPx={fades.fadeOut * zoom}
+            />
+          )}
           {(fades.fadeIn > 0 || fades.fadeOut > 0) && (
             <Svg width={w - 2} height={height - 2} style={StyleSheet.absoluteFill}>
               {fades.fadeIn > 0 && <Path d={`M0 ${height - 2}L${fades.fadeIn * zoom} 0`} stroke="rgba(0,0,0,0.55)" strokeWidth={1.5} />}

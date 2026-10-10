@@ -126,9 +126,17 @@ export function splitClip(project: Project, clipId: string, bar: number, rightId
   const { clip, track } = found;
   const cut = bar - clip.start;
   if (!(cut > 1e-6 && cut < clip.length - 1e-6)) return project;
-  // The fade-in stays on the left part, the fade-out on the right one.
-  const left: Clip = { ...clip, length: cut, fadeOut: undefined };
-  const right: Clip = { ...clip, id: rightId, start: bar, length: clip.length - cut, offset: clip.offset + cut, fadeIn: undefined };
+  // The fade-in stays on the left part, the fade-out on the right one; MIDI notes go with their half.
+  const left: Clip = { ...clip, length: cut, fadeOut: undefined, ...(clip.notes && { notes: notesInRange(clip.notes, 0, cut) }) };
+  const right: Clip = {
+    ...clip,
+    id: rightId,
+    start: bar,
+    length: clip.length - cut,
+    offset: clip.offset + cut,
+    fadeIn: undefined,
+    ...(clip.notes && { notes: notesInRange(clip.notes, cut, clip.length) }),
+  };
   return mapTrack(project, track.id, (t) => ({
     ...t,
     clips: t.clips.flatMap((c) => (c.id === clipId ? [left, right] : [c])),
@@ -142,12 +150,36 @@ export type ClipEdit = 'move' | 'start' | 'end';
  * `deltaBars`, snapped to `grid`. Trimming the start keeps the audio in place on the timeline
  * by shifting the clip's offset into the sample, like dragging a clip edge in Ableton.
  */
-export function editClip(clip: Clip, mode: ClipEdit, deltaBars: number, grid: number): Pick<Clip, 'start' | 'length' | 'offset'> {
+export function editClip(clip: Clip, mode: ClipEdit, deltaBars: number, grid: number): Pick<Clip, 'start' | 'length' | 'offset' | 'notes'> {
   const end = clip.start + clip.length;
-  if (mode === 'move') return { start: Math.max(0, snapBars(clip.start + deltaBars, grid)), length: clip.length, offset: clip.offset };
-  if (mode === 'end') return { start: clip.start, length: Math.max(grid, snapBars(end + deltaBars, grid) - clip.start), offset: clip.offset };
+  if (mode === 'move') return { start: Math.max(0, snapBars(clip.start + deltaBars, grid)), length: clip.length, offset: clip.offset, notes: clip.notes };
+  if (mode === 'end') return { start: clip.start, length: Math.max(grid, snapBars(end + deltaBars, grid) - clip.start), offset: clip.offset, notes: clip.notes };
   const start = Math.min(Math.max(0, snapBars(clip.start + deltaBars, grid)), end - grid);
-  return { start, length: end - start, offset: clip.offset + (start - clip.start) };
+  // MIDI notes keep their place in the song: shift them against the new clip start.
+  const notes = clip.notes && notesInRange(clip.notes, start - clip.start, Infinity);
+  return { start, length: end - start, offset: clip.offset + (start - clip.start), notes };
+}
+
+/** Notes starting in [from, to) (bars into the clip), moved so `from` is their new zero and cut at `to`. */
+export function notesInRange(notes: Note[], from: number, to: number): Note[] {
+  return notes
+    .filter((n) => n.start >= from - 1e-9 && n.start < to - 1e-9)
+    .map((n) => ({ ...n, start: n.start - from, length: Math.min(n.length, to - n.start) }));
+}
+
+/**
+ * Change a clip's length by `factor`. A MIDI clip doubled repeats its pattern, like extending a loop
+ * in Ableton; halved, it keeps the notes that still fit.
+ */
+export function scaleClip(clip: Clip, factor: number): Partial<Clip> {
+  const length = Math.max(0.25, clip.length * factor);
+  if (!clip.notes) return { length };
+  if (length <= clip.length) return { length, notes: notesInRange(clip.notes, 0, length) };
+  const notes: Note[] = [];
+  for (let offset = 0; offset < length - 1e-9; offset += clip.length) {
+    notes.push(...notesInRange(clip.notes, 0, Math.min(clip.length, length - offset)).map((n) => ({ ...n, start: n.start + offset })));
+  }
+  return { length, notes };
 }
 
 /** Best track for a sample: first track of the same category, else the selected one. */

@@ -4,9 +4,9 @@ import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { BEATS_PER_BAR } from '../config';
 import { C, font, mono } from '../constants/theme';
-import { scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
+import { exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
 import { findClip, updateClip } from '../lib/project';
-import { updateProject, useStore } from '../lib/store';
+import { setState, updateProject, useStore } from '../lib/store';
 import type { Clip } from '../types';
 import { Fader } from './Fader';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -27,6 +27,7 @@ export function ClipPanel() {
   const [bpmText, setBpmText] = useState<string | null>(null);
 
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
+  if (found?.clip.notes) return <MidiClipSheet clip={found.clip} trackName={found.track.name} />;
   const sample = found ? samples.find((x) => x.id === found.clip.sampleId) : undefined;
   if (!found || !sample) {
     return (
@@ -36,11 +37,7 @@ export function ClipPanel() {
     );
   }
 
-  const clipId = found.clip.id;
   const stretch = sample.warp === 'stretch';
-  const gainDb = found.clip.gainDb ?? 0;
-  /** Gain fader drags merge into one undo step but are heard right away. */
-  const setClip = (patch: Partial<Clip>, merge = false) => updateProject((p) => updateClip(p, clipId, patch), { merge });
 
   const duration = sample.duration ?? engine.getBuffer(sample.id)?.duration;
   const loopBars = duration ? sampleLengthBars(duration, project.bpm, sample.bpm) : undefined;
@@ -67,45 +64,9 @@ export function ClipPanel() {
         {sample.name.replace(/\.[a-z0-9]+$/i, '')}
       </Txt>
 
-      <Section title="Länge">
-        <View style={s.row}>
-          <Txt style={[s.value, { flex: 1 }]}>{`${fmt(found.clip.length)} Takte`}</Txt>
-          <Btn small onPress={() => scaleSelectedClip(0.5)}>
-            ½
-          </Btn>
-          <Btn small onPress={() => scaleSelectedClip(2)}>
-            ×2
-          </Btn>
-        </View>
-        <Txt style={s.note}>Ränder des Clips ziehen kürzt oder verlängert ihn, die Schere teilt ihn an der Abspielposition.</Txt>
-      </Section>
+      <LengthSection clip={found.clip} />
 
-      <Section title="Lautstärke & Fades">
-        <View style={s.row}>
-          <Txt style={{ width: 92 }}>Clip-Gain</Txt>
-          <Fader value={gainDb} min={-24} max={6} onChange={(v) => setClip({ gainDb: Math.round(v * 2) / 2 }, true)} />
-          <Txt style={[s.value, { width: 64, textAlign: 'right' }]}>{`${gainDb > 0 ? '+' : ''}${fmt(gainDb)} dB`}</Txt>
-        </View>
-        {gainDb !== 0 && (
-          <View style={[s.row, { marginTop: 8 }]}>
-            <Btn small onPress={() => setClip({ gainDb: 0 })}>
-              Auf 0 dB
-            </Btn>
-          </View>
-        )}
-        {(['fadeIn', 'fadeOut'] as const).map((key) => (
-          <View key={key}>
-            <Txt style={[s.label, { marginTop: 14 }]}>{key === 'fadeIn' ? 'Fade-In' : 'Fade-Out'}</Txt>
-            <View style={s.chips}>
-              {FADES.filter((bars) => bars <= found.clip.length).map((bars) => (
-                <Chip key={bars} variant={(found.clip[key] ?? 0) === bars ? 'on' : 'ghost'} onPress={() => setClip({ [key]: bars })}>
-                  {bars === 0 ? 'Aus' : `${fmtBars(bars)} ${bars <= 1 ? 'Takt' : 'Takte'}`}
-                </Chip>
-              ))}
-            </View>
-          </View>
-        ))}
-      </Section>
+      <LevelSection clip={found.clip} />
 
       <Section title="Tempo (Warp)">
         <View style={s.row}>
@@ -168,6 +129,75 @@ export function ClipPanel() {
         <Txt style={[s.note, { marginTop: 10 }]}>Gilt für alle Clips dieses Samples.</Txt>
       </Section>
     </Sheet>
+  );
+}
+
+/** A MIDI clip: length, level, and the way into its notes. */
+function MidiClipSheet({ clip, trackName }: { clip: Clip; trackName: string }) {
+  const count = clip.notes?.length ?? 0;
+  return (
+    <Sheet title="MIDI-Clip">
+      <Txt numberOfLines={1} style={s.name}>{`${count} ${count === 1 ? 'Note' : 'Noten'} · Instrument „${trackName}“`}</Txt>
+      <View style={[s.row, { flexWrap: 'wrap', marginBottom: 6 }]}>
+        <Btn kind="primary" onPress={() => setState({ panel: 'piano' })}>
+          Piano Roll öffnen
+        </Btn>
+        <Btn onPress={() => void exportMidiClip(clip, trackName)}>.mid exportieren</Btn>
+      </View>
+      <LengthSection clip={clip} />
+      <LevelSection clip={clip} />
+    </Sheet>
+  );
+}
+
+function LengthSection({ clip }: { clip: Clip }) {
+  return (
+    <Section title="Länge">
+      <View style={s.row}>
+        <Txt style={[s.value, { flex: 1 }]}>{`${fmt(clip.length)} Takte`}</Txt>
+        <Btn small onPress={() => scaleSelectedClip(0.5)}>
+          ½
+        </Btn>
+        <Btn small onPress={() => scaleSelectedClip(2)}>
+          ×2
+        </Btn>
+      </View>
+      <Txt style={s.note}>Ränder des Clips ziehen kürzt oder verlängert ihn, die Schere teilt ihn an der Abspielposition.</Txt>
+    </Section>
+  );
+}
+
+/** Clip gain and fades; gain fader drags merge into one undo step but are heard right away. */
+function LevelSection({ clip }: { clip: Clip }) {
+  const gainDb = clip.gainDb ?? 0;
+  const setClip = (patch: Partial<Clip>, merge = false) => updateProject((p) => updateClip(p, clip.id, patch), { merge });
+  return (
+    <Section title="Lautstärke & Fades">
+      <View style={s.row}>
+        <Txt style={{ width: 92 }}>Clip-Gain</Txt>
+        <Fader value={gainDb} min={-24} max={6} onChange={(v) => setClip({ gainDb: Math.round(v * 2) / 2 }, true)} />
+        <Txt style={[s.value, { width: 64, textAlign: 'right' }]}>{`${gainDb > 0 ? '+' : ''}${fmt(gainDb)} dB`}</Txt>
+      </View>
+      {gainDb !== 0 && (
+        <View style={[s.row, { marginTop: 8 }]}>
+          <Btn small onPress={() => setClip({ gainDb: 0 })}>
+            Auf 0 dB
+          </Btn>
+        </View>
+      )}
+      {(['fadeIn', 'fadeOut'] as const).map((key) => (
+        <View key={key}>
+          <Txt style={[s.label, { marginTop: 14 }]}>{key === 'fadeIn' ? 'Fade-In' : 'Fade-Out'}</Txt>
+          <View style={s.chips}>
+            {FADES.filter((bars) => bars <= clip.length).map((bars) => (
+              <Chip key={bars} variant={(clip[key] ?? 0) === bars ? 'on' : 'ghost'} onPress={() => setClip({ [key]: bars })}>
+                {bars === 0 ? 'Aus' : `${fmtBars(bars)} ${bars <= 1 ? 'Takt' : 'Takte'}`}
+              </Chip>
+            ))}
+          </View>
+        </View>
+      ))}
+    </Section>
   );
 }
 

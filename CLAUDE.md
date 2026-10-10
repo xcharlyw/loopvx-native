@@ -80,5 +80,7 @@ tests/              server tests (anything in api/ is deployed as a function)
 
 ## Not done yet
 
-Drive import of existing loop folders (needs `drive.readonly` or the Picker), MIDI / synth,
-recording / pads, App Store build (EAS; never tested on a real device natively).
+Drive import of existing loop folders (needs `drive.readonly` or the Picker), recording / pads,
+sample-based synth (MIDI clips play a per-track oscillator synth: `src/audio/synth.ts`, piano roll in
+`src/ui/PianoRollPanel.tsx`, `.mid` I/O in `src/lib/midi.ts`, Ableton naming 60 = C3),
+App Store build (EAS; never tested on a real device natively).

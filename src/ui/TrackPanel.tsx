@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { C, font } from '../constants/theme';
-import { deleteSelectedTrack } from '../lib/actions';
-import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack } from '../lib/project';
+import { engine } from '../audio/engine';
+import { C, font, mono } from '../constants/theme';
+import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
+import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
+import type { SynthSettings } from '../types';
 import { getState, setState, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
-import { Trash } from './icons';
-import { Btn, Section, Txt } from './kit';
+import { Fader } from './Fader';
+import { Plus, Trash } from './icons';
+import { Btn, Chip, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
 /** Rename, recolour or delete the selected track. Saves as you type; leaving the field empty restores the old name. */
@@ -21,6 +24,10 @@ export function TrackPanel() {
     );
   }
   const trackId = track.id;
+  const synth = trackSynth(track);
+  /** Synth knobs: a drag is one undo step, and changes are heard on the next notes. */
+  const setSynth = (patch: Partial<SynthSettings>) =>
+    updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), ...patch } })), { merge: true });
   const value = draft ?? track.name;
 
   const change = (text: string) => {
@@ -73,6 +80,45 @@ export function TrackPanel() {
         </View>
       </Section>
 
+      <Section title="MIDI">
+        <Txt style={[s.note, { marginTop: 0, marginBottom: 10 }]}>
+          MIDI-Clips spielen das Instrument dieser Spur. Noten setzt du in der Piano Roll (Clip zweimal antippen).
+        </Txt>
+        <View style={s.buttons}>
+          <Btn small kind="primary" onPress={() => createMidiClipOnTrack(trackId)}>
+            <Plus size={14} color={C.accentInk} />
+            MIDI-Clip am Playhead
+          </Btn>
+          <Btn small onPress={() => void importMidiToTrack(trackId)}>
+            .mid importieren
+          </Btn>
+        </View>
+      </Section>
+
+      <Section title="Instrument (Synth)">
+        <View style={s.swatches}>
+          {WAVES.map((w) => (
+            <Chip key={w.wave} variant={synth.wave === w.wave ? 'on' : 'ghost'} onPress={() => setSynth({ wave: w.wave })}>
+              {w.label}
+            </Chip>
+          ))}
+        </View>
+        <Param label="Filter" value={Math.log10(synth.cutoff)} min={Math.log10(80)} max={Math.log10(16000)} text={hz(synth.cutoff)} onChange={(v) => setSynth({ cutoff: Math.round(10 ** v) })} />
+        <Param label="Resonanz" value={synth.resonance} min={0.5} max={15} text={synth.resonance.toFixed(1)} onChange={(v) => setSynth({ resonance: Math.round(v * 10) / 10 })} />
+        <Param label="Attack" value={synth.attack} min={0.001} max={1} text={sec(synth.attack)} onChange={(v) => setSynth({ attack: v })} />
+        <Param label="Decay" value={synth.decay} min={0.01} max={1.5} text={sec(synth.decay)} onChange={(v) => setSynth({ decay: v })} />
+        <Param label="Sustain" value={synth.sustain} min={0} max={1} text={`${Math.round(synth.sustain * 100)} %`} onChange={(v) => setSynth({ sustain: v })} />
+        <Param label="Release" value={synth.release} min={0.005} max={2} text={sec(synth.release)} onChange={(v) => setSynth({ release: v })} />
+        <View style={[s.buttons, { marginTop: 10 }]}>
+          <Btn small onPress={() => void engine.previewNote(synth, 48)}>
+            Anhören (C2)
+          </Btn>
+          <Btn small onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: undefined })))}>
+            Zurücksetzen
+          </Btn>
+        </View>
+      </Section>
+
       <Section title="Spur">
         <View style={{ flexDirection: 'row' }}>
           <Btn kind="danger" onPress={() => void remove()}>
@@ -85,7 +131,31 @@ export function TrackPanel() {
   );
 }
 
+const WAVES: { wave: SynthSettings['wave']; label: string }[] = [
+  { wave: 'sawtooth', label: 'Saw' },
+  { wave: 'square', label: 'Square' },
+  { wave: 'triangle', label: 'Triangle' },
+  { wave: 'sine', label: 'Sine' },
+];
+
+const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace('.', ',')} kHz` : `${Math.round(v)} Hz`);
+const sec = (v: number) => (v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2).replace('.', ',')} s`);
+
+function Param({ label, value, min, max, text, onChange }: { label: string; value: number; min: number; max: number; text: string; onChange: (v: number) => void }) {
+  return (
+    <View style={s.param}>
+      <Txt style={s.paramLabel}>{label}</Txt>
+      <Fader value={value} min={min} max={max} onChange={onChange} />
+      <Txt style={s.paramValue}>{text}</Txt>
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
+  buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  param: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  paramLabel: { width: 74, fontSize: 13 },
+  paramValue: { ...mono(), width: 62, fontSize: 12, color: C.muted, textAlign: 'right' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'transparent' },
   swatchOn: { borderColor: '#fff' },

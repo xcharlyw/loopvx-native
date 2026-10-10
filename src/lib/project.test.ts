@@ -1,4 +1,4 @@
-import { addClip, audibleGain, createMidiClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addClip, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -36,6 +36,21 @@ describe('project helpers', () => {
     expect(toggleNote([{ pitch: 40, start: 0, length: 1, velocity: 1 }], 40, 0.5, 0.25)).toEqual([]);
     expect(isMidiClip(createMidiClip(2))).toBe(true);
     expect(isMidiClip({ id: 'c', sampleId: 's', start: 0, length: 1, offset: 0 })).toBe(false);
+  });
+
+  it('splits, trims and doubles MIDI clips with their notes', () => {
+    const n = (start: number, length = 0.25) => ({ pitch: 36, start, length, velocity: 1 });
+    const p = createProject();
+    const clip = { ...createMidiClip(4, 2), id: 'm', notes: [n(0), n(0.75, 0.5), n(1.5)] };
+    const [left, right] = splitClip(addClip(p, p.tracks[0].id, clip), 'm', 5, 'r').tracks[0].clips;
+    expect(left.notes).toEqual([n(0), n(0.75, 0.25)]); // the note crossing the cut ends there
+    expect(right.notes).toEqual([n(0.5)]);
+    // Trimming the start keeps notes where they sound.
+    expect(editClip(clip, 'start', 1, 0.25).notes).toEqual([n(0.5)]);
+    // Doubling repeats the pattern; halving keeps what fits.
+    expect(scaleClip(clip, 2).notes).toEqual([n(0), n(0.75, 0.5), n(1.5), n(2), n(2.75, 0.5), n(3.5)]);
+    expect(scaleClip(clip, 0.5)).toEqual({ length: 1, notes: [n(0), n(0.75, 0.25)] });
+    expect(scaleClip({ ...clip, notes: undefined }, 2)).toEqual({ length: 4 });
   });
 
   it('recognises damaged project data', () => {

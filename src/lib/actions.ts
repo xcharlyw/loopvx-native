@@ -6,9 +6,10 @@ import { engine } from '../audio/engine';
 import { projectEndBars, sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
 import { db } from '../storage/db';
-import type { Project, Sample } from '../types';
+import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
-import { addClip, editClip, findClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
+import { readMidiFile, writeMidiFile } from './midi';
+import { addClip, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
@@ -143,7 +144,7 @@ export function scaleSelectedClip(factor: number) {
   const { project, selectedClipId } = getState();
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
   if (!found) return;
-  updateProject((p) => updateClip(p, found.clip.id, { length: Math.max(0.25, found.clip.length * factor) }));
+  updateProject((p) => updateClip(p, found.clip.id, scaleClip(found.clip, factor)));
 }
 
 /** Copy a session scene into the arrangement at the playhead. */
@@ -172,7 +173,7 @@ export function exportRegion(project = getState().project): { from: number; to: 
   return project.loop.enabled ? { from: project.loop.start, to: project.loop.end } : { from: 0, to: projectEndBars(project) };
 }
 
-const fileSafe = (name: string, fallback: string) => name.replace(/[^\w\s+.-]/g, '').trim() || fallback;
+const fileSafe = (name: string, fallback: string) => name.replace(/[^\w\s+.-]/g, ' ').replace(/\s+/g, ' ').trim() || fallback;
 
 async function renderWav(project: Project, region: { from: number; to: number }): Promise<Uint8Array> {
   const buffer = await engine.render(project, region);
@@ -270,6 +271,45 @@ export async function importProjectFile() {
     await db.putProject(saved);
     await openProject(saved);
     toast(`„${saved.name}“ geöffnet${samples.length ? ` (${samples.length} Samples)` : ''}.`);
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+// ---------------- MIDI ----------------
+
+/** A new, empty MIDI clip (4 bars) on a track at the playhead, selected and opened in the piano roll. */
+export function createMidiClipOnTrack(trackId: string) {
+  const clip = createMidiClip(Math.floor(getState().cursor), 4);
+  updateProject((p) => addClip(p, trackId, clip));
+  setState({ selectedClipId: clip.id, selectedTrackId: trackId, panel: 'piano' });
+}
+
+/** Load a .mid file as a MIDI clip on a track at the playhead (all its tracks and channels merged). */
+export async function importMidiToTrack(trackId: string) {
+  try {
+    const picked = await pickFile();
+    if (!picked) return;
+    const { notes, lengthBars } = readMidiFile(new Uint8Array(picked.data));
+    if (!notes.length) {
+      toast('In der MIDI-Datei sind keine Noten.', 'error');
+      return;
+    }
+    const clip = { ...createMidiClip(Math.floor(getState().cursor), lengthBars), notes };
+    updateProject((p) => addClip(p, trackId, clip));
+    setState({ selectedClipId: clip.id, selectedTrackId: trackId, panel: 'piano' });
+    toast(`${notes.length} Noten aus „${picked.name}“ importiert.`);
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Save a MIDI clip as a .mid file (for Ableton, Serum and co.). */
+export async function exportMidiClip(clip: Clip, name: string) {
+  try {
+    const { project } = getState();
+    const file = writeMidiFile(clip.notes ?? [], { bpm: project.bpm, lengthBars: clip.length, name });
+    await saveFile(file, `${fileSafe(project.name, 'loopvx')} ${fileSafe(name, 'MIDI')}.mid`, 'audio/midi', 'public.midi-audio');
   } catch (e) {
     toast(errorText(e), 'error');
   }

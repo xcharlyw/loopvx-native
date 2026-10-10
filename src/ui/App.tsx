@@ -24,6 +24,7 @@ import { ExportPanel } from './ExportPanel';
 import { Txt } from './kit';
 import { LibraryPanel } from './LibraryPanel';
 import { MixerPanel } from './MixerPanel';
+import { PianoRollPanel } from './PianoRollPanel';
 import { ProjectsPanel } from './ProjectsPanel';
 import { PromptBar } from './PromptBar';
 import { SessionView } from './SessionView';
@@ -57,6 +58,7 @@ function Shell() {
             {panel === 'clip' && <ClipPanel />}
             {panel === 'track' && <TrackPanel />}
             {panel === 'export' && <ExportPanel />}
+            {panel === 'piano' && <PianoRollPanel />}
           </View>
         </View>
       </Modal>

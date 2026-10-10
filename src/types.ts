@@ -57,6 +57,18 @@ export interface SynthSettings {
   release: number;
 }
 
+export interface TrackFx {
+  /** DJ filter: -1 lowpass closed … 0 off … 1 highpass closed. */
+  filter?: number;
+  /** Distortion 0..1. */
+  drive?: number;
+  /** Post-fader sends to the project's reverb and delay, 0..1. */
+  reverb?: number;
+  delay?: number;
+  /** Stereo position -1 (left) … 1 (right). */
+  pan?: number;
+}
+
 export interface Clip {
   id: string;
   /** The audio clip's sample; '' for a MIDI clip. */
@@ -92,6 +104,8 @@ export interface Track {
   clips: Clip[];
   /** Instrument for the track's MIDI clips (defaults apply when missing). */
   synth?: SynthSettings;
+  /** Track effects; absent means none. */
+  fx?: TrackFx;
   /** Session grid: one slot per scene. */
   slots: (SessionSlot | null)[];
 }

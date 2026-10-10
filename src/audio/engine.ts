@@ -13,8 +13,9 @@ import {
 import { Platform } from 'react-native';
 import type { Clip, Project, Sample, SynthSettings, Track } from '../types';
 import { midiToHz } from '../lib/midi';
-import { arrangementSampleIds, audibleGain, trackSynth } from '../lib/project';
+import { arrangementSampleIds, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
+import { MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
 import { adsrPoints, pitchRate, voicePeak } from './synth';
 import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
@@ -215,7 +216,8 @@ export class AudioEngine {
   ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   analyser: AnalyserNode | null = null;
-  private trackGains = new Map<string, GainNode>();
+  /** Track strips (effects, faders) and the reverb/delay returns of the live context. */
+  private mix: MixGraph | null = null;
   private buffers = new Map<string, AudioBuffer>();
   private loading = new Map<string, Promise<AudioBuffer>>();
   private samples = new Map<string, Sample>();
@@ -255,6 +257,7 @@ export class AudioEngine {
       this.analyser.fftSize = 1024;
       this.master.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
+      this.mix = new MixGraph(this.ctx, this.master);
     }
     return this.ctx;
   }
@@ -294,7 +297,7 @@ export class AudioEngine {
     this.ctx = null;
     this.master = null;
     this.analyser = null;
-    this.trackGains.clear();
+    this.mix = null;
     void old?.close().catch(() => undefined);
     const ctx = await this.ensureContext();
     if (this.project) this.syncMixer(this.project);
@@ -341,24 +344,15 @@ export class AudioEngine {
     return this.buffers.get(sampleId);
   }
 
-  private trackGain(track: Track): GainNode {
-    let g = this.trackGains.get(track.id);
-    if (!g) {
-      g = this.ctx!.createGain();
-      g.connect(this.master!);
-      this.trackGains.set(track.id, g);
-    }
-    return g;
+  /** Where a track's voices connect: the start of its effect strip. */
+  private trackGain(track: Track): AudioNode {
+    return this.mix!.input(track);
   }
 
-  /** Apply volumes, mute and solo. Safe to call on every project change. */
+  /** Apply volumes, mute, solo and track effects. Safe to call on every project change. */
   syncMixer(project: Project) {
     this.project = project;
-    if (!this.ctx) return;
-    const anySolo = project.tracks.some((t) => t.solo);
-    for (const t of project.tracks) {
-      this.trackGain(t).gain.setTargetAtTime(audibleGain(t, anySolo), this.ctx.currentTime, 0.015);
-    }
+    this.mix?.apply(project);
   }
 
   setMasterVolume(v: number) {
@@ -647,15 +641,9 @@ export class AudioEngine {
     // Stretchers compensate their latency only for audio scheduled ahead: give them a short lead-in.
     const lead = Platform.OS === 'web' && usesStretch(project, this.samples) ? 0.1 : 0;
     const off = new OfflineAudioContext(2, Math.ceil((seconds + lead) * sampleRate) + sampleRate, sampleRate);
-    const anySolo = project.tracks.some((t) => t.solo);
-    const gains = new Map<string, GainNode>();
-    for (const t of project.tracks) {
-      const g = off.createGain();
-      g.gain.value = audibleGain(t, anySolo);
-      g.connect(off.destination);
-      gains.set(t.id, g);
-    }
-    const voices = scheduleWindow(off, project, this.samples, this.buffers, (t) => gains.get(t.id)!, lead, region.from, region.to);
+    const mix = new MixGraph(off, off.destination);
+    mix.apply(project, false);
+    const voices = scheduleWindow(off, project, this.samples, this.buffers, (t) => mix.input(t), lead, region.from, region.to);
     // Offline rendering runs far faster than real time: stretchers must have everything first.
     // (Pausing the render with suspend() instead crashes Chromium together with the worklet.)
     await Promise.all(voices.map(voiceReady));

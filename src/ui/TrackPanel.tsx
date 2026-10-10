@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { engine } from '../audio/engine';
+import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { SAMPLER_PRESET } from '../audio/synth';
 import { C, font, mono } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
 import { DEFAULT_SYNTH, MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
-import type { SynthSettings } from '../types';
+import type { SynthSettings, TrackFx } from '../types';
 import { getState, setState, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Fader } from './Fader';
@@ -32,6 +33,10 @@ export function TrackPanel() {
     updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), ...patch } })), { merge: true });
   const value = draft ?? track.name;
   const isSampler = synth.wave === 'sample';
+  const fx = trackFx(track.fx);
+  /** Effect knobs act on the running mix (no rescheduling); a drag is one undo step. */
+  const setFx = (patch: TrackFx) =>
+    updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, ...patch } })), { reschedule: false });
   /** Switching between oscillator and sample also swaps in sensible settings for the other kind. */
   const pickWave = (wave: SynthSettings['wave']) => {
     if (wave === synth.wave) return;
@@ -88,6 +93,29 @@ export function TrackPanel() {
             />
           ))}
         </View>
+      </Section>
+
+      <Section title="Effekte">
+        <Param
+          label="Filter"
+          value={fx.filter}
+          min={-1}
+          max={1}
+          text={filterText(fx.filter)}
+          onChange={(v) => setFx({ filter: Math.abs(v) < 0.05 ? 0 : Math.round(v * 100) / 100 })}
+        />
+        <Param label="Drive" value={fx.drive} min={0} max={1} text={pct(fx.drive)} onChange={(v) => setFx({ drive: Math.round(v * 100) / 100 })} />
+        <Param label="Reverb" value={fx.reverb} min={0} max={1} text={pct(fx.reverb)} onChange={(v) => setFx({ reverb: Math.round(v * 100) / 100 })} />
+        <Param label="Delay" value={fx.delay} min={0} max={1} text={pct(fx.delay)} onChange={(v) => setFx({ delay: Math.round(v * 100) / 100 })} />
+        <Param label="Pan" value={fx.pan} min={-1} max={1} text={panText(fx.pan)} onChange={(v) => setFx({ pan: Math.abs(v) < 0.05 ? 0 : Math.round(v * 100) / 100 })} />
+        <Txt style={[s.note, { marginTop: 10 }]}>Filter: links Lowpass, rechts Highpass, Mitte aus. Delay läuft im punktierten Achtel zum Projekttempo.</Txt>
+        {!fxIsDefault(track.fx) && (
+          <View style={[s.buttons, { marginTop: 10 }]}>
+            <Btn small onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: undefined })), { reschedule: false })}>
+              Effekte aus
+            </Btn>
+          </View>
+        )}
       </Section>
 
       <Section title="MIDI">
@@ -185,6 +213,9 @@ const WAVES: { wave: SynthSettings['wave']; label: string }[] = [
   { wave: 'sample', label: 'Sample' },
 ];
 
+const pct = (v: number) => (v ? `${Math.round(v * 100)} %` : 'Aus');
+const panText = (v: number) => (!v ? 'Mitte' : `${Math.round(Math.abs(v) * 100)} ${v < 0 ? 'L' : 'R'}`);
+const filterText = (v: number) => (!v ? 'Aus' : v < 0 ? `LP ${hz(djFilter(v).lowpass)}` : `HP ${hz(djFilter(v).highpass)}`);
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace('.', ',')} kHz` : `${Math.round(v)} Hz`);
 const sec = (v: number) => (v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2).replace('.', ',')} s`);
 

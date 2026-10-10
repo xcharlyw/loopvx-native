@@ -3,7 +3,7 @@ import { engine } from '../audio/engine';
 import { db } from '../storage/db';
 import type { Project, Sample } from '../types';
 import { History } from './history';
-import { createProject, repairProject } from './project';
+import { createProject, isProject, repairProject } from './project';
 
 export type View = 'arrange' | 'session';
 export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export';
@@ -243,6 +243,9 @@ export function errorText(e: unknown): string {
 
 // ---------------- boot ----------------
 
+/** Stored as the last project id to make the next start open a fresh project (error screen escape). */
+export const START_BLANK = '__start-blank__';
+
 export async function boot() {
   const [samples, projects, lastId, metronome] = await Promise.all([
     db.getSamples(),
@@ -252,7 +255,10 @@ export async function boot() {
   ]);
   if (metronome) setMetronome(true);
   setSamples(samples);
-  const last = projects.find((p) => p.id === lastId) ?? projects[0];
+  // Damaged entries (never written by this app, but storage can be edited) are skipped, not fatal.
+  const valid = projects.filter(isProject);
+  if (valid.length < projects.length) toast(`${projects.length - valid.length} beschädigte(s) Projekt(e) übersprungen.`, 'error');
+  const last = lastId === START_BLANK ? undefined : (valid.find((p) => p.id === lastId) ?? valid[0]);
   if (last) setState({ project: repairProject(last) });
   setState({ ready: true, selectedTrackId: getState().project.tracks[0]?.id ?? null });
   engine.syncMixer(getState().project);

@@ -136,6 +136,19 @@ export function trackForSample(project: Project, sample: Sample, selectedTrackId
   );
 }
 
+/** Whether stored data has the shape of a project at all (anything else would crash rendering). */
+export function isProject(value: unknown): value is Project {
+  const p = value as Project | null;
+  return (
+    !!p &&
+    typeof p.id === 'string' &&
+    typeof p.bpm === 'number' &&
+    Array.isArray(p.tracks) &&
+    p.tracks.every((t) => !!t && typeof t.id === 'string' && Array.isArray(t.clips) && Array.isArray(t.slots)) &&
+    !!p.loop
+  );
+}
+
 /**
  * Repair clips whose numbers went non-finite (a NaN playhead once placed clips at NaN, which
  * JSON stores as null): move them to bar 1 and drop clips without a usable length.

@@ -14,7 +14,7 @@ import type { Project, Sample, Track } from '../types';
 import { audibleGain } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { preparePageAudio } from './pageAudio';
-import { loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
+import { clipEnvelope, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
 
@@ -86,7 +86,18 @@ function scheduleWindow(
       const plan = planClip(clip, fromBar, toBar, loopBars);
       if (!plan) continue;
       const when = time + plan.delayBars * spb;
-      sources.push(startVoice(ctx, buffer, sample, project.bpm, trackDest(track), when, plan.offsetBars, plan.durationBars));
+      // Clip gain and fades: a gain node per voice, automated along the clip's envelope.
+      const from = fromBar + plan.delayBars - clip.start;
+      const envelope = clipEnvelope(clip, from, from + plan.durationBars);
+      let dest = trackDest(track);
+      if (envelope.some((p) => p.gain !== 1)) {
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(envelope[0].gain, when);
+        for (const p of envelope.slice(1)) g.gain.linearRampToValueAtTime(p.gain, when + (p.pos - from) * spb);
+        g.connect(dest);
+        dest = g;
+      }
+      sources.push(startVoice(ctx, buffer, sample, project.bpm, dest, when, plan.offsetBars, plan.durationBars));
     }
   }
   return sources;

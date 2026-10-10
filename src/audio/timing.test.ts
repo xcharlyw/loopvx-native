@@ -1,4 +1,8 @@
 import {
+  clipEnvelope,
+  clipFades,
+  clipGainAt,
+  dbToGain,
   formatBarPosition,
   formatClock,
   loopEndSeconds,
@@ -34,6 +38,46 @@ describe('tempo math', () => {
     expect(nextBoundary(0.2, 0, 1.5)).toBeCloseTo(1.5);
     expect(nextBoundary(3.0, 0, 1.5)).toBeCloseTo(3.0);
     expect(nextBoundary(-1, 0, 1.5)).toBe(0);
+  });
+});
+
+describe('clip gain and fades', () => {
+  const clip = { id: 'c', sampleId: 's', start: 4, length: 8, offset: 0 };
+
+  it('is flat without gain or fades', () => {
+    expect(clipEnvelope(clip, 0, 8)).toEqual([
+      { pos: 0, gain: 1 },
+      { pos: 8, gain: 1 },
+    ]);
+  });
+
+  it('ramps through fade in and fade out', () => {
+    const c = { ...clip, fadeIn: 2, fadeOut: 1 };
+    expect(clipEnvelope(c, 0, 8)).toEqual([
+      { pos: 0, gain: 0 },
+      { pos: 2, gain: 1 },
+      { pos: 7, gain: 1 },
+      { pos: 8, gain: 0 },
+    ]);
+    expect(clipGainAt(c, 1)).toBeCloseTo(0.5);
+    expect(clipGainAt(c, 7.5)).toBeCloseTo(0.5);
+  });
+
+  it('starts mid-fade when the window starts inside it', () => {
+    const c = { ...clip, fadeIn: 4 };
+    expect(clipEnvelope(c, 1, 3)).toEqual([
+      { pos: 1, gain: 0.25 },
+      { pos: 3, gain: 0.75 },
+    ]);
+  });
+
+  it('applies the clip gain in dB', () => {
+    expect(clipGainAt({ ...clip, gainDb: -6 }, 3)).toBeCloseTo(0.501, 3);
+    expect(dbToGain(0)).toBe(1);
+  });
+
+  it('shrinks fades that together exceed the clip', () => {
+    expect(clipFades({ ...clip, length: 2, fadeIn: 2, fadeOut: 2 })).toEqual({ fadeIn: 1, fadeOut: 1 });
   });
 });
 

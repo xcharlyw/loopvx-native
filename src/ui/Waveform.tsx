@@ -35,11 +35,15 @@ interface Props {
   sampleBpm?: number;
   /** Offset into the loop in pixels. */
   offsetPx: number;
+  /** Clip gain (linear) and fade lengths, to draw the waveform the way it sounds. */
+  gain?: number;
+  fadeInPx?: number;
+  fadeOutPx?: number;
 }
 
 const STEP = 2;
 
-export function Waveform({ sampleId, width, height, zoom, projectBpm, sampleBpm, offsetPx }: Props) {
+export function Waveform({ sampleId, width, height, zoom, projectBpm, sampleBpm, offsetPx, gain = 1, fadeInPx = 0, fadeOutPx = 0 }: Props) {
   const [buffer, setBuffer] = useState(() => engine.getBuffer(sampleId));
 
   useEffect(() => {
@@ -65,11 +69,15 @@ export function Waveform({ sampleId, width, height, zoom, projectBpm, sampleBpm,
     for (let x = 0; x < width; x += STEP) {
       const t = ((((x + offsetPx) % loopPx) + loopPx) % loopPx) / loopPx;
       const p = peaks[Math.min(peaks.length - 1, Math.floor(t * peaks.length))];
-      const h = Math.max(1, p * mid * 0.95);
+      // Drawn the way it will sound: scaled by clip gain and shaped by the fades.
+      let env = gain;
+      if (fadeInPx > 0 && x < fadeInPx) env *= x / fadeInPx;
+      if (fadeOutPx > 0 && x > width - fadeOutPx) env *= (width - x) / fadeOutPx;
+      const h = Math.max(1, Math.min(mid, p * mid * 0.95 * env));
       path += `M${x} ${(mid - h).toFixed(1)}h${STEP}v${(h * 2).toFixed(1)}h-${STEP}z`;
     }
     return path;
-  }, [buffer, sampleId, width, height, loopPx, offsetPx]);
+  }, [buffer, sampleId, width, height, loopPx, offsetPx, gain, fadeInPx, fadeOutPx]);
 
   if (!d) return null;
   return (

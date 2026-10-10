@@ -5,12 +5,17 @@ import { sampleLengthBars } from '../audio/timing';
 import { BEATS_PER_BAR } from '../config';
 import { C, font, mono } from '../constants/theme';
 import { scaleSelectedClip, setSampleBpm } from '../lib/actions';
-import { findClip } from '../lib/project';
-import { useStore } from '../lib/store';
+import { findClip, updateClip } from '../lib/project';
+import { updateProject, useStore } from '../lib/store';
+import type { Clip } from '../types';
+import { Fader } from './Fader';
 import { Btn, Chip, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
 const STRETCH_BARS = [1, 2, 4, 8, 16];
+const FADES = [0, 0.25, 0.5, 1, 2, 4];
+
+const fmtBars = (bars: number) => (bars === 0.25 ? '¼' : bars === 0.5 ? '½' : String(bars));
 
 const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
 
@@ -30,6 +35,11 @@ export function ClipPanel() {
       </Sheet>
     );
   }
+
+  const clipId = found.clip.id;
+  const gainDb = found.clip.gainDb ?? 0;
+  /** Gain fader drags merge into one undo step but are heard right away. */
+  const setClip = (patch: Partial<Clip>, merge = false) => updateProject((p) => updateClip(p, clipId, patch), { merge });
 
   const duration = sample.duration ?? engine.getBuffer(sample.id)?.duration;
   const loopBars = duration ? sampleLengthBars(duration, project.bpm, sample.bpm) : undefined;
@@ -67,6 +77,33 @@ export function ClipPanel() {
           </Btn>
         </View>
         <Txt style={s.note}>Ränder des Clips ziehen kürzt oder verlängert ihn, die Schere teilt ihn an der Abspielposition.</Txt>
+      </Section>
+
+      <Section title="Lautstärke & Fades">
+        <View style={s.row}>
+          <Txt style={{ width: 92 }}>Clip-Gain</Txt>
+          <Fader value={gainDb} min={-24} max={6} onChange={(v) => setClip({ gainDb: Math.round(v * 2) / 2 }, true)} />
+          <Txt style={[s.value, { width: 64, textAlign: 'right' }]}>{`${gainDb > 0 ? '+' : ''}${fmt(gainDb)} dB`}</Txt>
+        </View>
+        {gainDb !== 0 && (
+          <View style={[s.row, { marginTop: 8 }]}>
+            <Btn small onPress={() => setClip({ gainDb: 0 })}>
+              Auf 0 dB
+            </Btn>
+          </View>
+        )}
+        {(['fadeIn', 'fadeOut'] as const).map((key) => (
+          <View key={key}>
+            <Txt style={[s.label, { marginTop: 14 }]}>{key === 'fadeIn' ? 'Fade-In' : 'Fade-Out'}</Txt>
+            <View style={s.chips}>
+              {FADES.filter((bars) => bars <= found.clip.length).map((bars) => (
+                <Chip key={bars} variant={(found.clip[key] ?? 0) === bars ? 'on' : 'ghost'} onPress={() => setClip({ [key]: bars })}>
+                  {bars === 0 ? 'Aus' : `${fmtBars(bars)} ${bars <= 1 ? 'Takt' : 'Takte'}`}
+                </Chip>
+              ))}
+            </View>
+          </View>
+        ))}
       </Section>
 
       <Section title="Tempo (Warp)">

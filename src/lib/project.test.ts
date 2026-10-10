@@ -46,6 +46,10 @@ describe('project helpers', () => {
       { id: 'r', sampleId: 's', start: 6.5, length: 5.5, offset: 3.5 },
     ]);
     expect(splitClip(withClip, 'c', 4, 'r')).toBe(withClip);
+    const faded = updateClip(withClip, 'c', { fadeIn: 1, fadeOut: 2, gainDb: -3 });
+    const [left, right] = splitClip(faded, 'c', 8, 'r').tracks[0].clips;
+    expect([left.fadeIn, left.fadeOut, left.gainDb]).toEqual([1, undefined, -3]);
+    expect([right.fadeIn, right.fadeOut, right.gainDb]).toEqual([undefined, 2, -3]);
     expect(splitClip(withClip, 'c', 12, 'r')).toBe(withClip);
   });
 

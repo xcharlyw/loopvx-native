@@ -1,8 +1,9 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { C, RULER_H, font, layout } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { projectEndBars, snapBars } from '../audio/timing';
+import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
 import { addClip, createTrack, editClip, mapTrack, removeClip, updateClip, type ClipEdit } from '../lib/project';
 import { setState, updateProject, useStore } from '../lib/store';
@@ -338,6 +339,7 @@ interface ClipViewProps {
 
 function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, selected, dragging, liftY, onTap, onDrag }: ClipViewProps) {
   const w = Math.max(6, clip.length * zoom);
+  const fades = clipFades(clip);
   const editable = selected || FINE_POINTER;
   const body = useDrag('move', editable, (dx, dy, phase) => onDrag('move', dx, dy, phase));
   const startEdge = useDrag('start', editable, (dx, dy, phase) => onDrag('start', dx, dy, phase));
@@ -362,7 +364,16 @@ function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, sele
             projectBpm={projectBpm}
             sampleBpm={sampleBpm}
             offsetPx={clip.offset * zoom}
+            gain={dbToGain(clip.gainDb ?? 0)}
+            fadeInPx={fades.fadeIn * zoom}
+            fadeOutPx={fades.fadeOut * zoom}
           />
+          {(fades.fadeIn > 0 || fades.fadeOut > 0) && (
+            <Svg width={w - 2} height={height - 2} style={StyleSheet.absoluteFill}>
+              {fades.fadeIn > 0 && <Path d={`M0 ${height - 2}L${fades.fadeIn * zoom} 0`} stroke="rgba(0,0,0,0.55)" strokeWidth={1.5} />}
+              {fades.fadeOut > 0 && <Path d={`M${w - 2 - fades.fadeOut * zoom} 0L${w - 2} ${height - 2}`} stroke="rgba(0,0,0,0.55)" strokeWidth={1.5} />}
+            </Svg>
+          )}
           <Txt numberOfLines={1} style={s.clipName}>
             {name.replace(/\.[a-z0-9]+$/i, '')}
           </Txt>

@@ -33,6 +33,11 @@ export interface Clip {
   length: number;
   /** Offset into the (warped) sample in bars. */
   offset: number;
+  /** Clip volume in dB (default 0). */
+  gainDb?: number;
+  /** Linear fade lengths in bars from the clip's start / towards its end (default 0 = none). */
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 export interface SessionSlot {

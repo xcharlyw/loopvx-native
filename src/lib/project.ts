@@ -103,10 +103,12 @@ export function splitClip(project: Project, clipId: string, bar: number, rightId
   const { clip, track } = found;
   const cut = bar - clip.start;
   if (!(cut > 1e-6 && cut < clip.length - 1e-6)) return project;
-  const right: Clip = { ...clip, id: rightId, start: bar, length: clip.length - cut, offset: clip.offset + cut };
+  // The fade-in stays on the left part, the fade-out on the right one.
+  const left: Clip = { ...clip, length: cut, fadeOut: undefined };
+  const right: Clip = { ...clip, id: rightId, start: bar, length: clip.length - cut, offset: clip.offset + cut, fadeIn: undefined };
   return mapTrack(project, track.id, (t) => ({
     ...t,
-    clips: t.clips.flatMap((c) => (c.id === clipId ? [{ ...c, length: cut }, right] : [c])),
+    clips: t.clips.flatMap((c) => (c.id === clipId ? [left, right] : [c])),
   }));
 }
 

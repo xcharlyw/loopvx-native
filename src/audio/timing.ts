@@ -72,6 +72,38 @@ export function planClip(clip: Clip, fromBar: number, toBar: number, loopBars: n
   return { delayBars: begin - fromBar, offsetBars, durationBars: end - begin };
 }
 
+export const dbToGain = (db: number) => Math.pow(10, db / 20);
+
+/** Fade lengths that fit the clip: shrunk proportionally if together they are longer than it. */
+export function clipFades(clip: Clip): { fadeIn: number; fadeOut: number } {
+  const fadeIn = Math.max(0, clip.fadeIn ?? 0);
+  const fadeOut = Math.max(0, clip.fadeOut ?? 0);
+  const total = fadeIn + fadeOut;
+  if (total <= clip.length) return { fadeIn, fadeOut };
+  const k = clip.length / total;
+  return { fadeIn: fadeIn * k, fadeOut: fadeOut * k };
+}
+
+/** Gain of a clip `pos` bars into it: clip gain times linear fades. */
+export function clipGainAt(clip: Clip, pos: number): number {
+  const { fadeIn, fadeOut } = clipFades(clip);
+  let gain = dbToGain(clip.gainDb ?? 0);
+  if (fadeIn > 0 && pos < fadeIn) gain *= Math.max(0, pos / fadeIn);
+  if (fadeOut > 0 && pos > clip.length - fadeOut) gain *= Math.max(0, (clip.length - pos) / fadeOut);
+  return gain;
+}
+
+/**
+ * Breakpoints of the clip's gain curve between `from` and `to` (bars into the clip). The curve is
+ * linear between them (fades never overlap), so they map 1:1 onto linearRampToValueAtTime.
+ */
+export function clipEnvelope(clip: Clip, from: number, to: number): { pos: number; gain: number }[] {
+  const { fadeIn, fadeOut } = clipFades(clip);
+  const marks = new Set([from, to]);
+  for (const m of [fadeIn, clip.length - fadeOut]) if (m > from && m < to) marks.add(m);
+  return [...marks].sort((a, b) => a - b).map((pos) => ({ pos, gain: clipGainAt(clip, pos) }));
+}
+
 export function projectEndBars(project: Project): number {
   let end = 0;
   for (const t of project.tracks) for (const c of t.clips) end = Math.max(end, c.start + c.length);

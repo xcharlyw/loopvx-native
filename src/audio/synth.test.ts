@@ -1,0 +1,29 @@
+import { adsrPoints } from './synth';
+
+describe('adsrPoints', () => {
+  const env = { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 };
+
+  it('runs attack, decay, sustain and release for a long note', () => {
+    expect(adsrPoints(env, 1, 1)).toEqual([
+      { t: 0.01, v: 1 },
+      { t: 0.11, v: 0.5 },
+      { t: 1, v: 0.5 },
+      { t: 1.2, v: 0 },
+    ]);
+  });
+
+  it('releases from mid-decay for a short note', () => {
+    const p = adsrPoints(env, 1, 0.06);
+    expect(p[0]).toEqual({ t: 0.01, v: 1 });
+    expect(p[1].t).toBe(0.06);
+    expect(p[1].v).toBeCloseTo(0.75);
+    expect(p[2].v).toBe(0);
+    expect(p[2].t).toBeCloseTo(0.26);
+  });
+
+  it('releases from mid-attack for a very short note', () => {
+    const p = adsrPoints({ ...env, attack: 0.1 }, 0.8, 0.05);
+    expect(p[0]).toEqual({ t: 0.05, v: 0.4 });
+    expect(p[1]).toEqual({ t: 0.25, v: 0 });
+  });
+});

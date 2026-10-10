@@ -11,11 +11,13 @@ import {
   OscillatorNode,
 } from 'react-native-audio-api';
 import { Platform } from 'react-native';
-import type { Project, Sample, Track } from '../types';
-import { audibleGain } from '../lib/project';
+import type { Clip, Project, Sample, SynthSettings, Track } from '../types';
+import { midiToHz } from '../lib/midi';
+import { audibleGain, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { preparePageAudio } from './pageAudio';
-import { beatsInWindow, clipEnvelope, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
+import { adsrPoints } from './synth';
+import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
 
@@ -43,7 +45,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined>
  * answering a no-op request (dropping buffers that end before 0 s) means all earlier ones landed.
  * Plain voices and native ones are ready at once.
  */
-async function voiceReady(src: AudioBufferSourceNode): Promise<void> {
+async function voiceReady(src: Voice): Promise<void> {
   type Stretcher = { dropBuffers: (toSeconds: number) => Promise<unknown> };
   const node = (src as unknown as { node?: { _operationChain?: Promise<unknown>; stretcherPromise?: Promise<Stretcher> | null } }).node;
   if (!node?.stretcherPromise) return;
@@ -89,6 +91,46 @@ function startVoice(
   return src;
 }
 
+/** A playing sound: a sample voice or a synth note. Both stop and report their end the same way. */
+type Voice = AudioBufferSourceNode | OscillatorNode;
+
+/** One synth note: oscillator -> lowpass -> ADSR gain -> destination. */
+function startSynthVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, level: number, when: number, hold: number, dest: AudioNode): OscillatorNode {
+  const osc = ctx.createOscillator();
+  osc.type = synth.wave;
+  osc.frequency.value = midiToHz(pitch);
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = synth.cutoff;
+  filter.Q.value = synth.resonance;
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0, when);
+  const points = adsrPoints(synth, level, hold);
+  for (const p of points) amp.gain.linearRampToValueAtTime(p.v, when + p.t);
+  osc.connect(filter);
+  filter.connect(amp);
+  amp.connect(dest);
+  osc.start(when);
+  osc.stop(when + points[points.length - 1].t + 0.01);
+  return osc;
+}
+
+/** The notes of a MIDI clip that start sounding inside [fromBar, toBar); cut at the window end (loop end). */
+function scheduleNotes(ctx: AnyContext, clip: Clip, synth: SynthSettings, dest: AudioNode, spb: number, time: number, fromBar: number, toBar: number): OscillatorNode[] {
+  const voices: OscillatorNode[] = [];
+  const clipEnd = clip.start + clip.length;
+  for (const note of clip.notes ?? []) {
+    const start = clip.start + note.start;
+    const end = Math.min(start + note.length, clipEnd, toBar);
+    const begin = Math.max(start, fromBar);
+    if (begin >= end - 1e-9 || start >= clipEnd) continue;
+    // Polyphony headroom: one note at full velocity peaks at -12 dBFS before the track fader.
+    const level = 0.25 * note.velocity * clipGainAt(clip, begin - clip.start);
+    voices.push(startSynthVoice(ctx, synth, note.pitch, level, time + (begin - fromBar) * spb, (end - begin) * spb, dest));
+  }
+  return voices;
+}
+
 /** Schedule all arrangement clips that sound inside [fromBar, toBar) starting at context time `time`. */
 function scheduleWindow(
   ctx: AnyContext,
@@ -99,11 +141,15 @@ function scheduleWindow(
   time: number,
   fromBar: number,
   toBar: number,
-): AudioBufferSourceNode[] {
+): Voice[] {
   const spb = secondsPerBar(project.bpm);
-  const sources: AudioBufferSourceNode[] = [];
+  const sources: Voice[] = [];
   for (const track of project.tracks) {
     for (const clip of track.clips) {
+      if (clip.notes) {
+        sources.push(...scheduleNotes(ctx, clip, trackSynth(track), trackDest(track), spb, time, fromBar, toBar));
+        continue;
+      }
       const sample = samples.get(clip.sampleId);
       const buffer = buffers.get(clip.sampleId);
       if (!sample || !buffer) continue;
@@ -144,7 +190,7 @@ export class AudioEngine {
   /** Bumped whenever session clips start or stop, for UI subscriptions. */
   sessionVersion = 0;
   mode: EngineMode = 'arrange';
-  private sources: AudioBufferSourceNode[] = [];
+  private sources: Voice[] = [];
   /** Metronome on/off and its scheduled clicks (straight to the output: not metered, never exported). */
   metronome = false;
   private clicks: OscillatorNode[] = [];
@@ -517,6 +563,12 @@ export class AudioEngine {
   }
 
   // ---------------- preview ----------------
+
+  /** Play one synth note now (piano roll taps). */
+  async previewNote(synth: SynthSettings, pitch: number) {
+    const ctx = await this.unlock();
+    startSynthVoice(ctx, synth, pitch, 0.25, ctx.currentTime + 0.01, 0.2, this.master!);
+  }
 
   async preview(sample: Sample, projectBpm: number) {
     const ctx = await this.unlock();

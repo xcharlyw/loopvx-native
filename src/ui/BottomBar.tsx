@@ -4,6 +4,7 @@ import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip } from '../lib/actions';
 import { redo, setState, undo, useStore } from '../lib/store';
+import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 import { confirmDestructive } from './confirm';
 import { Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
 import { useSmall } from './hooks';
@@ -86,10 +87,10 @@ export function BottomBar() {
       {/* On a phone the clip tools need the room; zoom comes back once the clip is deselected. */}
       {view === 'arrange' && !(small && selectedClipId) && (
         <PillGroup>
-          <IconBtn accessibilityLabel="Herauszoomen" onPress={() => setState({ zoom: Math.max(8, zoom / 1.4) })}>
+          <IconBtn accessibilityLabel="Herauszoomen" onPress={() => setState({ zoom: Math.max(MIN_ZOOM, zoom / 1.4) })}>
             <ZoomOut size={18} />
           </IconBtn>
-          <IconBtn accessibilityLabel="Hineinzoomen" onPress={() => setState({ zoom: Math.min(240, zoom * 1.4) })}>
+          <IconBtn accessibilityLabel="Hineinzoomen" onPress={() => setState({ zoom: Math.min(MAX_ZOOM, zoom * 1.4) })}>
             <ZoomIn size={18} />
           </IconBtn>
         </PillGroup>

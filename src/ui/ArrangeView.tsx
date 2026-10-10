@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { C, RULER_H, font, layout } from '../constants/theme';
@@ -6,7 +6,7 @@ import { engine } from '../audio/engine';
 import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
 import { addClip, createTrack, editClip, mapTrack, removeClip, updateClip, type ClipEdit } from '../lib/project';
-import { setState, updateProject, useStore } from '../lib/store';
+import { getState, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Track } from '../types';
 import { Fader } from './Fader';
 import { usePlayhead, useSmall } from './hooks';
@@ -17,6 +17,11 @@ import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
 const BOTTOM_PAD = 170;
+export const MIN_ZOOM = 8;
+export const MAX_ZOOM = 240;
+
+const touchDistance = (t: { pageX: number; pageY: number }[]) => Math.hypot(t[0].pageX - t[1].pageX, t[0].pageY - t[1].pageY);
+
 /** Touch target around each loop handle (the visible handle stays 2px wide like the original). */
 const LOOP_GRIP = 24;
 /** Mouse/trackpad: clips drag straight away. Touch: a clip must be selected first, so swiping over clips still scrolls. */
@@ -69,6 +74,35 @@ export function ArrangeView() {
   const { headerW, rowH } = layout(small);
   const [viewportH, setViewportH] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
+  const hScroll = useRef<ScrollView>(null);
+  const scrollLeft = useRef(0);
+  useEffect(() => {
+    const id = scrollX.addListener(({ value }) => {
+      scrollLeft.current = value;
+    });
+    return () => scrollX.removeListener(id);
+  }, [scrollX]);
+
+  // Two-finger pinch zooms the timeline around the point between the fingers.
+  const pinch = useRef<{ dist: number; zoom: number; focalBar: number; focalX: number } | null>(null);
+  const onTouchStart = (e: GestureResponderEvent) => {
+    const t = e.nativeEvent.touches;
+    if (t.length !== 2) return;
+    const focalX = (t[0].pageX + t[1].pageX) / 2 - headerW;
+    pinch.current = { dist: touchDistance(t), zoom, focalX, focalBar: (scrollLeft.current + focalX) / zoom };
+  };
+  const onTouchMove = (e: GestureResponderEvent) => {
+    const t = e.nativeEvent.touches;
+    const p = pinch.current;
+    if (!p || t.length !== 2) return;
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (p.zoom * touchDistance(t)) / p.dist));
+    if (Math.abs(next - getState().zoom) < 0.5) return;
+    setState({ zoom: next });
+    requestAnimationFrame(() => hScroll.current?.scrollTo({ x: Math.max(0, p.focalBar * next - p.focalX), animated: false }));
+  };
+  const onTouchEnd = (e: GestureResponderEvent) => {
+    if (e.nativeEvent.touches.length < 2) pinch.current = null;
+  };
 
   const totalBars = Math.max(64, Math.ceil(projectEndBars(project)) + 16);
   const width = totalBars * zoom;
@@ -174,7 +208,14 @@ export function ArrangeView() {
         </View>
       </View>
 
-      <View style={{ flex: 1 }} onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}>
+      <View
+        style={[{ flex: 1 }, web({ touchAction: 'pan-x pan-y' })]} // the browser must not zoom the page on a pinch
+        onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
+      >
         <ScrollView scrollEnabled={!drag} contentContainerStyle={{ flexDirection: 'row', height: bodyH }}>
           <View style={{ width: headerW }}>
             {project.tracks.map((track) => {
@@ -226,6 +267,7 @@ export function ArrangeView() {
           </View>
 
           <Animated.ScrollView
+            ref={hScroll}
             horizontal
             scrollEnabled={!drag}
             style={{ flex: 1 }}

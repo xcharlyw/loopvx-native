@@ -1,4 +1,4 @@
-import { addClip, audibleGain, createProject, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addClip, audibleGain, createMidiClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -26,6 +26,16 @@ describe('project helpers', () => {
     expect(next.tracks.map((t) => t.name)).toEqual(['Kick + Bass', 'Top Loop', 'Synth / Lead', 'Lead Vocals']);
     expect(renameTrack(p, p.tracks[0].id, 'x'.repeat(100)).tracks[0].name).toHaveLength(40);
     expect(p.tracks[3].name).toBe('Vocals');
+  });
+
+  it('toggles piano-roll notes', () => {
+    let notes = toggleNote([], 36, 0.25, 0.25);
+    notes = toggleNote(notes, 36, 0, 0.25);
+    expect(notes.map((n) => n.start)).toEqual([0, 0.25]);
+    // Tapping anywhere on a note removes it.
+    expect(toggleNote([{ pitch: 40, start: 0, length: 1, velocity: 1 }], 40, 0.5, 0.25)).toEqual([]);
+    expect(isMidiClip(createMidiClip(2))).toBe(true);
+    expect(isMidiClip({ id: 'c', sampleId: 's', start: 0, length: 1, offset: 0 })).toBe(false);
   });
 
   it('recognises damaged project data', () => {

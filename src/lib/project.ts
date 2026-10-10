@@ -1,5 +1,5 @@
 import { snapBars } from '../audio/timing';
-import type { Clip, Project, Sample, SampleCategory, Track } from '../types';
+import type { Clip, Note, Project, Sample, SampleCategory, SynthSettings, Track } from '../types';
 
 export const uid = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -76,6 +76,29 @@ export function updateClip(project: Project, clipId: string, patch: Partial<Clip
 
 export function removeClip(project: Project, clipId: string): Project {
   return { ...project, tracks: project.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) })) };
+}
+
+// ---------------- MIDI ----------------
+
+export const DEFAULT_SYNTH: SynthSettings = { wave: 'sawtooth', cutoff: 2400, resonance: 4, attack: 0.005, decay: 0.15, sustain: 0.6, release: 0.12 };
+
+export const isMidiClip = (clip: Clip): boolean => Array.isArray(clip.notes);
+
+export const trackSynth = (track: Track): SynthSettings => ({ ...DEFAULT_SYNTH, ...track.synth });
+
+export function createMidiClip(start: number, length = 4): Clip {
+  return { id: uid(), sampleId: '', start, length, offset: 0, notes: [] };
+}
+
+/**
+ * Tap in the piano roll: a note starting at that step and pitch is removed, otherwise one is added
+ * (`length` bars long). Notes stay sorted by start, then pitch.
+ */
+export function toggleNote(notes: Note[], pitch: number, start: number, length: number, velocity = 0.8): Note[] {
+  const eps = 1e-6;
+  const hit = notes.findIndex((n) => n.pitch === pitch && start >= n.start - eps && start < n.start + n.length - eps);
+  if (hit >= 0) return notes.filter((_, i) => i !== hit);
+  return [...notes, { pitch, start, length, velocity }].sort((a, b) => a.start - b.start || a.pitch - b.pitch);
 }
 
 /** Track colours to pick from: the category colours first, then a few more that read on the dark UI. */

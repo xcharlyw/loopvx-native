@@ -19,7 +19,7 @@ const extOf = (name: string) => (/\.([a-z0-9]{2,5})$/i.exec(name)?.[1] ?? 'bin')
 export function usedSampleIds(project: Project): Set<string> {
   const ids = new Set<string>();
   for (const t of project.tracks) {
-    for (const c of t.clips) ids.add(c.sampleId);
+    for (const c of t.clips) if (c.sampleId) ids.add(c.sampleId); // MIDI clips have none
     for (const s of t.slots) if (s) ids.add(s.sampleId);
   }
   return ids;

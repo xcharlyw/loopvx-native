@@ -29,9 +29,35 @@ export interface Sample {
   updatedAt?: number;
 }
 
+/** A MIDI note in a MIDI clip; positions in bars from the clip start. */
+export interface Note {
+  /** MIDI note number, 60 = C3 (Ableton's naming). */
+  pitch: number;
+  start: number;
+  length: number;
+  /** 0..1 */
+  velocity: number;
+}
+
+/** The track's built-in instrument for its MIDI clips: one oscillator, a lowpass filter and an ADSR. */
+export interface SynthSettings {
+  wave: 'sawtooth' | 'square' | 'sine' | 'triangle';
+  /** Lowpass cutoff in Hz and its resonance (Q). */
+  cutoff: number;
+  resonance: number;
+  /** Envelope in seconds (sustain is a level 0..1). */
+  attack: number;
+  decay: number;
+  sustain: number;
+  release: number;
+}
+
 export interface Clip {
   id: string;
+  /** The audio clip's sample; '' for a MIDI clip. */
   sampleId: string;
+  /** Present on MIDI clips: the notes the track's synth plays. */
+  notes?: Note[];
   /** Position on the timeline in bars (0-based, may be fractional at beat resolution). */
   start: number;
   /** Length on the timeline in bars. The sample loops to fill it. */
@@ -59,6 +85,8 @@ export interface Track {
   muted: boolean;
   solo: boolean;
   clips: Clip[];
+  /** Instrument for the track's MIDI clips (defaults apply when missing). */
+  synth?: SynthSettings;
   /** Session grid: one slot per scene. */
   slots: (SessionSlot | null)[];
 }

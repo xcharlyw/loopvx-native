@@ -291,7 +291,7 @@ export class AudioEngine {
     this.stopAll();
     this.project = project;
     this.mode = 'arrange';
-    const ids = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.sampleId)));
+    const ids = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.sampleId).filter(Boolean)));
     await Promise.all([...ids].map((id) => this.loadBuffer(id).catch(() => undefined)));
     this.syncMixer(project);
     const ctx = this.ctx!;
@@ -552,7 +552,7 @@ export class AudioEngine {
 
   /** Render the arrangement (or the loop region) to an AudioBuffer. */
   async render(project: Project, region: { from: number; to: number }): Promise<AudioBuffer> {
-    const ids = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.sampleId)));
+    const ids = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.sampleId).filter(Boolean)));
     await Promise.all([...ids].map((id) => this.loadBuffer(id)));
     const sampleRate = 44100;
     const seconds = (region.to - region.from) * secondsPerBar(project.bpm);

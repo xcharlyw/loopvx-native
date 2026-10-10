@@ -87,7 +87,7 @@ export function useStore<T>(selector: (s: AppState) => T): T {
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** What undo restores: the project plus the sample tempos (clip warping is stored on the sample). */
+/** What undo restores: the project plus the sample tempos and warp modes (warping is stored on the sample). */
 interface Snapshot {
   project: Project;
   samples: Sample[];
@@ -134,7 +134,7 @@ export function updateProject(fn: (p: Project) => Project, opts: { reschedule?: 
 function restore(entry: Snapshot) {
   for (const old of entry.samples) {
     const current = state.samples.find((x) => x.id === old.id);
-    if (current && current.bpm !== old.bpm) void upsertSample({ ...current, bpm: old.bpm });
+    if (current && (current.bpm !== old.bpm || current.warp !== old.warp)) void upsertSample({ ...current, bpm: old.bpm, warp: old.warp });
   }
   const { project } = entry;
   const clipIds = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.id)));

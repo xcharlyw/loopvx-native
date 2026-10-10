@@ -36,6 +36,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined>
   return Promise.race([promise.catch(() => undefined), new Promise<undefined>((resolve) => setTimeout(resolve, ms))]);
 }
 
+/**
+ * On web a stretching voice sets itself up asynchronously: a worklet that queues our messages
+ * (buffer, start, loop) until its WASM is ready. Every request to it is answered in order, so
+ * answering a no-op request (dropping buffers that end before 0 s) means all earlier ones landed.
+ * Plain voices and native ones are ready at once.
+ */
+async function voiceReady(src: AudioBufferSourceNode): Promise<void> {
+  type Stretcher = { dropBuffers: (toSeconds: number) => Promise<unknown> };
+  const node = (src as unknown as { node?: { _operationChain?: Promise<unknown>; stretcherPromise?: Promise<Stretcher> | null } }).node;
+  if (!node?.stretcherPromise) return;
+  await withTimeout(
+    (async () => {
+      await node._operationChain;
+      await (await node.stretcherPromise!).dropBuffers(0);
+    })(),
+    10000,
+  );
+}
+
+const usesStretch = (project: Project, samples: Map<string, Sample>) =>
+  project.tracks.some((t) => t.clips.some((c) => samples.get(c.sampleId)?.warp === 'stretch'));
+
 const LOOKAHEAD = 1.0; // seconds of audio scheduled ahead
 const TICK_MS = 100;
 
@@ -50,9 +72,11 @@ function startVoice(
   offsetBars: number,
   durationBars: number | null,
 ): AudioBufferSourceNode {
-  const src = ctx.createBufferSource({ pitchCorrection: false });
+  const rate = warpRate(projectBpm, sample.bpm);
+  // 'stretch' keeps the pitch: the library's time-stretcher (Signalsmith Stretch on web).
+  const src = ctx.createBufferSource({ pitchCorrection: sample.warp === 'stretch' && Math.abs(rate - 1) > 1e-4 });
   src.buffer = buffer;
-  src.playbackRate.value = warpRate(projectBpm, sample.bpm);
+  src.playbackRate.value = rate;
   src.loop = true;
   src.loopStart = 0;
   src.loopEnd = loopEndSeconds(buffer.duration, sample.bpm);
@@ -265,7 +289,8 @@ export class AudioEngine {
     await Promise.all([...ids].map((id) => this.loadBuffer(id).catch(() => undefined)));
     this.syncMixer(project);
     const ctx = this.ctx!;
-    const start = ctx.currentTime + 0.06;
+    // Stretching voices need a moment to set up on web; start a little later so they come in on time.
+    const start = ctx.currentTime + (Platform.OS === 'web' && usesStretch(project, this.samples) ? 0.4 : 0.06);
     const end = project.loop.enabled && fromBar < project.loop.end ? project.loop.end : projectEndBars(project);
     this.segments = [];
     this.queueSegment(start, fromBar, Math.max(fromBar + 0.25, end));
@@ -458,7 +483,9 @@ export class AudioEngine {
     await Promise.all([...ids].map((id) => this.loadBuffer(id)));
     const sampleRate = 44100;
     const seconds = (region.to - region.from) * secondsPerBar(project.bpm);
-    const off = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate) + sampleRate, sampleRate);
+    // Stretchers compensate their latency only for audio scheduled ahead: give them a short lead-in.
+    const lead = Platform.OS === 'web' && usesStretch(project, this.samples) ? 0.1 : 0;
+    const off = new OfflineAudioContext(2, Math.ceil((seconds + lead) * sampleRate) + sampleRate, sampleRate);
     const anySolo = project.tracks.some((t) => t.solo);
     const gains = new Map<string, GainNode>();
     for (const t of project.tracks) {
@@ -467,16 +494,21 @@ export class AudioEngine {
       g.connect(off.destination);
       gains.set(t.id, g);
     }
-    scheduleWindow(off, project, this.samples, this.buffers, (t) => gains.get(t.id)!, 0, region.from, region.to);
+    const voices = scheduleWindow(off, project, this.samples, this.buffers, (t) => gains.get(t.id)!, lead, region.from, region.to);
+    // Offline rendering runs far faster than real time: stretchers must have everything first.
+    // (Pausing the render with suspend() instead crashes Chromium together with the worklet.)
+    await Promise.all(voices.map(voiceReady));
     const rendered = await off.startRendering();
-    return trimTo(rendered, seconds);
+    return trimTo(rendered, seconds, lead);
   }
 }
 
-function trimTo(buffer: AudioBuffer, seconds: number): AudioBuffer {
-  const frames = Math.min(buffer.length, Math.ceil(seconds * buffer.sampleRate));
+/** `seconds` of audio starting `skip` seconds in. */
+function trimTo(buffer: AudioBuffer, seconds: number, skip = 0): AudioBuffer {
+  const start = Math.round(skip * buffer.sampleRate);
+  const frames = Math.min(buffer.length - start, Math.ceil(seconds * buffer.sampleRate));
   const out = new AudioBuffer({ length: frames, numberOfChannels: buffer.numberOfChannels, sampleRate: buffer.sampleRate });
-  for (let c = 0; c < buffer.numberOfChannels; c++) out.copyToChannel(buffer.getChannelData(c).subarray(0, frames), c);
+  for (let c = 0; c < buffer.numberOfChannels; c++) out.copyToChannel(buffer.getChannelData(c).subarray(start, start + frames), c);
   return out;
 }
 

@@ -4,7 +4,7 @@ import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { BEATS_PER_BAR } from '../config';
 import { C, font, mono } from '../constants/theme';
-import { scaleSelectedClip, setSampleBpm } from '../lib/actions';
+import { scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
 import { findClip, updateClip } from '../lib/project';
 import { updateProject, useStore } from '../lib/store';
 import type { Clip } from '../types';
@@ -37,6 +37,7 @@ export function ClipPanel() {
   }
 
   const clipId = found.clip.id;
+  const stretch = sample.warp === 'stretch';
   const gainDb = found.clip.gainDb ?? 0;
   /** Gain fader drags merge into one undo step but are heard right away. */
   const setClip = (patch: Partial<Clip>, merge = false) => updateProject((p) => updateClip(p, clipId, patch), { merge });
@@ -124,9 +125,24 @@ export function ClipPanel() {
           <Txt style={s.unit}>BPM</Txt>
         </View>
         <Txt style={s.note}>
-          {sample.bpm
-            ? `Wird von ${fmt(sample.bpm)} auf ${fmt(project.bpm)} BPM gezogen (${fmt((project.bpm / sample.bpm) * 100)} % Tempo). Wie „Re-Pitch“ in Ableton: die Tonhöhe geht mit.`
-            : 'Kein Tempo gesetzt: das Sample läuft in Originalgeschwindigkeit.'}
+          {!sample.bpm
+            ? 'Kein Tempo gesetzt: das Sample läuft in Originalgeschwindigkeit.'
+            : `Wird von ${fmt(sample.bpm)} auf ${fmt(project.bpm)} BPM gezogen (${fmt((project.bpm / sample.bpm) * 100)} % Tempo).`}
+        </Txt>
+
+        <Txt style={[s.label, { marginTop: 14 }]}>Modus</Txt>
+        <View style={s.chips}>
+          <Chip variant={stretch ? 'ghost' : 'on'} onPress={() => void setSampleWarp(sample, 'repitch')}>
+            Re-Pitch
+          </Chip>
+          <Chip variant={stretch ? 'on' : 'ghost'} onPress={() => void setSampleWarp(sample, 'stretch')}>
+            Tonhöhe halten
+          </Chip>
+        </View>
+        <Txt style={s.note}>
+          {stretch
+            ? 'Wie „Complex“ in Ableton: nur das Tempo ändert sich, die Tonhöhe bleibt. Ideal für Vocals und Melodien.'
+            : 'Wie „Re-Pitch“ in Ableton: Tempo und Tonhöhe ändern sich zusammen. Klingt bei Drums am natürlichsten.'}
         </Txt>
 
         <Txt style={[s.label, { marginTop: 14 }]}>Strecken auf</Txt>

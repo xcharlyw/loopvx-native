@@ -6,6 +6,11 @@ export interface Sample {
   category: SampleCategory;
   /** Native tempo of the loop, parsed from the file name or set by the user. Undefined for one-shots. */
   bpm?: number;
+  /**
+   * How clips follow the project tempo: 'repitch' (default; speed and pitch change together, like
+   * Ableton's Re-Pitch) or 'stretch' (time-stretch, pitch stays, like Ableton's Complex).
+   */
+  warp?: 'repitch' | 'stretch';
   key?: string;
   /** Length in seconds, filled after the first decode. */
   duration?: number;

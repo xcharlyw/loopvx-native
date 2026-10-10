@@ -41,6 +41,7 @@ function sampleProps(s: Sample): Record<string, string> {
   if (s.key) props.key = cap(s.key);
   if (s.duration !== undefined) props.dur = String(s.duration);
   if (s.folder) props.folder = cap(s.folder);
+  if (s.warp) props.warp = s.warp;
   return props;
 }
 
@@ -57,6 +58,7 @@ function sampleFromFile(f: DriveFile): Sample {
     folder: p.folder || undefined,
     addedAt: num(p.added) ?? Date.now(),
     updatedAt: num(p.updatedAt),
+    warp: p.warp === 'stretch' || p.warp === 'repitch' ? p.warp : undefined,
   };
 }
 

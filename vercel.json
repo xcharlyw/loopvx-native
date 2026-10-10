@@ -1,8 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx expo export --platform web",
+  "buildCommand": "node scripts/copy-web-assets.js && npx expo export --platform web",
   "outputDirectory": "dist",
   "functions": {
-    "api/vocals.ts": { "maxDuration": 300 }
+    "api/vocals.ts": {
+      "maxDuration": 300
+    }
   }
 }

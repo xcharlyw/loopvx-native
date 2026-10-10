@@ -131,6 +131,14 @@ export async function setSampleBpm(sample: Sample, bpm: number | undefined) {
   updateProject((p) => p); // no project change: only reschedules the audio
 }
 
+/** Re-pitch (speed and pitch together) or stretch (pitch stays) when the sample follows the project tempo. */
+export async function setSampleWarp(sample: Sample, warp: 'repitch' | 'stretch') {
+  if ((sample.warp ?? 'repitch') === warp) return;
+  recordHistory();
+  await upsertSample({ ...sample, warp });
+  updateProject((p) => p); // no project change: only reschedules the audio
+}
+
 export function scaleSelectedClip(factor: number) {
   const { project, selectedClipId } = getState();
   const found = selectedClipId ? findClip(project, selectedClipId) : null;

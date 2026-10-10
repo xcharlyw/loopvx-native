@@ -52,7 +52,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "postinstall": "node scripts/copy-web-assets.js"
   },
   "private": true,
   "jest": {

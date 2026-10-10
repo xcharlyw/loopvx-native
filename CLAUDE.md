@@ -13,7 +13,12 @@ This is the Expo / React Native rebuild (web + iOS + Android) of the original PW
 
 Minimal mobile producing studio, "Ableton, but small". Default tracks: Kick + Bass/Rumble, Top Loop,
 Synth/Lead, Vocals. Hard techno tempos 145–165 BPM. Positions and lengths are in **bars** (4/4).
-Loops warp by playbackRate = projectBpm / sampleBpm (re-pitch; pitch follows tempo).
+Loops warp by playbackRate = projectBpm / sampleBpm: re-pitch by default, or per sample
+`warp: 'stretch'` (time-stretch, pitch kept) through react-native-audio-api's `pitchCorrection`.
+On web that stretcher is a worklet loaded from `/react-native-audio-api/signalsmithStretch.mjs`,
+copied into `public/` by `scripts/copy-web-assets.js` on `npm install` (not committed). Offline
+export waits for each stretcher (`voiceReady`); never `suspend()` an OfflineAudioContext with
+stretchers in it: Chromium crashes.
 
 ## Verify before every push
 
@@ -75,6 +80,5 @@ tests/              server tests (anything in api/ is deployed as a function)
 
 ## Not done yet
 
-Time-stretch without pitch change (the library's `pitchCorrection` stretcher needs its wasm served on
-web), Drive import of existing loop folders (needs `drive.readonly` or the Picker), MIDI / synth,
+Drive import of existing loop folders (needs `drive.readonly` or the Picker), MIDI / synth,
 recording / pads, App Store build (EAS; never tested on a real device natively).

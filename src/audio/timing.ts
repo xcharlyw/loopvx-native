@@ -104,6 +104,15 @@ export function clipEnvelope(clip: Clip, from: number, to: number): { pos: numbe
   return [...marks].sort((a, b) => a - b).map((pos) => ({ pos, gain: clipGainAt(clip, pos) }));
 }
 
+/** Metronome beats in [fromBar, toBar): position in bars and whether it is the bar's first beat. */
+export function beatsInWindow(fromBar: number, toBar: number, beatsPerBar = BEATS_PER_BAR): { bar: number; accent: boolean }[] {
+  const out: { bar: number; accent: boolean }[] = [];
+  for (let beat = Math.ceil(fromBar * beatsPerBar - EPS) || 0; beat / beatsPerBar < toBar - EPS; beat++) {
+    out.push({ bar: beat / beatsPerBar, accent: beat % beatsPerBar === 0 });
+  }
+  return out;
+}
+
 export function projectEndBars(project: Project): number {
   let end = 0;
   for (const t of project.tracks) for (const c of t.clips) end = Math.max(end, c.start + c.length);

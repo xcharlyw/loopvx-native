@@ -1,4 +1,5 @@
 import {
+  beatsInWindow,
   clipEnvelope,
   clipFades,
   clipGainAt,
@@ -38,6 +39,26 @@ describe('tempo math', () => {
     expect(nextBoundary(0.2, 0, 1.5)).toBeCloseTo(1.5);
     expect(nextBoundary(3.0, 0, 1.5)).toBeCloseTo(3.0);
     expect(nextBoundary(-1, 0, 1.5)).toBe(0);
+  });
+});
+
+describe('beatsInWindow', () => {
+  it('lists every beat once, accenting the downbeats', () => {
+    expect(beatsInWindow(0, 1)).toEqual([
+      { bar: 0, accent: true },
+      { bar: 0.25, accent: false },
+      { bar: 0.5, accent: false },
+      { bar: 0.75, accent: false },
+    ]);
+  });
+
+  it('starts at the next beat inside a bar and excludes the window end', () => {
+    expect(beatsInWindow(1.1, 2.25)).toEqual([
+      { bar: 1.25, accent: false },
+      { bar: 1.5, accent: false },
+      { bar: 1.75, accent: false },
+      { bar: 2, accent: true },
+    ]);
   });
 });
 

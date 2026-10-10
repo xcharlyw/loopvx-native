@@ -4,9 +4,10 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { C, font } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { mapTrack } from '../lib/project';
-import { updateProject, useStore } from '../lib/store';
+import { setMetronome, updateProject, useStore } from '../lib/store';
 import { Fader } from './Fader';
-import { Mono, MsButton, Section, Txt } from './kit';
+import { Metronome } from './icons';
+import { Chip, Mono, MsButton, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
 function useLevel(): number {
@@ -60,6 +61,7 @@ function Meter({ level }: { level: number }) {
 
 export function MixerPanel() {
   const project = useStore((st) => st.project);
+  const metronome = useStore((st) => st.metronome);
   const [master, setMaster] = useState(1);
   const level = useLevel();
 
@@ -79,6 +81,12 @@ export function MixerPanel() {
           <Mono style={s.db}>{toDb(master)}</Mono>
         </View>
         {level >= 0.99 && <Txt style={s.clip}>Clipping! Spuren leiser machen.</Txt>}
+        <View style={[s.row, { marginTop: 12 }]}>
+          <Chip variant={metronome ? 'on' : 'ghost'} onPress={() => setMetronome(!metronome)}>
+            <Metronome size={14} color={metronome ? C.accentInk : C.text} />
+            {metronome ? 'Metronom an' : 'Metronom aus'}
+          </Chip>
+        </View>
       </Section>
 
       <ScrollView horizontal contentContainerStyle={s.mixer}>

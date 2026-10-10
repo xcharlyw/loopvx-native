@@ -8,13 +8,14 @@ import {
   BaseAudioContext,
   GainNode,
   OfflineAudioContext,
+  OscillatorNode,
 } from 'react-native-audio-api';
 import { Platform } from 'react-native';
 import type { Project, Sample, Track } from '../types';
 import { audibleGain } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { preparePageAudio } from './pageAudio';
-import { clipEnvelope, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
+import { beatsInWindow, clipEnvelope, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
 
@@ -144,6 +145,11 @@ export class AudioEngine {
   sessionVersion = 0;
   mode: EngineMode = 'arrange';
   private sources: AudioBufferSourceNode[] = [];
+  /** Metronome on/off and its scheduled clicks (straight to the output: not metered, never exported). */
+  metronome = false;
+  private clicks: OscillatorNode[] = [];
+  /** Session mode: bars since the session clock started that already have their clicks. */
+  private sessionClickedTo = 0;
   private segments: Segment[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private sessionOrigin = 0;
@@ -310,6 +316,62 @@ export class AudioEngine {
       };
     }
     this.sources.push(...created);
+    this.scheduleClicks(time, fromBar, toBar);
+  }
+
+  /** Clicks for the beats in [fromBar, toBar), starting at context time `time`. */
+  private scheduleClicks(time: number, fromBar: number, toBar: number) {
+    if (!this.metronome || !this.ctx || !this.project) return;
+    const ctx = this.ctx;
+    const spb = secondsPerBar(this.project.bpm);
+    for (const beat of beatsInWindow(fromBar, toBar)) {
+      const when = time + (beat.bar - fromBar) * spb;
+      if (when < ctx.currentTime) continue;
+      const osc = ctx.createOscillator();
+      osc.frequency.value = beat.accent ? 1600 : 1000;
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, when);
+      env.gain.linearRampToValueAtTime(beat.accent ? 0.5 : 0.3, when + 0.002);
+      env.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+      osc.connect(env);
+      env.connect(ctx.destination);
+      osc.start(when);
+      osc.stop(when + 0.06);
+      osc.onEnded = () => {
+        this.clicks = this.clicks.filter((c) => c !== osc);
+      };
+      this.clicks.push(osc);
+    }
+  }
+
+  setMetronome(on: boolean) {
+    this.metronome = on;
+    if (!on) {
+      this.stopClicks();
+      return;
+    }
+    if (!this.playing || !this.ctx || !this.project) return;
+    // Click the rest of what is already scheduled.
+    const spb = secondsPerBar(this.project.bpm);
+    if (this.mode === 'arrange') {
+      for (const seg of this.segments) this.scheduleClicks(seg.time, seg.fromBar, seg.toBar);
+    } else {
+      const now = (this.ctx.currentTime - this.sessionOrigin) / spb;
+      this.sessionClickedTo = Math.max(this.sessionClickedTo, now);
+      this.tick();
+    }
+  }
+
+  private stopClicks() {
+    const now = this.ctx?.currentTime ?? 0;
+    for (const c of this.clicks) {
+      try {
+        c.stop(now);
+      } catch {
+        /* already stopped */
+      }
+    }
+    this.clicks = [];
   }
 
   private tick() {
@@ -325,6 +387,14 @@ export class AudioEngine {
           this.stop();
           return;
         }
+      }
+    }
+    if (this.mode === 'session' && this.metronome) {
+      const spb = secondsPerBar(project.bpm);
+      const until = (ctx.currentTime + LOOKAHEAD - this.sessionOrigin) / spb;
+      if (until > this.sessionClickedTo) {
+        this.scheduleClicks(this.sessionOrigin + this.sessionClickedTo * spb, this.sessionClickedTo, until);
+        this.sessionClickedTo = until;
       }
     }
     this.emit();
@@ -381,6 +451,7 @@ export class AudioEngine {
       }
     }
     this.sessionVoices.clear();
+    this.stopClicks();
     this.sessionVersion++;
   }
 
@@ -393,8 +464,10 @@ export class AudioEngine {
       this.stopAll();
       this.mode = 'session';
       this.sessionOrigin = this.ctx!.currentTime + 0.06;
+      this.sessionClickedTo = 0;
       this.playing = true;
       this.timer = setInterval(() => this.tick(), TICK_MS);
+      this.tick(); // schedule right away, or the first downbeat's click is already in the past
     }
     this.syncMixer(project);
   }

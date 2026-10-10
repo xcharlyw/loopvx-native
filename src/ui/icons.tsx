@@ -130,6 +130,11 @@ export const Copy = (p: P) => (
     <Path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" />
   </Icon>
 );
+export const Metronome = (p: P) => (
+  <Icon {...p}>
+    <Path d="M9.5 3h5l4 18h-13zM12 15l5-8M7.5 17h9" />
+  </Icon>
+);
 export const Undo = (p: P) => (
   <Icon {...p}>
     <Path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />

@@ -41,6 +41,8 @@ export interface AppState {
   canUndo: boolean;
   canRedo: boolean;
   sync: SyncStatus;
+  /** Metronome during playback (a per-device preference, not part of the project). */
+  metronome: boolean;
 }
 
 let state: AppState = {
@@ -58,6 +60,7 @@ let state: AppState = {
   canUndo: false,
   canRedo: false,
   sync: { state: 'off' },
+  metronome: false,
 };
 
 const listeners = new Set<() => void>();
@@ -217,6 +220,14 @@ engine.onDuration = (id, duration) => {
   if (s) void upsertSample({ ...s, duration }, { touch: false });
 };
 
+// ---------------- metronome ----------------
+
+export function setMetronome(on: boolean) {
+  engine.setMetronome(on);
+  setState({ metronome: on });
+  void db.setKv('metronome', on);
+}
+
 // ---------------- toasts ----------------
 
 let toastId = 0;
@@ -233,7 +244,13 @@ export function errorText(e: unknown): string {
 // ---------------- boot ----------------
 
 export async function boot() {
-  const [samples, projects, lastId] = await Promise.all([db.getSamples(), db.getProjects(), db.getKv<string>('lastProjectId')]);
+  const [samples, projects, lastId, metronome] = await Promise.all([
+    db.getSamples(),
+    db.getProjects(),
+    db.getKv<string>('lastProjectId'),
+    db.getKv<boolean>('metronome'),
+  ]);
+  if (metronome) setMetronome(true);
   setSamples(samples);
   const last = projects.find((p) => p.id === lastId) ?? projects[0];
   if (last) setState({ project: repairProject(last) });

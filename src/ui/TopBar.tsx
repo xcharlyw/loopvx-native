@@ -6,9 +6,9 @@ import { engine } from '../audio/engine';
 import { formatBarPosition, formatClock, secondsPerBar } from '../audio/timing';
 import { setCursor, togglePlay } from '../lib/actions';
 import { KEYS } from '../lib/project';
-import { setState, updateProject, useStore } from '../lib/store';
+import { setMetronome, setState, updateProject, useStore } from '../lib/store';
 import { useEngine, usePlayhead, useSmall } from './hooks';
-import { Export, LibraryIcon, LoopIcon, More, Play, Rewind, SelectArrow, Stop } from './icons';
+import { Export, LibraryIcon, LoopIcon, Metronome, More, Play, Rewind, SelectArrow, Stop } from './icons';
 import { IconBtn, Mono, Pill, PillGroup, Spacer, Txt, iconColor } from './kit';
 
 function Position({ small }: { small: boolean }) {
@@ -61,6 +61,7 @@ function KeyPicker({ small }: { small: boolean }) {
 
 export function TopBar() {
   const project = useStore((s) => s.project);
+  const metronome = useStore((s) => s.metronome);
   const playing = useEngine(() => engine.playing);
   const small = useSmall();
   const [bpmText, setBpmText] = useState<string | null>(null);
@@ -109,6 +110,12 @@ export function TopBar() {
         <IconBtn accessibilityLabel="Loop" onPress={() => updateProject((p) => ({ ...p, loop: { ...p.loop, enabled: !p.loop.enabled } }))}>
           <LoopIcon size={16} color={iconColor(project.loop.enabled)} />
         </IconBtn>
+        {/* On a phone the row is full; the metronome switch lives in the mixer there. */}
+        {!small && (
+          <IconBtn accessibilityLabel="Metronom" onPress={() => setMetronome(!metronome)}>
+            <Metronome size={16} color={iconColor(metronome)} />
+          </IconBtn>
+        )}
       </PillGroup>
 
       <Position small={small} />

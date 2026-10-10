@@ -16,6 +16,8 @@ import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
 const BOTTOM_PAD = 170;
+/** Touch target around each loop handle (the visible handle stays 2px wide like the original). */
+const LOOP_GRIP = 24;
 /** Mouse/trackpad: clips drag straight away. Touch: a clip must be selected first, so swiping over clips still scrolls. */
 const FINE_POINTER = Platform.OS === 'web' && typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
 /** Web-only style keys RN's types don't know. */
@@ -115,10 +117,30 @@ export function ArrangeView() {
     if (!engine.playing) setCursor(Math.floor(bar));
   };
 
-  const loop = project.loop;
+  // Loop handles: drag start/end along the ruler, snapped to whole bars, one undo step per drag.
+  const [loopDrag, setLoopDrag] = useState<{ edge: 'start' | 'end'; dx: number } | null>(null);
+  const movedLoop = (edge: 'start' | 'end', dx: number) => {
+    const l = project.loop;
+    const bar = Math.round((edge === 'start' ? l.start : l.end) + dx / zoom);
+    return edge === 'start' ? { ...l, enabled: true, start: Math.max(0, Math.min(bar, l.end - 1)) } : { ...l, enabled: true, end: Math.max(bar, l.start + 1) };
+  };
+  const onLoopDrag = (edge: 'start' | 'end', dx: number, phase: DragPhase) => {
+    if (phase === 'move') {
+      setLoopDrag({ edge, dx });
+      return;
+    }
+    setLoopDrag(null);
+    if (phase === 'cancel') return;
+    const next = movedLoop(edge, dx);
+    const l = project.loop;
+    if (next.start !== l.start || next.end !== l.end || next.enabled !== l.enabled) updateProject((p) => ({ ...p, loop: next }));
+  };
+  const loopStartDrag = useDrag('start', true, (dx, _dy, phase) => onLoopDrag('start', dx, phase));
+  const loopEndDrag = useDrag('start', true, (dx, _dy, phase) => onLoopDrag('end', dx, phase));
+  const loop = loopDrag ? movedLoop(loopDrag.edge, loopDrag.dx) : project.loop;
 
   return (
-    <View style={s.arrange}>
+    <View style={[s.arrange, web({ userSelect: 'none' })]}>
       <View style={s.rulerRow}>
         <View style={[s.corner, { width: headerW }]} />
         <View style={s.rulerClip}>
@@ -137,8 +159,16 @@ export function ArrangeView() {
                 !loop.enabled && s.loopRegionOff,
               ]}
             />
-            <View pointerEvents="none" style={[s.loopHandle, { left: loop.start * zoom - 1 }]} />
-            <View pointerEvents="none" style={[s.loopHandle, { left: loop.end * zoom - 1 }]} />
+            {(['start', 'end'] as const).map((edge) => (
+              <View
+                key={edge}
+                {...(edge === 'start' ? loopStartDrag : loopEndDrag)}
+                accessibilityLabel={edge === 'start' ? 'Loop-Start' : 'Loop-Ende'}
+                style={[s.loopGrip, { left: loop[edge] * zoom - LOOP_GRIP / 2 }, web({ cursor: 'ew-resize', touchAction: 'none' })]}
+              >
+                <View pointerEvents="none" style={[s.loopHandle, { left: LOOP_GRIP / 2 - 1 }, loopDrag?.edge === edge && s.loopHandleActive]} />
+              </View>
+            ))}
           </Animated.View>
         </View>
       </View>
@@ -366,6 +396,8 @@ const s = StyleSheet.create({
   },
   loopRegionOff: { backgroundColor: 'rgba(139,139,147,0.35)' },
   loopHandle: { position: 'absolute', top: 0, width: 2, height: 12, backgroundColor: C.accent },
+  loopHandleActive: { width: 4, height: RULER_H, marginLeft: -1 },
+  loopGrip: { position: 'absolute', top: 0, width: LOOP_GRIP, height: RULER_H },
   gridLine: { position: 'absolute', top: 0, bottom: 0, width: 1 },
   trackHeader: {
     backgroundColor: C.bg,

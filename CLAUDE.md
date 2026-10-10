@@ -45,8 +45,11 @@ Browser checks: Playwright from `/opt/node-tools/node_modules/playwright` with
 ```
 src/app/            expo-router entry (one screen; the app is src/ui/App.tsx)
 src/ui/             screens and panels (ArrangeView, SessionView, *Panel sheets, BottomBar, TopBar)
-src/audio/          engine.ts (react-native-audio-api), timing.ts (pure tempo math), wav.ts, pageAudio.ts
+src/audio/          engine.ts (react-native-audio-api), mixgraph.ts (track strips: filter, drive, pan,
+                    fader, reverb/delay sends; one per context, live and offline), fx.ts + synth.ts
+                    (pure effect/instrument math), timing.ts (pure tempo math), wav.ts, pageAudio.ts
 src/lib/            store.ts (state, undo, autosave), project.ts (pure project mutations), actions.ts,
+                    midi.ts (.mid read/write), patterns.ts (seeded pattern generator),
                     samples(.web).ts, sync*.ts + drive.ts (Google Drive sync), supabase.ts, vocals.ts
 src/storage/db.ts   AsyncStorage persistence; emits change events (Drive sync listens)
 api/                Vercel Functions (vocals.ts, drive-token.ts); api/_lib is shared, not deployed
@@ -80,7 +83,12 @@ tests/              server tests (anything in api/ is deployed as a function)
 
 ## Not done yet
 
-Drive import of existing loop folders (needs `drive.readonly` or the Picker), recording / pads,
-sample-based synth (MIDI clips play a per-track oscillator synth: `src/audio/synth.ts`, piano roll in
-`src/ui/PianoRollPanel.tsx`, `.mid` I/O in `src/lib/midi.ts`, Ableton naming 60 = C3),
-App Store build (EAS; never tested on a real device natively).
+Drive import of existing loop folders (needs `drive.readonly` or the Picker), audio recording,
+App Store build (EAS; never tested on a real device natively; the effect graph and sample instrument
+use WaveShaper/Convolver/StereoPanner, which react-native-audio-api implements natively but nobody
+has heard on a phone yet).
+
+MIDI notes: a clip with `notes` is a MIDI clip and plays its track's instrument (`track.synth`: an
+oscillator, or `wave: 'sample'` = a library sample, original pitch on C3 = 60, Ableton naming).
+Effects (`track.fx`) change through `updateProject(…, { reschedule: false })`: `syncMixer` applies
+them to the running graph, rescheduling would restart every voice.

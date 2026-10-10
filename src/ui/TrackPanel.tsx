@@ -107,8 +107,16 @@ export function TrackPanel() {
         <Param label="Drive" value={fx.drive} min={0} max={1} text={pct(fx.drive)} onChange={(v) => setFx({ drive: Math.round(v * 100) / 100 })} />
         <Param label="Reverb" value={fx.reverb} min={0} max={1} text={pct(fx.reverb)} onChange={(v) => setFx({ reverb: Math.round(v * 100) / 100 })} />
         <Param label="Delay" value={fx.delay} min={0} max={1} text={pct(fx.delay)} onChange={(v) => setFx({ delay: Math.round(v * 100) / 100 })} />
+        <Param
+          label="Pump"
+          value={fx.pump}
+          min={0}
+          max={1}
+          text={pct(fx.pump)}
+          onChange={(v) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, pump: Math.round(v * 100) / 100 } })), { merge: true })}
+        />
         <Param label="Pan" value={fx.pan} min={-1} max={1} text={panText(fx.pan)} onChange={(v) => setFx({ pan: Math.abs(v) < 0.05 ? 0 : Math.round(v * 100) / 100 })} />
-        <Txt style={[s.note, { marginTop: 10 }]}>Filter: links Lowpass, rechts Highpass, Mitte aus. Delay läuft im punktierten Achtel zum Projekttempo.</Txt>
+        <Txt style={[s.note, { marginTop: 10 }]}>Filter: links Lowpass, rechts Highpass, Mitte aus. Pump duckt die Spur auf jedem Beat wie ein Sidechain zur Kick (ideal für Rumble, Bass und Pads). Delay läuft im punktierten Achtel zum Projekttempo.</Txt>
         {!fxIsDefault(track.fx) && (
           <View style={[s.buttons, { marginTop: 10 }]}>
             <Btn small onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: undefined })), { reschedule: false })}>

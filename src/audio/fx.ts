@@ -73,10 +73,27 @@ export const delaySeconds = (bpm: number) => (60 / Math.max(20, bpm)) * 0.75;
 export const DELAY_FEEDBACK = 0.38;
 
 /** Effect settings with defaults filled in. */
-export const trackFx = (fx: TrackFx | undefined): Required<TrackFx> => ({ filter: 0, drive: 0, reverb: 0, delay: 0, pan: 0, ...fx });
+export const trackFx = (fx: TrackFx | undefined): Required<TrackFx> => ({ filter: 0, drive: 0, reverb: 0, delay: 0, pan: 0, pump: 0, ...fx });
 
 /** True when a track uses no effect at all. */
 export const fxIsDefault = (fx: TrackFx | undefined) => {
   const f = trackFx(fx);
-  return !f.filter && !f.drive && !f.reverb && !f.delay && !f.pan;
+  return !f.filter && !f.drive && !f.reverb && !f.delay && !f.pan && !f.pump;
 };
+
+export type GainEvent = { kind: 'set'; t: number; v: number } | { kind: 'ramp'; t: number; v: number } | { kind: 'target'; t: number; v: number; tau: number };
+
+/**
+ * Gain automation for one pump on a beat at `when`: duck within 5 ms (no click), then swell back
+ * with a time constant of a fifth of a beat (95 % back after ~0.6 beats, like a sidechained kick).
+ * The leading `set` ends the previous swell: by then it is within 1 % of unity.
+ */
+export function pumpEvents(when: number, amount: number, beatSeconds: number): GainEvent[] {
+  const a = Math.max(0, Math.min(1, amount || 0));
+  const floor = 1 - 0.95 * a;
+  return [
+    { kind: 'set', t: when, v: 1 },
+    { kind: 'ramp', t: when + 0.005, v: floor },
+    { kind: 'target', t: when + 0.005, v: 1, tau: beatSeconds * 0.2 },
+  ];
+}

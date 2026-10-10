@@ -1,9 +1,10 @@
 import type { AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode } from 'react-native-audio-api';
 import { audibleGain } from '../lib/project';
 import type { Project, Track } from '../types';
-import { DELAY_FEEDBACK, delaySeconds, djFilter, driveCurve, driveGains, reverbImpulse, trackFx } from './fx';
+import { DELAY_FEEDBACK, delaySeconds, djFilter, driveCurve, driveGains, pumpEvents, reverbImpulse, trackFx } from './fx';
+import { beatsInWindow, secondsPerBar } from './timing';
 
-/** One track's strip: input -> highpass -> lowpass -> drive (dry + shaped) -> pan -> fader. */
+/** One track's strip: input -> highpass -> lowpass -> drive (dry + shaped) -> pan -> pump -> fader. */
 class TrackChain {
   readonly input: GainNode;
   readonly fader: GainNode;
@@ -13,6 +14,8 @@ class TrackChain {
   private pre: GainNode;
   private wet: GainNode;
   private pan: StereoPannerNode;
+  /** Ducking on the beat; automated by the scheduler, never by `apply`. */
+  readonly pump: GainNode;
   reverbSend: GainNode | null = null;
   delaySend: GainNode | null = null;
 
@@ -34,6 +37,7 @@ class TrackChain {
     this.wet = ctx.createGain();
     this.wet.gain.value = 0;
     this.pan = ctx.createStereoPanner();
+    this.pump = ctx.createGain();
     this.fader = ctx.createGain();
 
     this.input.connect(this.hp);
@@ -44,7 +48,8 @@ class TrackChain {
     shaper.connect(this.wet);
     this.dry.connect(this.pan);
     this.wet.connect(this.pan);
-    this.pan.connect(this.fader);
+    this.pan.connect(this.pump);
+    this.pump.connect(this.fader);
     this.fader.connect(out);
   }
 
@@ -111,6 +116,38 @@ export class MixGraph {
       const seconds = delaySeconds(project.bpm);
       if (smooth) this.delay.delayTime.setTargetAtTime(seconds, this.ctx.currentTime, 0.05);
       else this.delay.delayTime.setValueAtTime(seconds, 0);
+    }
+  }
+
+  /**
+   * Pump automation for the beats in [fromBar, toBar) of a window starting at context time `time`.
+   * Beats already in the past (a late window) are skipped.
+   */
+  schedulePump(project: Project, time: number, fromBar: number, toBar: number) {
+    const pumped = project.tracks.filter((t) => trackFx(t.fx).pump > 0);
+    if (!pumped.length) return;
+    const spb = secondsPerBar(project.bpm);
+    const beat = spb / 4;
+    for (const t of pumped) {
+      const g = this.chain(t).pump.gain;
+      for (const b of beatsInWindow(fromBar, toBar)) {
+        const when = time + (b.bar - fromBar) * spb;
+        if (when < this.ctx.currentTime) continue;
+        for (const e of pumpEvents(when, trackFx(t.fx).pump, beat)) {
+          if (e.kind === 'set') g.setValueAtTime(e.v, e.t);
+          else if (e.kind === 'ramp') g.linearRampToValueAtTime(e.v, e.t);
+          else g.setTargetAtTime(e.v, e.t, e.tau);
+        }
+      }
+    }
+  }
+
+  /** Drop all pump automation (transport stopped or rescheduled). */
+  resetPump() {
+    const now = this.ctx.currentTime;
+    for (const c of this.chains.values()) {
+      c.pump.gain.cancelScheduledValues(0);
+      c.pump.gain.setValueAtTime(1, now);
     }
   }
 

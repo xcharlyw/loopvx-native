@@ -233,6 +233,8 @@ export class AudioEngine {
   private clicks: OscillatorNode[] = [];
   /** Session mode: bars since the session clock started that already have their clicks. */
   private sessionClickedTo = 0;
+  /** Session mode: bars since the session clock started that already have their pump automation. */
+  private sessionPumpedTo = 0;
   private segments: Segment[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private sessionOrigin = 0;
@@ -391,6 +393,7 @@ export class AudioEngine {
       };
     }
     this.sources.push(...created);
+    this.mix?.schedulePump(project, time, fromBar, toBar);
     this.scheduleClicks(time, fromBar, toBar);
   }
 
@@ -464,12 +467,16 @@ export class AudioEngine {
         }
       }
     }
-    if (this.mode === 'session' && this.metronome) {
+    if (this.mode === 'session') {
       const spb = secondsPerBar(project.bpm);
       const until = (ctx.currentTime + LOOKAHEAD - this.sessionOrigin) / spb;
-      if (until > this.sessionClickedTo) {
+      if (this.metronome && until > this.sessionClickedTo) {
         this.scheduleClicks(this.sessionOrigin + this.sessionClickedTo * spb, this.sessionClickedTo, until);
         this.sessionClickedTo = until;
+      }
+      if (until > this.sessionPumpedTo) {
+        this.mix?.schedulePump(project, this.sessionOrigin + this.sessionPumpedTo * spb, this.sessionPumpedTo, until);
+        this.sessionPumpedTo = until;
       }
     }
     this.emit();
@@ -527,6 +534,7 @@ export class AudioEngine {
     }
     this.sessionVoices.clear();
     this.stopClicks();
+    this.mix?.resetPump();
     this.sessionVersion++;
   }
 
@@ -540,6 +548,7 @@ export class AudioEngine {
       this.mode = 'session';
       this.sessionOrigin = this.ctx!.currentTime + 0.06;
       this.sessionClickedTo = 0;
+      this.sessionPumpedTo = 0;
       this.playing = true;
       this.timer = setInterval(() => this.tick(), TICK_MS);
       this.tick(); // schedule right away, or the first downbeat's click is already in the past
@@ -643,6 +652,7 @@ export class AudioEngine {
     const off = new OfflineAudioContext(2, Math.ceil((seconds + lead) * sampleRate) + sampleRate, sampleRate);
     const mix = new MixGraph(off, off.destination);
     mix.apply(project, false);
+    mix.schedulePump(project, lead, region.from, region.to);
     const voices = scheduleWindow(off, project, this.samples, this.buffers, (t) => mix.input(t), lead, region.from, region.to);
     // Offline rendering runs far faster than real time: stretchers must have everything first.
     // (Pausing the render with suspend() instead crashes Chromium together with the worklet.)

@@ -67,6 +67,8 @@ export interface TrackFx {
   delay?: number;
   /** Stereo position -1 (left) … 1 (right). */
   pan?: number;
+  /** Sidechain-style ducking on every beat (like Kickstart), 0..1. */
+  pump?: number;
 }
 
 export interface Clip {

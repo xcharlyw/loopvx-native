@@ -1,4 +1,4 @@
-import { delaySeconds, djFilter, driveCurve, driveGains, fxIsDefault, reverbImpulse, trackFx } from './fx';
+import { delaySeconds, pumpEvents, djFilter, driveCurve, driveGains, fxIsDefault, reverbImpulse, trackFx } from './fx';
 
 describe('djFilter', () => {
   it('is transparent at 0', () => {
@@ -52,7 +52,24 @@ it('delay is a dotted eighth', () => {
 });
 
 it('fills defaults and detects untouched tracks', () => {
-  expect(trackFx(undefined)).toEqual({ filter: 0, drive: 0, reverb: 0, delay: 0, pan: 0 });
+  expect(trackFx(undefined)).toEqual({ filter: 0, drive: 0, reverb: 0, delay: 0, pan: 0, pump: 0 });
   expect(fxIsDefault({ filter: 0 })).toBe(true);
   expect(fxIsDefault({ reverb: 0.2 })).toBe(false);
+});
+
+describe('pumpEvents', () => {
+  it('ducks right after the beat and swells back within the beat', () => {
+    const ev = pumpEvents(10, 1, 0.4);
+    expect(ev[0]).toEqual({ kind: 'set', t: 10, v: 1 });
+    expect(ev[1].kind).toBe('ramp');
+    expect(ev[1].v).toBeCloseTo(0.05);
+    expect(ev[1].t).toBeCloseTo(10.005);
+    expect(ev[2]).toMatchObject({ kind: 'target', v: 1 });
+    // value one beat later is back within 1 % of unity
+    const tau = (ev[2] as { tau: number }).tau;
+    expect(1 - 0.95 * Math.exp(-(0.4 - 0.005) / tau)).toBeGreaterThan(0.99);
+  });
+  it('half amount ducks half way', () => {
+    expect(pumpEvents(0, 0.5, 0.4)[1].v).toBeCloseTo(0.525);
+  });
 });

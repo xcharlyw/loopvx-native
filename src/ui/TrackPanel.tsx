@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font } from '../constants/theme';
 import { deleteSelectedTrack } from '../lib/actions';
-import { MAX_TRACK_NAME, renameTrack } from '../lib/project';
+import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack } from '../lib/project';
 import { getState, setState, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Trash } from './icons';
 import { Btn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
-/** Rename the selected track. Saves as you type; leaving the field empty restores the old name. */
+/** Rename, recolour or delete the selected track. Saves as you type; leaving the field empty restores the old name. */
 export function TrackPanel() {
   const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
   const [draft, setDraft] = useState<string | null>(null);
@@ -41,13 +41,12 @@ export function TrackPanel() {
   };
 
   return (
-    <Sheet title="Spur umbenennen">
+    <Sheet title="Spur bearbeiten">
       <Section title="Name">
         <TextInput
           style={s.input}
           value={value}
           maxLength={MAX_TRACK_NAME}
-          autoFocus
           selectTextOnFocus
           returnKeyType="done"
           onChangeText={change}
@@ -58,6 +57,20 @@ export function TrackPanel() {
           accessibilityLabel="Spurname"
         />
         <Txt style={s.note}>Tipp: Ein langer Druck auf den Spurnamen öffnet diese Ansicht auch direkt.</Txt>
+      </Section>
+
+      <Section title="Farbe">
+        <View style={s.swatches}>
+          {TRACK_COLORS.map((color) => (
+            <Pressable
+              key={color}
+              accessibilityLabel={`Farbe ${color}`}
+              accessibilityState={{ selected: track.color === color }}
+              onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, color })), { reschedule: false })}
+              style={[s.swatch, { backgroundColor: color }, track.color === color && s.swatchOn]}
+            />
+          ))}
+        </View>
       </Section>
 
       <Section title="Spur">
@@ -73,6 +86,9 @@ export function TrackPanel() {
 }
 
 const s = StyleSheet.create({
+  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'transparent' },
+  swatchOn: { borderColor: '#fff' },
   input: {
     height: 38,
     borderRadius: 10,

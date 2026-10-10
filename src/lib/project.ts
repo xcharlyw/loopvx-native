@@ -78,6 +78,9 @@ export function removeClip(project: Project, clipId: string): Project {
   return { ...project, tracks: project.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== clipId) })) };
 }
 
+/** Track colours to pick from: the category colours first, then a few more that read on the dark UI. */
+export const TRACK_COLORS = ['#ff5a36', '#ffc53d', '#3dd6ff', '#c6ff3d', '#b28cff', '#ff4d7d', '#3dff9a', '#5a8cff', '#ff9a3d', '#e6e6ea'];
+
 export const MAX_TRACK_NAME = 40;
 
 /** Rename a track, capped at MAX_TRACK_NAME characters. Trimming and empty-name handling are up to the caller. */

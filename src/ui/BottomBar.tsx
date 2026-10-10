@@ -69,7 +69,7 @@ export function BottomBar() {
 
       {view === 'arrange' && !selectedClipId && hasSelectedTrack && (
         <PillGroup>
-          <IconBtn accessibilityLabel="Spur umbenennen" onPress={() => setState({ panel: 'track' })}>
+          <IconBtn accessibilityLabel="Spur bearbeiten" onPress={() => setState({ panel: 'track' })}>
             <Pencil size={16} />
           </IconBtn>
           {/* On a phone the bar is full: delete lives in the track sheet there. */}

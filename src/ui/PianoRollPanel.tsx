@@ -5,6 +5,7 @@ import { engine } from '../audio/engine';
 import { C, mono } from '../constants/theme';
 import { exportMidiClip } from '../lib/actions';
 import { noteName } from '../lib/midi';
+import { generatePattern, KEY_NAMES, PATTERN_STYLES, type PatternStyle } from '../lib/patterns';
 import { findClip, toggleNote, trackSynth, updateClip } from '../lib/project';
 import { updateProject, useStore } from '../lib/store';
 import type { Note } from '../types';
@@ -33,6 +34,10 @@ function initialLow(notes: Note[]): number {
   return Math.max(0, Math.min(127 - ROWS + 1, Math.floor(lowest / 12) * 12));
 }
 
+// The generator's last choice, kept while the app runs so every clip of a track lands in the same key.
+let lastStyle: PatternStyle = 'rumble';
+let lastRoot = 5; // F minor
+
 /** Tap a cell to add a note (and hear it), tap a note to remove it. Two octaves at a time. */
 export function PianoRollPanel() {
   const project = useStore((st) => st.project);
@@ -40,6 +45,8 @@ export function PianoRollPanel() {
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
   const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? []));
   const [noteLen, setNoteLen] = useState(1 / 16);
+  const [style, setStyle] = useState(lastStyle);
+  const [root, setRoot] = useState(lastRoot);
 
   if (!found?.clip.notes) {
     return (
@@ -66,6 +73,15 @@ export function PianoRollPanel() {
     if (next.length > notes.length) void engine.previewNote(trackSynth(track), pitch);
     updateProject((p) => updateClip(p, clip.id, { notes: next }));
   };
+
+  const generate = () => {
+    lastStyle = style;
+    lastRoot = root;
+    const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31) });
+    updateProject((p) => updateClip(p, clip.id, { notes: next }));
+    setLow(initialLow(next));
+  };
+  const shiftKey = (by: number) => setRoot((r) => (r + by + 12) % 12);
 
   return (
     <Sheet title="Piano Roll">
@@ -138,6 +154,29 @@ export function PianoRollPanel() {
         </ScrollView>
       </View>
 
+      <Section title="Pattern-Generator" style={{ marginTop: 14 }}>
+        <View style={s.toolbar}>
+          {PATTERN_STYLES.map((p) => (
+            <Chip key={p.id} variant={style === p.id ? 'on' : 'ghost'} onPress={() => setStyle(p.id)}>
+              {p.label}
+            </Chip>
+          ))}
+        </View>
+        <View style={[s.toolbar, { marginTop: 10 }]}>
+          <Btn small onPress={() => shiftKey(-1)} accessibilityLabel="Tonart tiefer">
+            ◀
+          </Btn>
+          <Txt style={s.key2}>{`${KEY_NAMES[root]}-Moll`}</Txt>
+          <Btn small onPress={() => shiftKey(1)} accessibilityLabel="Tonart höher">
+            ▶
+          </Btn>
+          <Btn small kind="primary" onPress={generate}>
+            Würfeln
+          </Btn>
+        </View>
+        <Txt style={[s.note, { marginTop: 8 }]}>Ersetzt die Noten des Clips. Gefällt es nicht: nochmal würfeln oder rückgängig machen.</Txt>
+      </Section>
+
       <Section title="Clip" style={{ marginTop: 14 }}>
         <Txt style={s.note}>{`${notes.length} ${notes.length === 1 ? 'Note' : 'Noten'} · ${clip.length} ${clip.length === 1 ? 'Takt' : 'Takte'} · Instrument der Spur „${track.name}“`}</Txt>
         <View style={[s.toolbar, { marginTop: 10 }]}>
@@ -162,5 +201,6 @@ const s = StyleSheet.create({
   key: { height: ROW_H, justifyContent: 'center', paddingLeft: 6, backgroundColor: '#1d1d22', borderBottomWidth: 1, borderBottomColor: '#141417' },
   keyBlack: { backgroundColor: '#101013' },
   keyText: { ...mono(), fontSize: 10, color: C.muted },
+  key2: { ...mono(), fontSize: 13, minWidth: 64, textAlign: 'center' },
   note: { color: C.muted, fontSize: 12, lineHeight: 17 },
 });

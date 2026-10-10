@@ -27,9 +27,9 @@ const LENGTHS: { label: string; bars: number }[] = [
 ];
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
-/** Lowest shown pitch: an octave below the clip's lowest note, or C1 (bass range) for an empty clip. */
-function initialLow(notes: Note[]): number {
-  if (!notes.length) return 36;
+/** Lowest shown pitch: the octave of the clip's lowest note, else C1 (bass range) or C2 for a sample instrument (C3 in view). */
+function initialLow(notes: Note[], sampler = false): number {
+  if (!notes.length) return sampler ? 48 : 36;
   const lowest = Math.min(...notes.map((n) => n.pitch));
   return Math.max(0, Math.min(127 - ROWS + 1, Math.floor(lowest / 12) * 12));
 }
@@ -43,7 +43,7 @@ export function PianoRollPanel() {
   const project = useStore((st) => st.project);
   const selectedClipId = useStore((st) => st.selectedClipId);
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
-  const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? []));
+  const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? [], found?.track.synth?.wave === 'sample'));
   const [noteLen, setNoteLen] = useState(1 / 16);
   const [style, setStyle] = useState(lastStyle);
   const [root, setRoot] = useState(lastRoot);

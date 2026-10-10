@@ -41,7 +41,12 @@ export interface Note {
 
 /** The track's built-in instrument for its MIDI clips: one oscillator, a lowpass filter and an ADSR. */
 export interface SynthSettings {
-  wave: 'sawtooth' | 'square' | 'sine' | 'triangle';
+  /** An oscillator, or 'sample': the library sample `sampleId` played chromatically. */
+  wave: 'sawtooth' | 'square' | 'sine' | 'triangle' | 'sample';
+  /** wave 'sample': which sample; it sounds at its original pitch on C3 (60). */
+  sampleId?: string;
+  /** wave 'sample': every note plays the whole sample, whatever its length (drums). */
+  oneShot?: boolean;
   /** Lowpass cutoff in Hz and its resonance (Q). */
   cutoff: number;
   resonance: number;

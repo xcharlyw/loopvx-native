@@ -86,6 +86,16 @@ export const isMidiClip = (clip: Clip): boolean => Array.isArray(clip.notes);
 
 export const trackSynth = (track: Track): SynthSettings => ({ ...DEFAULT_SYNTH, ...track.synth });
 
+/** Every sample the arrangement plays: audio clips plus the sample instruments of tracks with MIDI clips. */
+export function arrangementSampleIds(project: Project): Set<string> {
+  const ids = new Set<string>();
+  for (const t of project.tracks) {
+    for (const c of t.clips) if (c.sampleId) ids.add(c.sampleId);
+    if (t.synth?.wave === 'sample' && t.synth.sampleId && t.clips.some(isMidiClip)) ids.add(t.synth.sampleId);
+  }
+  return ids;
+}
+
 export function createMidiClip(start: number, length = 4): Clip {
   return { id: uid(), sampleId: '', start, length, offset: 0, notes: [] };
 }

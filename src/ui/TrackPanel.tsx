@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { engine } from '../audio/engine';
+import { SAMPLER_PRESET } from '../audio/synth';
 import { C, font, mono } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
-import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
+import { DEFAULT_SYNTH, MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
 import type { SynthSettings } from '../types';
 import { getState, setState, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
@@ -15,6 +16,7 @@ import { Sheet } from './Sheet';
 /** Rename, recolour or delete the selected track. Saves as you type; leaving the field empty restores the old name. */
 export function TrackPanel() {
   const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
+  const samples = useStore((st) => st.samples);
   const [draft, setDraft] = useState<string | null>(null);
   if (!track) {
     return (
@@ -29,6 +31,14 @@ export function TrackPanel() {
   const setSynth = (patch: Partial<SynthSettings>) =>
     updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), ...patch } })), { merge: true });
   const value = draft ?? track.name;
+  const isSampler = synth.wave === 'sample';
+  /** Switching between oscillator and sample also swaps in sensible settings for the other kind. */
+  const pickWave = (wave: SynthSettings['wave']) => {
+    if (wave === synth.wave) return;
+    if (wave === 'sample') setSynth({ ...SAMPLER_PRESET, sampleId: synth.sampleId ?? samples[0]?.id });
+    else if (isSampler) setSynth({ ...DEFAULT_SYNTH, wave, sampleId: synth.sampleId });
+    else setSynth({ wave });
+  };
 
   const change = (text: string) => {
     setDraft(text);
@@ -95,14 +105,50 @@ export function TrackPanel() {
         </View>
       </Section>
 
-      <Section title="Instrument (Synth)">
+      <Section title="Instrument">
         <View style={s.swatches}>
           {WAVES.map((w) => (
-            <Chip key={w.wave} variant={synth.wave === w.wave ? 'on' : 'ghost'} onPress={() => setSynth({ wave: w.wave })}>
+            <Chip key={w.wave} variant={synth.wave === w.wave ? 'on' : 'ghost'} onPress={() => pickWave(w.wave)}>
               {w.label}
             </Chip>
           ))}
         </View>
+        {isSampler && (
+          <>
+            <Txt style={[s.note, { marginTop: 12 }]}>
+              {samples.length
+                ? 'Das Sample klingt auf C3 im Original, jede andere Note spielt es höher oder tiefer. Ideal für Drums: eine Spur pro Sound (Kick, Clap, Hat), Noten auf C3.'
+                : 'Lade zuerst ein Sample in die Bibliothek (z. B. eine Kick oder einen Hat).'}
+            </Txt>
+            <ScrollView style={s.sampleList} nestedScrollEnabled>
+              {samples.map((x) => (
+                <Pressable
+                  key={x.id}
+                  accessibilityLabel={`Instrument-Sample ${x.name}`}
+                  accessibilityState={{ selected: synth.sampleId === x.id }}
+                  onPress={() => {
+                    setSynth({ sampleId: x.id });
+                    void engine.previewNote({ ...synth, sampleId: x.id }, 60);
+                  }}
+                  style={[s.sampleRow, synth.sampleId === x.id && s.sampleRowOn]}
+                >
+                  <Txt numberOfLines={1} style={[s.sampleName, synth.sampleId === x.id && { color: C.accent }]}>
+                    {x.name.replace(/\.[a-z0-9]+$/i, '')}
+                  </Txt>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {synth.sampleId && !samples.some((x) => x.id === synth.sampleId) && <Txt style={[s.note, { color: C.danger }]}>Das gewählte Sample ist nicht mehr in der Bibliothek.</Txt>}
+            <View style={[s.swatches, { marginTop: 10 }]}>
+              <Chip variant={synth.oneShot ? 'on' : 'ghost'} onPress={() => setSynth({ oneShot: true })}>
+                Ganz abspielen
+              </Chip>
+              <Chip variant={synth.oneShot ? 'ghost' : 'on'} onPress={() => setSynth({ oneShot: false })}>
+                Notenlänge
+              </Chip>
+            </View>
+          </>
+        )}
         <Param label="Filter" value={Math.log10(synth.cutoff)} min={Math.log10(80)} max={Math.log10(16000)} text={hz(synth.cutoff)} onChange={(v) => setSynth({ cutoff: Math.round(10 ** v) })} />
         <Param label="Resonanz" value={synth.resonance} min={0.5} max={15} text={synth.resonance.toFixed(1)} onChange={(v) => setSynth({ resonance: Math.round(v * 10) / 10 })} />
         <Param label="Attack" value={synth.attack} min={0.001} max={1} text={sec(synth.attack)} onChange={(v) => setSynth({ attack: v })} />
@@ -110,8 +156,8 @@ export function TrackPanel() {
         <Param label="Sustain" value={synth.sustain} min={0} max={1} text={`${Math.round(synth.sustain * 100)} %`} onChange={(v) => setSynth({ sustain: v })} />
         <Param label="Release" value={synth.release} min={0.005} max={2} text={sec(synth.release)} onChange={(v) => setSynth({ release: v })} />
         <View style={[s.buttons, { marginTop: 10 }]}>
-          <Btn small onPress={() => void engine.previewNote(synth, 48)}>
-            Anhören (C2)
+          <Btn small onPress={() => void engine.previewNote(synth, isSampler ? 60 : 48)}>
+            {isSampler ? 'Anhören (C3)' : 'Anhören (C2)'}
           </Btn>
           <Btn small onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: undefined })))}>
             Zurücksetzen
@@ -136,6 +182,7 @@ const WAVES: { wave: SynthSettings['wave']; label: string }[] = [
   { wave: 'square', label: 'Square' },
   { wave: 'triangle', label: 'Triangle' },
   { wave: 'sine', label: 'Sine' },
+  { wave: 'sample', label: 'Sample' },
 ];
 
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace('.', ',')} kHz` : `${Math.round(v)} Hz`);
@@ -173,4 +220,8 @@ const s = StyleSheet.create({
     outlineWidth: 0,
   },
   note: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
+  sampleList: { maxHeight: 176, marginTop: 8, borderWidth: 1, borderColor: C.line, borderRadius: 10 },
+  sampleRow: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.line },
+  sampleRowOn: { backgroundColor: 'rgba(198,255,61,0.08)' },
+  sampleName: { fontSize: 13 },
 });

@@ -1,4 +1,4 @@
-import { addClip, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addClip, arrangementSampleIds, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -127,5 +127,17 @@ describe('project helpers', () => {
     expect(audibleGain({ ...a, solo: true }, true)).toBe(a.volume);
     expect(audibleGain(b, true)).toBe(0);
     expect(audibleGain({ ...a, muted: true }, false)).toBe(0);
+  });
+});
+
+describe('arrangementSampleIds', () => {
+  it('includes a sample instrument only while its track has MIDI clips', () => {
+    let p = createProject();
+    const [t0, t1] = p.tracks;
+    p = addClip(p, t0.id, { id: 'c1', sampleId: 's-loop', start: 0, length: 4, offset: 0 });
+    p = mapTrack(p, t1.id, (t) => ({ ...t, synth: { wave: 'sample', sampleId: 's-kick', cutoff: 16000, resonance: 0.7, attack: 0, decay: 1, sustain: 1, release: 0.05 } }));
+    expect([...arrangementSampleIds(p)]).toEqual(['s-loop']);
+    p = mapTrack(p, t1.id, (t) => ({ ...t, clips: [createMidiClip(0)] }));
+    expect([...arrangementSampleIds(p)].sort()).toEqual(['s-kick', 's-loop']);
   });
 });

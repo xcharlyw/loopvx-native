@@ -15,12 +15,13 @@ export interface PackedSample {
 
 const extOf = (name: string) => (/\.([a-z0-9]{2,5})$/i.exec(name)?.[1] ?? 'bin').toLowerCase();
 
-/** Every sample a project uses, in its arrangement or its session grid. */
+/** Every sample a project uses, in its arrangement, its session grid or as an instrument. */
 export function usedSampleIds(project: Project): Set<string> {
   const ids = new Set<string>();
   for (const t of project.tracks) {
     for (const c of t.clips) if (c.sampleId) ids.add(c.sampleId); // MIDI clips have none
     for (const s of t.slots) if (s) ids.add(s.sampleId);
+    if (t.synth?.wave === 'sample' && t.synth.sampleId) ids.add(t.synth.sampleId);
   }
   return ids;
 }

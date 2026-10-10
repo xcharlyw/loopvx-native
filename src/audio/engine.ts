@@ -13,10 +13,10 @@ import {
 import { Platform } from 'react-native';
 import type { Clip, Project, Sample, SynthSettings, Track } from '../types';
 import { midiToHz } from '../lib/midi';
-import { audibleGain, trackSynth } from '../lib/project';
+import { arrangementSampleIds, audibleGain, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { preparePageAudio } from './pageAudio';
-import { adsrPoints } from './synth';
+import { adsrPoints, pitchRate, voicePeak } from './synth';
 import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
@@ -94,11 +94,36 @@ function startVoice(
 /** A playing sound: a sample voice or a synth note. Both stop and report their end the same way. */
 type Voice = AudioBufferSourceNode | OscillatorNode;
 
-/** One synth note: oscillator -> lowpass -> ADSR gain -> destination. */
-function startSynthVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, level: number, when: number, hold: number, dest: AudioNode): OscillatorNode {
-  const osc = ctx.createOscillator();
-  osc.type = synth.wave;
-  osc.frequency.value = midiToHz(pitch);
+/**
+ * One instrument note: oscillator (or the instrument's sample, re-pitched) -> lowpass -> ADSR gain
+ * -> destination. A sample instrument without its sample loaded stays silent (null).
+ */
+function startSynthVoice(
+  ctx: AnyContext,
+  synth: SynthSettings,
+  pitch: number,
+  level: number,
+  when: number,
+  hold: number,
+  dest: AudioNode,
+  buffers: Map<string, AudioBuffer>,
+): Voice | null {
+  let osc: Voice;
+  if (synth.wave === 'sample') {
+    const buffer = synth.sampleId ? buffers.get(synth.sampleId) : undefined;
+    if (!buffer) return null;
+    const src = ctx.createBufferSource({ pitchCorrection: false });
+    src.buffer = buffer;
+    src.playbackRate.value = pitchRate(pitch);
+    // One-shot: the sample plays out (drums); otherwise the note length gates it like a synth.
+    if (synth.oneShot) hold = Math.max(hold, buffer.duration / src.playbackRate.value);
+    osc = src;
+  } else {
+    const o = ctx.createOscillator();
+    o.type = synth.wave;
+    o.frequency.value = midiToHz(pitch);
+    osc = o;
+  }
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
   filter.frequency.value = synth.cutoff;
@@ -116,17 +141,27 @@ function startSynthVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, l
 }
 
 /** The notes of a MIDI clip that start sounding inside [fromBar, toBar); cut at the window end (loop end). */
-function scheduleNotes(ctx: AnyContext, clip: Clip, synth: SynthSettings, dest: AudioNode, spb: number, time: number, fromBar: number, toBar: number): OscillatorNode[] {
-  const voices: OscillatorNode[] = [];
+function scheduleNotes(
+  ctx: AnyContext,
+  clip: Clip,
+  synth: SynthSettings,
+  buffers: Map<string, AudioBuffer>,
+  dest: AudioNode,
+  spb: number,
+  time: number,
+  fromBar: number,
+  toBar: number,
+): Voice[] {
+  const voices: Voice[] = [];
   const clipEnd = clip.start + clip.length;
   for (const note of clip.notes ?? []) {
     const start = clip.start + note.start;
     const end = Math.min(start + note.length, clipEnd, toBar);
     const begin = Math.max(start, fromBar);
     if (begin >= end - 1e-9 || start >= clipEnd) continue;
-    // Polyphony headroom: one note at full velocity peaks at -12 dBFS before the track fader.
-    const level = 0.25 * note.velocity * clipGainAt(clip, begin - clip.start);
-    voices.push(startSynthVoice(ctx, synth, note.pitch, level, time + (begin - fromBar) * spb, (end - begin) * spb, dest));
+    const level = voicePeak(synth, note.velocity) * clipGainAt(clip, begin - clip.start);
+    const voice = startSynthVoice(ctx, synth, note.pitch, level, time + (begin - fromBar) * spb, (end - begin) * spb, dest, buffers);
+    if (voice) voices.push(voice);
   }
   return voices;
 }
@@ -147,7 +182,7 @@ function scheduleWindow(
   for (const track of project.tracks) {
     for (const clip of track.clips) {
       if (clip.notes) {
-        sources.push(...scheduleNotes(ctx, clip, trackSynth(track), trackDest(track), spb, time, fromBar, toBar));
+        sources.push(...scheduleNotes(ctx, clip, trackSynth(track), buffers, trackDest(track), spb, time, fromBar, toBar));
         continue;
       }
       const sample = samples.get(clip.sampleId);
@@ -337,7 +372,7 @@ export class AudioEngine {
     this.stopAll();
     this.project = project;
     this.mode = 'arrange';
-    const ids = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.sampleId).filter(Boolean)));
+    const ids = arrangementSampleIds(project);
     await Promise.all([...ids].map((id) => this.loadBuffer(id).catch(() => undefined)));
     this.syncMixer(project);
     const ctx = this.ctx!;
@@ -567,7 +602,8 @@ export class AudioEngine {
   /** Play one synth note now (piano roll taps). */
   async previewNote(synth: SynthSettings, pitch: number) {
     const ctx = await this.unlock();
-    startSynthVoice(ctx, synth, pitch, 0.25, ctx.currentTime + 0.01, 0.2, this.master!);
+    if (synth.wave === 'sample' && synth.sampleId) await this.loadBuffer(synth.sampleId).catch(() => undefined);
+    startSynthVoice(ctx, synth, pitch, voicePeak(synth, 0.8), ctx.currentTime + 0.01, 0.2, this.master!, this.buffers);
   }
 
   async preview(sample: Sample, projectBpm: number) {
@@ -604,7 +640,7 @@ export class AudioEngine {
 
   /** Render the arrangement (or the loop region) to an AudioBuffer. */
   async render(project: Project, region: { from: number; to: number }): Promise<AudioBuffer> {
-    const ids = new Set(project.tracks.flatMap((t) => t.clips.map((c) => c.sampleId).filter(Boolean)));
+    const ids = arrangementSampleIds(project);
     await Promise.all([...ids].map((id) => this.loadBuffer(id)));
     const sampleRate = 44100;
     const seconds = (region.to - region.from) * secondsPerBar(project.bpm);

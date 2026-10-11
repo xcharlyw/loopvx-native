@@ -105,10 +105,79 @@ export function createMidiClip(start: number, length = 4): Clip {
  * (`length` bars long). Notes stay sorted by start, then pitch.
  */
 export function toggleNote(notes: Note[], pitch: number, start: number, length: number, velocity = 0.8): Note[] {
-  const eps = 1e-6;
-  const hit = notes.findIndex((n) => n.pitch === pitch && start >= n.start - eps && start < n.start + n.length - eps);
+  const hit = noteIndexAt(notes, pitch, start);
   if (hit >= 0) return notes.filter((_, i) => i !== hit);
-  return [...notes, { pitch, start, length, velocity }].sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+  return addNote(notes, { pitch, start, length, velocity });
+}
+
+const NOTE_EPS = 1e-6;
+/** Shortest note the piano roll edits to: a 64th. */
+export const MIN_NOTE = 1 / 64;
+
+const byTime = (a: Note, b: Note) => a.start - b.start || a.pitch - b.pitch;
+
+/** Index of the note sounding on `pitch` at position `start` (anywhere inside it), or -1. */
+export function noteIndexAt(notes: Note[], pitch: number, start: number): number {
+  return notes.findIndex((n) => n.pitch === pitch && start >= n.start - NOTE_EPS && start < n.start + n.length - NOTE_EPS);
+}
+
+/** Index of the note that starts exactly at `start` on `pitch` (a note's identity in the editor), or -1. */
+export function findNote(notes: Note[], pitch: number, start: number): number {
+  return notes.findIndex((n) => n.pitch === pitch && Math.abs(n.start - start) < NOTE_EPS);
+}
+
+export function addNote(notes: Note[], note: Note): Note[] {
+  return [...notes, note].sort(byTime);
+}
+
+/**
+ * Change one note and keep it valid inside a clip of `clipLength` bars: pitch 0..127, starting inside
+ * the clip, at least MIN_NOTE long and not past the clip end, velocity 0.05..1. Returns the new list
+ * (sorted) and the note as it ended up, which is how the editor keeps its selection.
+ */
+export function updateNote(notes: Note[], index: number, patch: Partial<Note>, clipLength: number): { notes: Note[]; note: Note } {
+  const old = notes[index];
+  if (!old) return { notes, note: old };
+  const merged = { ...old, ...patch };
+  const start = Math.max(0, Math.min(clipLength - MIN_NOTE, merged.start));
+  const note: Note = {
+    pitch: Math.max(0, Math.min(127, Math.round(merged.pitch))),
+    start,
+    length: Math.max(MIN_NOTE, Math.min(clipLength - start, merged.length)),
+    velocity: Math.max(0.05, Math.min(1, merged.velocity)),
+  };
+  return { notes: notes.map((n, i) => (i === index ? note : n)).sort(byTime), note };
+}
+
+/** A copy of the note right behind the original (same length); null when it would not fit in the clip. */
+export function duplicateNote(notes: Note[], index: number, clipLength: number): { notes: Note[]; note: Note } | null {
+  const src = notes[index];
+  if (!src || src.start + src.length * 2 > clipLength + NOTE_EPS) return null;
+  const note = { ...src, start: src.start + src.length };
+  return { notes: addNote(notes, note), note };
+}
+
+/** All notes up or down by `semitones`, stopping where the first note would leave the MIDI range. */
+export function transposeNotes(notes: Note[], semitones: number): Note[] {
+  if (!notes.length) return notes;
+  const lowest = Math.min(...notes.map((n) => n.pitch));
+  const highest = Math.max(...notes.map((n) => n.pitch));
+  const by = Math.max(-lowest, Math.min(127 - highest, Math.round(semitones)));
+  return by ? notes.map((n) => ({ ...n, pitch: n.pitch + by })) : notes;
+}
+
+/** Snap starts and lengths to the grid (default 16ths); notes landing on the same pitch and step merge. */
+export function quantizeNotes(notes: Note[], grid = 1 / 16): Note[] {
+  const seen = new Set<string>();
+  const out: Note[] = [];
+  for (const n of [...notes].sort(byTime)) {
+    const start = Math.round(n.start / grid) * grid;
+    const key = `${n.pitch}@${Math.round(start / grid)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ ...n, start, length: Math.max(grid, Math.round(n.length / grid) * grid) });
+  }
+  return out;
 }
 
 /** Track colours to pick from: the category colours first, then a few more that read on the dark UI. */

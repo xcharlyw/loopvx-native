@@ -1,4 +1,4 @@
-import { addClip, arrangementSampleIds, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addClip, addNote, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -139,5 +139,62 @@ describe('arrangementSampleIds', () => {
     expect([...arrangementSampleIds(p)]).toEqual(['s-loop']);
     p = mapTrack(p, t1.id, (t) => ({ ...t, clips: [createMidiClip(0)] }));
     expect([...arrangementSampleIds(p)].sort()).toEqual(['s-kick', 's-loop']);
+  });
+});
+
+describe('piano roll note editing', () => {
+  const notes = [
+    { pitch: 36, start: 0, length: 0.25, velocity: 0.8 },
+    { pitch: 43, start: 0.25, length: 0.125, velocity: 0.5 },
+  ];
+
+  it('finds notes by position and by identity', () => {
+    expect(noteIndexAt(notes, 36, 0.1)).toBe(0);
+    expect(noteIndexAt(notes, 36, 0.25)).toBe(-1);
+    expect(findNote(notes, 43, 0.25)).toBe(1);
+    expect(findNote(notes, 43, 0.3)).toBe(-1);
+  });
+
+  it('keeps edited notes inside the clip and the MIDI range, and re-sorts', () => {
+    const moved = updateNote(notes, 0, { start: 0.5, pitch: 200, velocity: 5 }, 1);
+    expect(moved.note).toEqual({ pitch: 127, start: 0.5, length: 0.25, velocity: 1 });
+    expect(moved.notes.map((n) => n.start)).toEqual([0.25, 0.5]);
+    const long = updateNote(notes, 1, { length: 9 }, 1);
+    expect(long.note.length).toBeCloseTo(0.75);
+    const tiny = updateNote(notes, 1, { length: 0 }, 1);
+    expect(tiny.note.length).toBe(MIN_NOTE);
+    const late = updateNote(notes, 0, { start: 5 }, 1);
+    expect(late.note.start + late.note.length).toBeLessThanOrEqual(1 + 1e-9);
+    expect(updateNote(notes, 0, { velocity: 0 }, 1).note.velocity).toBe(0.05);
+  });
+
+  it('duplicates a note behind itself while there is room', () => {
+    const d = duplicateNote(notes, 0, 1)!;
+    expect(d.note).toEqual({ pitch: 36, start: 0.25, length: 0.25, velocity: 0.8 });
+    expect(d.notes).toHaveLength(3);
+    expect(duplicateNote([{ pitch: 40, start: 0.75, length: 0.25, velocity: 1 }], 0, 1)).toBeNull();
+  });
+
+  it('transposes all notes but never out of range', () => {
+    expect(transposeNotes(notes, 12).map((n) => n.pitch)).toEqual([48, 55]);
+    expect(transposeNotes(notes, -100).map((n) => n.pitch)).toEqual([0, 7]);
+    expect(transposeNotes(notes, 100).map((n) => n.pitch)).toEqual([120, 127]);
+    expect(transposeNotes([], 5)).toEqual([]);
+  });
+
+  it('quantizes to 16ths and merges collisions', () => {
+    const loose = [
+      { pitch: 36, start: 0.02, length: 0.07, velocity: 1 },
+      { pitch: 36, start: 0.03, length: 0.2, velocity: 0.4 },
+      { pitch: 40, start: 0.26, length: 0.01, velocity: 1 },
+    ];
+    const q = quantizeNotes(loose);
+    expect(q).toHaveLength(2);
+    expect(q[0]).toMatchObject({ pitch: 36, start: 0, length: 0.0625 });
+    expect(q[1]).toMatchObject({ pitch: 40, start: 0.25, length: 0.0625 });
+  });
+
+  it('addNote keeps the list sorted', () => {
+    expect(addNote(notes, { pitch: 30, start: 0, length: 0.1, velocity: 1 }).map((n) => n.pitch)).toEqual([30, 36, 43]);
   });
 });

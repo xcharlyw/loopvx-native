@@ -2,15 +2,17 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Line, Rect } from 'react-native-svg';
 import { engine } from '../audio/engine';
+import { formatBarPosition } from '../audio/timing';
 import { isDrumWave } from '../audio/synth';
 import { C, mono } from '../constants/theme';
-import { exportMidiClip } from '../lib/actions';
+import { exportMidiClip, togglePlay } from '../lib/actions';
 import { noteName } from '../lib/midi';
 import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_STYLES, type PatternStyle } from '../lib/patterns';
-import { findClip, toggleNote, trackSynth, updateClip } from '../lib/project';
-import { updateProject, useStore } from '../lib/store';
+import { addNote, duplicateNote, findClip, findNote, noteIndexAt, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
+import { setState, updateProject, useStore } from '../lib/store';
 import type { Note } from '../types';
 import { tapX, tapY } from './events';
+import { Fader } from './Fader';
 import { Btn, Chip, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
@@ -27,6 +29,9 @@ const LENGTHS: { label: string; bars: number }[] = [
   { label: '1 Takt', bars: 1 },
 ];
 const BLACK = new Set([1, 3, 6, 8, 10]);
+const clampLow = (v: number) => Math.max(0, Math.min(127 - ROWS + 1, v));
+const pct = (v: number) => `${Math.round(v * 100)} %`;
+const lengthText = (bars: number) => LENGTHS.find((l) => Math.abs(l.bars - bars) < 1e-6)?.label ?? `${Math.round(bars * 64)}/64`;
 
 /** Lowest shown pitch: the octave of the clip's lowest note, else C1 (bass range) or C2 for a sample instrument (C3 in view). */
 function initialLow(notes: Note[], sampler = false): number {
@@ -41,13 +46,19 @@ let lastStyle: PatternStyle = 'rumble';
 let lastDrum: PatternStyle = 'kick';
 let lastRoot = 5; // F minor
 
-/** Tap a cell to add a note (and hear it), tap a note to remove it. Two octaves at a time. */
+/**
+ * Step piano roll, two octaves at a time. Tap an empty cell to add a note (and hear it), tap a note to
+ * select it: then move, lengthen, soften or duplicate it below the grid. "Radierer" removes notes by tap.
+ */
 export function PianoRollPanel() {
   const project = useStore((st) => st.project);
   const selectedClipId = useStore((st) => st.selectedClipId);
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
   const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? [], !!found?.track.synth && isDrumWave(found.track.synth.wave)));
   const [noteLen, setNoteLen] = useState(1 / 16);
+  const [tool, setTool] = useState<'draw' | 'erase'>('draw');
+  /** The selected note, by identity (pitch and start): stays valid across undo and re-sorting. */
+  const [sel, setSel] = useState<{ pitch: number; start: number } | null>(null);
   const sampler = !!found?.track.synth && isDrumWave(found.track.synth.wave); // drum styles, C3 centred
   const [picked, setStyle] = useState(sampler ? lastDrum : lastStyle);
   // The instrument may change while the roll is open: drum styles only for sample instruments.
@@ -68,6 +79,10 @@ export function PianoRollPanel() {
   const height = ROWS * ROW_H;
   const high = low + ROWS - 1;
   const pitchAtRow = (row: number) => high - row;
+  const selIndex = sel ? findNote(notes, sel.pitch, sel.start) : -1;
+  const selected = selIndex >= 0 ? notes[selIndex] : null;
+  const setNotes = (next: Note[], opts: { merge?: boolean } = {}) => updateProject((p) => updateClip(p, clip.id, { notes: next }), opts);
+  const hear = (pitch: number) => void engine.previewNote(trackSynth(track), pitch);
 
   const onTap = (e: Parameters<typeof tapX>[0]) => {
     const step = Math.floor(tapX(e) / STEP_W);
@@ -75,9 +90,47 @@ export function PianoRollPanel() {
     if (step < 0 || step >= steps || row < 0 || row >= ROWS) return;
     const pitch = pitchAtRow(row);
     const start = step / STEPS_PER_BAR;
-    const next = toggleNote(notes, pitch, start, Math.min(noteLen, clip.length - start));
-    if (next.length > notes.length) void engine.previewNote(trackSynth(track), pitch);
-    updateProject((p) => updateClip(p, clip.id, { notes: next }));
+    const hit = noteIndexAt(notes, pitch, start);
+    if (hit >= 0) {
+      if (tool === 'erase') {
+        if (selected === notes[hit]) setSel(null);
+        setNotes(notes.filter((_, i) => i !== hit));
+      } else {
+        setSel({ pitch, start: notes[hit].start });
+        hear(pitch);
+      }
+      return;
+    }
+    if (tool === 'erase') return;
+    const note: Note = { pitch, start, length: Math.min(noteLen, clip.length - start), velocity: 0.8 };
+    setSel({ pitch, start });
+    hear(pitch);
+    setNotes(addNote(notes, note));
+  };
+
+  /** Change the selected note; the grid follows it when it leaves the visible octaves. */
+  const edit = (patch: Partial<Note>, opts: { merge?: boolean; hear?: boolean } = {}) => {
+    if (!selected) return;
+    const r = updateNote(notes, selIndex, patch, clip.length);
+    setSel({ pitch: r.note.pitch, start: r.note.start });
+    if (r.note.pitch < low || r.note.pitch > high) setLow(clampLow(r.note.pitch - 12));
+    if (opts.hear && r.note.pitch !== selected.pitch) hear(r.note.pitch);
+    setNotes(r.notes, { merge: opts.merge });
+  };
+  const removeSelected = () => {
+    if (!selected) return;
+    setSel(null);
+    setNotes(notes.filter((_, i) => i !== selIndex));
+  };
+  const duplicateSelected = () => {
+    const d = duplicateNote(notes, selIndex, clip.length);
+    if (!d) return;
+    setSel({ pitch: d.note.pitch, start: d.note.start });
+    setNotes(d.notes);
+  };
+  const playClip = () => {
+    if (!engine.playing) setState({ cursor: clip.start });
+    void togglePlay();
   };
 
   const generate = () => {
@@ -87,12 +140,25 @@ export function PianoRollPanel() {
     const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31) });
     updateProject((p) => updateClip(p, clip.id, { notes: next }));
     setLow(initialLow(next, sampler));
+    setSel(null);
   };
   const shiftKey = (by: number) => setRoot((r) => (r + by + 12) % 12);
 
   return (
     <Sheet title="Piano Roll">
       <View style={s.toolbar}>
+        <Chip variant={tool === 'draw' ? 'on' : 'ghost'} onPress={() => setTool('draw')}>
+          Zeichnen
+        </Chip>
+        <Chip variant={tool === 'erase' ? 'on' : 'ghost'} onPress={() => setTool('erase')}>
+          Radierer
+        </Chip>
+        <Btn small onPress={playClip}>
+          Abspielen / Stop
+        </Btn>
+      </View>
+      <View style={[s.toolbar, { marginTop: 8 }]}>
+        <Txt style={s.range}>Neue Note</Txt>
         {LENGTHS.map((l) => (
           <Chip key={l.label} variant={noteLen === l.bars ? 'on' : 'ghost'} onPress={() => setNoteLen(l.bars)}>
             {l.label}
@@ -153,6 +219,8 @@ export function PianoRollPanel() {
                     rx={3}
                     fill={track.color}
                     opacity={0.5 + 0.5 * n.velocity}
+                    stroke={n === selected ? '#fff' : 'none'}
+                    strokeWidth={n === selected ? 2 : 0}
                   />
                 ))}
             </Svg>
@@ -160,6 +228,65 @@ export function PianoRollPanel() {
           </View>
         </ScrollView>
       </View>
+
+      <Section title="Note" style={{ marginTop: 14 }}>
+        {selected ? (
+          <>
+            <Txt style={s.value}>{`${noteName(selected.pitch)} · ${formatBarPosition(selected.start)} · ${lengthText(selected.length)} · Anschlag ${pct(selected.velocity)}`}</Txt>
+            <Txt style={[s.sub, { marginTop: 10 }]}>Verschieben</Txt>
+            <View style={s.toolbar}>
+              <Btn small accessibilityLabel="Note früher" onPress={() => edit({ start: selected.start - 1 / STEPS_PER_BAR })}>
+                ◀ 1/16
+              </Btn>
+              <Btn small accessibilityLabel="Note später" onPress={() => edit({ start: selected.start + 1 / STEPS_PER_BAR })}>
+                1/16 ▶
+              </Btn>
+              <Btn small accessibilityLabel="Note höher" onPress={() => edit({ pitch: selected.pitch + 1 }, { hear: true })}>
+                ▲ Halbton
+              </Btn>
+              <Btn small accessibilityLabel="Note tiefer" onPress={() => edit({ pitch: selected.pitch - 1 }, { hear: true })}>
+                ▼ Halbton
+              </Btn>
+              <Btn small accessibilityLabel="Note eine Oktave höher" onPress={() => edit({ pitch: selected.pitch + 12 }, { hear: true })}>
+                ▲ Oktave
+              </Btn>
+              <Btn small accessibilityLabel="Note eine Oktave tiefer" onPress={() => edit({ pitch: selected.pitch - 12 }, { hear: true })}>
+                ▼ Oktave
+              </Btn>
+            </View>
+            <Txt style={[s.sub, { marginTop: 12 }]}>Länge</Txt>
+            <View style={s.toolbar}>
+              {LENGTHS.map((l) => (
+                <Chip key={l.label} variant={Math.abs(selected.length - l.bars) < 1e-6 ? 'on' : 'ghost'} onPress={() => edit({ length: l.bars })}>
+                  {l.label}
+                </Chip>
+              ))}
+            </View>
+            <View style={[s.toolbar, { marginTop: 12, flexWrap: 'nowrap' }]}>
+              <Txt style={{ width: 74, fontSize: 13 }}>Anschlag</Txt>
+              <Fader value={selected.velocity} min={0.05} max={1} onChange={(v) => edit({ velocity: Math.round(v * 100) / 100 }, { merge: true })} />
+              <Txt style={[s.value, { width: 52, textAlign: 'right' }]}>{pct(selected.velocity)}</Txt>
+            </View>
+            <View style={[s.toolbar, { marginTop: 12 }]}>
+              <Btn small onPress={duplicateSelected}>
+                Duplizieren
+              </Btn>
+              <Btn small kind="danger" onPress={removeSelected}>
+                Löschen
+              </Btn>
+              <Btn small onPress={() => setSel(null)}>
+                Fertig
+              </Btn>
+            </View>
+          </>
+        ) : (
+          <Txt style={s.note}>
+            {tool === 'erase'
+              ? 'Radierer: Tippe eine Note an, um sie zu löschen.'
+              : 'Tippe eine leere Zelle, um eine Note zu setzen. Tippe eine Note an, um sie zu verschieben, zu verlängern oder leiser zu machen.'}
+          </Txt>
+        )}
+      </Section>
 
       <Section title="Pattern-Generator" style={{ marginTop: 14 }}>
         <View style={s.toolbar}>
@@ -190,12 +317,30 @@ export function PianoRollPanel() {
 
       <Section title="Clip" style={{ marginTop: 14 }}>
         <Txt style={s.note}>{`${notes.length} ${notes.length === 1 ? 'Note' : 'Noten'} · ${clip.length} ${clip.length === 1 ? 'Takt' : 'Takte'} · Instrument der Spur „${track.name}“`}</Txt>
+        {notes.length > 0 && (
+          <>
+            <Txt style={[s.sub, { marginTop: 10 }]}>Alle Noten transponieren</Txt>
+            <View style={s.toolbar}>
+              {[-12, -1, 1, 12].map((by) => (
+                <Btn key={by} small accessibilityLabel={`Alle Noten ${by > 0 ? '+' : ''}${by}`} onPress={() => setNotes(transposeNotes(notes, by))}>
+                  {`${by > 0 ? '+' : '−'}${Math.abs(by)}`}
+                </Btn>
+              ))}
+              <Btn small onPress={() => setNotes(quantizeNotes(notes))}>
+                Auf Raster
+              </Btn>
+            </View>
+          </>
+        )}
         <View style={[s.toolbar, { marginTop: 10 }]}>
           <Btn small onPress={() => void exportMidiClip(clip, track.name)}>
             Als .mid exportieren
           </Btn>
           {notes.length > 0 && (
-            <Btn small kind="danger" onPress={() => updateProject((p) => updateClip(p, clip.id, { notes: [] }))}>
+            <Btn small kind="danger" onPress={() => {
+              setSel(null);
+              setNotes([]);
+            }}>
               Alle Noten löschen
             </Btn>
           )}
@@ -214,4 +359,6 @@ const s = StyleSheet.create({
   keyText: { ...mono(), fontSize: 10, color: C.muted },
   key2: { ...mono(), fontSize: 13, minWidth: 64, textAlign: 'center' },
   note: { color: C.muted, fontSize: 12, lineHeight: 17 },
+  value: { ...mono(), fontSize: 13 },
+  sub: { color: C.muted, fontSize: 13, marginBottom: 8 },
 });

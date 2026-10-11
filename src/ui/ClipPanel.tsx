@@ -4,9 +4,9 @@ import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { BEATS_PER_BAR } from '../config';
 import { C, font, mono } from '../constants/theme';
-import { exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
+import { detectSampleTempo, exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
 import { findClip, updateClip } from '../lib/project';
-import { setState, updateProject, useStore } from '../lib/store';
+import { errorText, setState, toast, updateProject, useStore } from '../lib/store';
 import type { Clip } from '../types';
 import { Fader } from './Fader';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -25,6 +25,7 @@ export function ClipPanel() {
   const samples = useStore((st) => st.samples);
   const selectedClipId = useStore((st) => st.selectedClipId);
   const [bpmText, setBpmText] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
 
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
   if (found?.clip.notes) return <MidiClipSheet clip={found.clip} trackName={found.track.name} />;
@@ -46,6 +47,23 @@ export function ClipPanel() {
     const v = Number(bpmText?.replace(',', '.'));
     setBpmText(null);
     if (bpmText !== null && v >= 40 && v <= 300) void setSampleBpm(sample, Math.round(v * 100) / 100);
+  };
+  const detect = async () => {
+    setDetecting(true);
+    try {
+      const guess = await detectSampleTempo(sample);
+      if (!guess) {
+        toast('Kein klares Tempo erkennbar (Gesang, Pads?). Trag es von Hand ein.');
+      } else {
+        await setSampleBpm(sample, guess.bpm);
+        const sure = guess.confidence >= 0.5 || guess.source === 'loop';
+        toast(`${sure ? 'Erkannt' : 'Geschätzt, bitte prüfen'}: ${fmt(guess.bpm)} BPM`);
+      }
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setDetecting(false);
+    }
   };
   const bpmFor = (bars: number) => Math.round(((bars * BEATS_PER_BAR * 60) / (duration ?? 1)) * 100) / 100;
   const stretchTo = (bars: number) => {
@@ -84,6 +102,11 @@ export function ClipPanel() {
             accessibilityLabel="Original-Tempo in BPM"
           />
           <Txt style={s.unit}>BPM</Txt>
+        </View>
+        <View style={[s.row, { marginTop: 10 }]}>
+          <Btn small disabled={detecting} onPress={() => void detect()}>
+            {detecting ? 'Erkenne …' : 'Tempo erkennen'}
+          </Btn>
         </View>
         <Txt style={s.note}>
           {!sample.bpm

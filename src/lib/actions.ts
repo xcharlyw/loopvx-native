@@ -8,6 +8,7 @@ import { encodeWav } from '../audio/wav';
 import { db } from '../storage/db';
 import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
+import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { readMidiFile, writeMidiFile } from './midi';
 import { addClip, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
@@ -130,6 +131,34 @@ export async function setSampleBpm(sample: Sample, bpm: number | undefined) {
   recordHistory();
   await upsertSample({ ...sample, bpm });
   updateProject((p) => p); // no project change: only reschedules the audio
+}
+
+/** Estimate a sample's tempo from its audio; undefined when nothing repeats clearly (speech, pads). */
+export async function detectSampleTempo(sample: Sample): Promise<TempoGuess | undefined> {
+  const buffer = await engine.loadBuffer(sample.id);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  return detectTempo(toMono(channels), buffer.sampleRate);
+}
+
+/**
+ * Give freshly imported loops without a tempo in their name one from their audio. Only confident
+ * results are applied, and never to vocals (speech has no beat). Returns how many were set.
+ */
+export async function autoDetectTempos(added: Sample[]): Promise<number> {
+  let set = 0;
+  for (const sample of added) {
+    if (sample.bpm || sample.category === 'vocal') continue;
+    try {
+      const guess = await detectSampleTempo(sample);
+      if (!guess || guess.confidence < (guess.source === 'loop' ? 0.35 : 0.5)) continue;
+      const current = getState().samples.find((x) => x.id === sample.id) ?? sample;
+      await upsertSample({ ...current, bpm: guess.bpm });
+      set++;
+    } catch {
+      /* undecodable: leave the sample as it is */
+    }
+  }
+  return set;
 }
 
 /** Re-pitch (speed and pitch together) or stretch (pitch stays) when the sample follows the project tempo. */

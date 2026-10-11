@@ -81,6 +81,14 @@ tests/              server tests (anything in api/ is deployed as a function)
   Drive (trash only). The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
+## Tempo detection
+
+`src/audio/tempo.ts` (pure): onset curve, autocorrelation comb, candidates from whole-bar lengths plus
+autocorrelation peaks, a prior around 150 BPM for octave ties, and a crest-factor gate so drones and
+speech give "no tempo". Used by the "Tempo erkennen" button (ClipPanel) and `autoDetectTempos` on upload
+(loops only, never vocals, only confident results). Checked on a real 160 BPM loop and its variants
+(mp3, trimmed, offset, +-10 % speed): all within 0.4 %.
+
 ## Not done yet
 
 Drive import of existing loop folders (needs `drive.readonly` or the Picker), audio recording,

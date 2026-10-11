@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { downloadSample, placeSample } from '../lib/actions';
+import { autoDetectTempos, downloadSample, placeSample } from '../lib/actions';
 import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
 import { deleteSample, importSamplesFromDevice } from '../lib/samples';
 import { errorText, getState, setSamples, setState, toast, upsertSample, useStore } from '../lib/store';
@@ -41,6 +41,8 @@ export function LibraryPanel() {
       if (!added.length) return;
       setSamples([...getState().samples, ...added]);
       toast(`${added.length} Datei(en) hinzugefügt`);
+      const tempos = await autoDetectTempos(added);
+      if (tempos) toast(`Tempo bei ${tempos} Loop(s) automatisch erkannt`);
     } catch (e) {
       toast(errorText(e), 'error');
     }

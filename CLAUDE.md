@@ -146,7 +146,9 @@ device; each slot has an on/bypass crossfade). The chain is changed through `add
 `moveDevice`/`updateDevice` in `project.ts` with `updateProject(..., { reschedule: false })`; `syncMixer` applies
 it to the running graph. Live and offline render use the same `MixGraph`, so exports contain the effects.
 UI: `DevicePanel` (opened from TrackPanel "Geräte"): source slot (instrument for MIDI tracks, opens the Sound panel),
-a card per device with live scope (`synth/DeviceScopes.tsx`) and knobs, `+ Gerät hinzufügen` browser.
+a card per device with live scope (`synth/DeviceScopes.tsx`) and knobs, `+ Gerät hinzufügen` browser. Cards fold (tap the
+title, "Alle einklappen"): a folded card shows `deviceSummary` in one line. The folded set is React state (a new Set per change)
+with a module copy so the panel reopens as left; never mutate a module-level Set, the React compiler would not rerender.
 Constraints learned the hard way:
 - react-native-audio-api has **no DynamicsCompressor and no channel splitter/merger**, and `channelCount` is read-only:
   there is no true mono/width. The **compressor** is built from nodes: rectifier (WaveShaper |x|), a peak-hold loop

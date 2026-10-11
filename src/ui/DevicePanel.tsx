@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { echoSeconds } from '../audio/devicemath';
-import { DEVICE_DEFS, GROUP_LABELS, GROUP_ORDER, MAX_DEVICES, deviceParams, formatParam, type ParamDef } from '../audio/devices';
+import { DEVICE_DEFS, deviceSummary, GROUP_LABELS, GROUP_ORDER, MAX_DEVICES, deviceParams, formatParam, type ParamDef } from '../audio/devices';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
 import { addDevice, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
@@ -10,10 +10,10 @@ import type { Device, DeviceType, Track } from '../types';
 import { Close } from './icons';
 import { Btn, Chip, Txt } from './kit';
 import { Sheet } from './Sheet';
+import { Card } from './synth/Tabs';
 import { Knob, KnobRow } from './synth/Knob';
 import { CompScope, EchoScope, EqScope, LimiterScope, ReverbScope, SatScope } from './synth/DeviceScopes';
 import { FilterScope } from './synth/Scopes';
-import { Card } from './synth/Tabs';
 import type { FilterKind } from '../audio/scopes';
 
 /** Rows of knobs per device (default: all parameters in one wrapping row). */
@@ -35,6 +35,9 @@ function visible(type: DeviceType, key: string, p: Record<string, number>): bool
   return true;
 }
 
+/** Folded cards, kept while the app runs so the panel opens the way you left it (replaced, never mutated: React state). */
+let persistedFolded: ReadonlySet<string> = new Set();
+
 const SCOPE_FILTER: FilterKind[] = ['lowpass', 'highpass', 'bandpass'];
 
 /**
@@ -47,6 +50,11 @@ export function DevicePanel() {
   const bpm = useStore((st) => st.project.bpm);
   const [width, setWidth] = useState(330);
   const [adding, setAdding] = useState(false);
+  const [folded, setFoldedState] = useState<ReadonlySet<string>>(persistedFolded);
+  const setFolded = (next: Set<string>) => {
+    persistedFolded = next;
+    setFoldedState(next);
+  };
   if (!track) {
     return (
       <Sheet title="Geräte">
@@ -58,6 +66,20 @@ export function DevicePanel() {
   const devices = track.devices ?? [];
   const kind = trackKind(track);
   const inner = Math.max(200, width - 26);
+  const toggle = (id: string) => {
+    const next = new Set(folded);
+    if (!next.delete(id)) next.add(id);
+    setFolded(next);
+  };
+  const foldAll = (fold: boolean) => {
+    const next = new Set(folded);
+    for (const d of devices) {
+      if (fold) next.add(d.id);
+      else next.delete(d.id);
+    }
+    setFolded(next);
+  };
+  const allFolded = devices.length > 0 && devices.every((d) => folded.has(d.id));
 
   const change = (id: string, patch: { on?: boolean; params?: Record<string, number> }) => updateProject((p) => updateDevice(p, trackId, id, patch), { reschedule: false });
   const add = (type: DeviceType) => {
@@ -76,8 +98,16 @@ export function DevicePanel() {
 
         <Source track={track} kind={kind} />
 
+        {devices.length > 1 && (
+          <View style={s.foldRow}>
+            <Chip onPress={() => foldAll(!allFolded)} textStyle={{ fontSize: 12 }}>
+              {allFolded ? 'Alle ausklappen' : 'Alle einklappen'}
+            </Chip>
+          </View>
+        )}
+
         {devices.map((d, i) => (
-          <DeviceCard key={d.id} device={d} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
+          <DeviceCard key={d.id} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
         ))}
 
         {devices.length === 0 && <Txt style={[s.note, { marginBottom: 10 }]}>Noch keine Effekte. Füge Geräte hinzu: EQ, Compressor, Saturator, Echo, Reverb ...</Txt>}
@@ -136,7 +166,7 @@ function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
   );
 }
 
-function DeviceCard({ device, index, count, bpm, width, onChange, onMove, onRemove }: { device: Device; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
+function DeviceCard({ device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onRemove }: { device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
   const def = DEVICE_DEFS[device.type];
   if (!def) return null;
   const p = deviceParams(device);
@@ -183,15 +213,33 @@ function DeviceCard({ device, index, count, bpm, width, onChange, onMove, onRemo
 
   return (
     <View style={dim && { opacity: 0.55 }}>
-      <Card title={def.label.toUpperCase()} right={header}>
-        <Scope device={device} p={p} bpm={bpm} width={width} />
-        {rows.map((row, i) => (
-          <View key={i}>
-            {row.title && <Txt style={[s.cap, { marginTop: 8 }]}>{row.title}</Txt>}
-            <KnobRow>{row.keys.map((k) => byKey.get(k)).filter((x): x is ParamDef => !!x).map(control)}</KnobRow>
-          </View>
-        ))}
-      </Card>
+      <View style={s.card}>
+        <View style={s.cardHead}>
+          <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ${isFolded ? 'ausklappen' : 'einklappen'}`} accessibilityState={{ expanded: !isFolded }} onPress={onToggle} style={s.titleBox}>
+            <Txt style={s.chevron}>{isFolded ? '▸' : '▾'}</Txt>
+            <View style={{ flex: 1 }}>
+              <Txt style={s.cardTitle}>{def.label.toUpperCase()}</Txt>
+              {isFolded && (
+                <Txt numberOfLines={1} style={s.summary}>
+                  {deviceSummary(device)}
+                </Txt>
+              )}
+            </View>
+          </Pressable>
+          {header}
+        </View>
+        {!isFolded && (
+          <>
+            <Scope device={device} p={p} bpm={bpm} width={width} />
+            {rows.map((row, i) => (
+              <View key={i}>
+                {row.title && <Txt style={[s.cap, { marginTop: 8 }]}>{row.title}</Txt>}
+                <KnobRow>{row.keys.map((k) => byKey.get(k)).filter((x): x is ParamDef => !!x).map(control)}</KnobRow>
+              </View>
+            ))}
+          </>
+        )}
+      </View>
     </View>
   );
 }
@@ -220,6 +268,13 @@ function Scope({ device, p, bpm, width }: { device: Device; p: Record<string, nu
 
 const s = StyleSheet.create({
   sub: { ...font(400), fontSize: 12, color: C.muted, marginBottom: 10 },
+  foldRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
+  card: { backgroundColor: '#111114', borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12, marginBottom: 10 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 36 },
+  titleBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },
+  chevron: { fontSize: 14, color: C.accent, width: 14 },
+  cardTitle: { ...font(700), fontSize: 10.5, letterSpacing: 1.4, color: C.muted },
+  summary: { ...font(400), fontSize: 11.5, color: C.text, marginTop: 2 },
   note: { color: C.muted, fontSize: 12, lineHeight: 17 },
   cap: { ...font(700), fontSize: 10, letterSpacing: 1.4, color: C.muted, marginBottom: 4 },
   source: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111114', borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12, marginBottom: 10 },

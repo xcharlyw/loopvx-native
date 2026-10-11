@@ -231,3 +231,45 @@ export function formatParam(def: ParamDef, v: number): string {
       return def.options?.[Math.round(v)] ?? String(v);
   }
 }
+
+/** One line about a device's current state, shown when its card is folded. */
+export function deviceSummary(device: Pick<Device, 'type' | 'params'>): string {
+  const def = DEVICE_DEFS[device.type];
+  if (!def) return '';
+  const p = deviceParams(device);
+  const f = (key: string) => {
+    const d = def.params.find((x) => x.key === key)!;
+    return formatParam(d, p[key]);
+  };
+  switch (device.type) {
+    case 'eq': {
+      const bands = [
+        ['Bass', 'lsG'],
+        ['Mitte 1', 'p1G'],
+        ['Mitte 2', 'p2G'],
+        ['Höhen', 'hsG'],
+      ]
+        .filter(([, k]) => Math.abs(p[k]) >= 0.05)
+        .map(([name, k]) => `${name} ${f(k)}`);
+      if (p.hp > 20.5) bands.unshift(`Low-Cut ${f('hp')}`);
+      if (p.lp < 19999) bands.push(`High-Cut ${f('lp')}`);
+      return bands.length ? bands.join(' · ') : 'Flach';
+    }
+    case 'comp':
+      return `${f('threshold')} · ${f('ratio')} · ${f('release')}`;
+    case 'sat':
+      return `${f('mode')} · Drive ${f('drive')}`;
+    case 'echo':
+      return `${p.sync >= 0.5 ? f('division') : f('time')} · FB ${f('feedback')} · ${f('mix')}`;
+    case 'reverb':
+      return `${f('size')} · ${f('mix')}`;
+    case 'chorus':
+      return `${f('rate')} · ${f('mix')}`;
+    case 'filter':
+      return `${f('type')} · ${f('cutoff')}`;
+    case 'limiter':
+      return `Gain ${f('gain')} · Ceiling ${f('ceiling')}`;
+    case 'utility':
+      return `${f('gain')}${Math.abs(p.pan) > 0.005 ? ` · ${f('pan')}` : ''}${p.invert >= 0.5 ? ' · Phase' : ''}`;
+  }
+}

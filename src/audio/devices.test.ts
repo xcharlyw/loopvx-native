@@ -1,4 +1,4 @@
-import { DEVICE_DEFS, DEVICE_TYPES, createDevice, deviceIsDefault, deviceParams, formatParam } from './devices';
+import { deviceSummary, DEVICE_DEFS, DEVICE_TYPES, createDevice, deviceIsDefault, deviceParams, formatParam } from './devices';
 
 describe('device registry', () => {
   it('every parameter has a sane range, a default inside it and a unique key', () => {
@@ -54,5 +54,22 @@ describe('device registry', () => {
     expect(formatParam(find('eq', 'hp'), 90)).toBe('90 Hz');
     expect(formatParam(find('eq', 'lp'), 20000)).toBe('Aus');
     expect(formatParam(find('eq', 'lp'), 8000)).toBe('8,0 kHz');
+  });
+});
+
+describe('deviceSummary', () => {
+  it('tells the state of each device in one line', () => {
+    expect(deviceSummary({ type: 'eq', params: {} })).toBe('Flach');
+    expect(deviceSummary({ type: 'eq', params: { lsG: 8, hp: 90 } })).toBe('Low-Cut 90 Hz · Bass +8,0 dB');
+    expect(deviceSummary({ type: 'comp', params: {} })).toBe('-18 dB · 4,0:1 · 120 ms');
+    expect(deviceSummary({ type: 'sat', params: { mode: 2 } })).toBe('Fold · Drive +9,0 dB');
+    expect(deviceSummary({ type: 'echo', params: {} })).toBe('1/8 punkt. · FB 40 % · 30 %');
+    expect(deviceSummary({ type: 'echo', params: { sync: 0, time: 250 } })).toBe('250 ms · FB 40 % · 30 %');
+    expect(deviceSummary({ type: 'utility', params: { gain: -6, pan: -0.5, invert: 1 } })).toBe('-6,0 dB · 50 L · Phase');
+    // @ts-expect-error not a known type
+    expect(deviceSummary({ type: 'wobbler', params: {} })).toBe('');
+  });
+  it('has a summary for every type', () => {
+    for (const type of DEVICE_TYPES) expect(deviceSummary({ type, params: {} }).length).toBeGreaterThan(0);
   });
 });

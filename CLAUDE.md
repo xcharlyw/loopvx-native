@@ -92,6 +92,7 @@ MIDI notes: a clip with `notes` is a MIDI clip and plays its track's instrument 
 oscillator; `wave: 'sample'` = a library sample, original pitch on C3 = 60, Ableton naming;
 `'kick'` / `'noise'` = synthesized drums). Drum instruments get drum patterns and ring out like
 one-shots (`noteHold`). Track effects incl. `pump` (beat ducking, scheduled per window like the
-metronome) live in `mixgraph.ts`.
+metronome) live in `mixgraph.ts`, which also holds the master soft limiter (`createLimiter`: live and
+offline, transparent below 0.8 FS) that replaces hard clipping on hot mixes.
 Effects (`track.fx`) change through `updateProject(…, { reschedule: false })`: `syncMixer` applies
 them to the running graph, rescheduling would restart every voice.

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { autoDetectTempos } from '../lib/actions';
-import { childrenOf, driveCanRead, driveLinked, searchByName, type DriveFile } from '../lib/drive';
-import { browserEntries, collectAudio, sizeText } from '../lib/driveImport';
+import { browseChildren, driveCanRead, driveLinked, searchByName, type DriveFile } from '../lib/drive';
+import { COMPUTERS_ID, VIRTUAL_ROOTS, browserEntries, collectAudio, isVirtualId, sizeText } from '../lib/driveImport';
 import { importDriveItems } from '../lib/driveImportRun';
 import { errorText, toast } from '../lib/store';
 import { signIn } from '../lib/supabase';
@@ -60,7 +60,7 @@ export function DriveImport() {
     setError(null);
     setSearched(!!search);
     try {
-      setEntries(search ? await searchByName(search) : await childrenOf(folderId));
+      setEntries(search ? await searchByName(search) : await browseChildren(folderId));
     } catch (e) {
       setError(errorText(e));
       setEntries([]);
@@ -72,7 +72,10 @@ export function DriveImport() {
     if (open && access === 'ok') void load(here.id);
   }, [open, access, here.id]);
 
-  const { folders, audio } = browserEntries(entries);
+  const listed = browserEntries(entries);
+  // At the top of Drive, "Computer" (My Mac ...) and "Mit mir geteilt" come first.
+  const folders = stack.length === 1 && !searched ? [...VIRTUAL_ROOTS, ...listed.folders] : listed.folders;
+  const audio = listed.audio;
   const pickedCount = Object.keys(picked).length;
   const importing = progress !== null;
 
@@ -103,7 +106,7 @@ export function DriveImport() {
   const importFolder = async (folder: Crumb, path: string) => {
     setProgress({ done: 0, total: 0, name: `Suche in „${folder.name}“ …` });
     try {
-      const { items, truncated } = await collectAudio(childrenOf, folder.id, path);
+      const { items, truncated } = await collectAudio(browseChildren, folder.id, path);
       setProgress(null);
       await run(items, truncated);
     } catch (e) {
@@ -179,7 +182,14 @@ export function DriveImport() {
 
       {loading && <Txt style={s.note}>Lade …</Txt>}
       {error && <Txt style={[s.note, { color: C.danger }]}>{error}</Txt>}
-      {!loading && !error && !folders.length && !audio.length && <Txt style={s.note}>Hier liegen keine Ordner oder Audiodateien.</Txt>}
+      {!loading && !error && !folders.length && !audio.length && (
+        <Txt style={s.note}>
+          Hier liegen keine Ordner oder Audiodateien.
+        </Txt>
+      )}
+      {!loading && !error && here.id === COMPUTERS_ID && !entries.length && (
+        <Txt style={s.note}>Keine Computer gefunden. Sie erscheinen hier, wenn „Google Drive für Desktop“ deinen Mac sichert (Ordner „Computer“ im Drive).</Txt>
+      )}
 
       {stack.length > 1 && (
         <Btn small disabled={importing} accessibilityLabel="Diesen Ordner importieren" onPress={() => void importFolder(here, stack.map((c) => c.name).slice(1).join('/'))}>
@@ -195,9 +205,11 @@ export function DriveImport() {
               {f.name}
             </Txt>
           </Pressable>
-          <Chip onPress={() => void importFolder({ id: f.id, name: f.name }, [...stack.map((c) => c.name).slice(1), f.name].join('/'))} textStyle={{ fontSize: 11 }}>
-            Importieren
-          </Chip>
+          {!isVirtualId(f.id) && (
+            <Chip onPress={() => void importFolder({ id: f.id, name: f.name }, [...stack.map((c) => c.name).slice(1), f.name].join('/'))} textStyle={{ fontSize: 11 }}>
+              Importieren
+            </Chip>
+          )}
         </View>
       ))}
 

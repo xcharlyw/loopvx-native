@@ -9,6 +9,8 @@ export interface DriveEntry {
   id: string;
   name: string;
   mimeType?: string;
+  /** Parent folder ids; missing for the top of a backed-up computer. */
+  parents?: string[];
   size?: string;
   modifiedTime?: string;
 }
@@ -26,6 +28,27 @@ const byName = (a: DriveEntry, b: DriveEntry) => a.name.localeCompare(b.name, 'd
 /** What a folder view lists: sub-folders first, then audio files, each sorted by name (numbers in order: "Kick 2" before "Kick 10"). */
 export function browserEntries(children: DriveEntry[]): { folders: DriveEntry[]; audio: DriveEntry[] } {
   return { folders: children.filter(isFolder).sort(byName), audio: children.filter(isAudio).sort(byName) };
+}
+
+// ---------------------------------------------------------------- places outside "My Drive"
+
+/** Ids of the two virtual places listed next to the folders of "My Drive". */
+export const COMPUTERS_ID = '__computers';
+export const SHARED_ID = '__shared';
+export const isVirtualId = (id: string) => id === COMPUTERS_ID || id === SHARED_ID;
+
+/** "Computer" (what Drive for desktop backs up, e.g. "My Mac") and "Shared with me", shown at the top of Drive. */
+export const VIRTUAL_ROOTS: DriveEntry[] = [
+  { id: COMPUTERS_ID, name: 'Computer', mimeType: FOLDER_MIME },
+  { id: SHARED_ID, name: 'Mit mir geteilt', mimeType: FOLDER_MIME },
+];
+
+/**
+ * The backed-up computers. Drive's API has no "Computers" listing: they show up as folders of the user that have no
+ * parent at all (anything in "My Drive" has one), so those are the tops of the computers.
+ */
+export function computerFolders(ownedFolders: DriveEntry[]): DriveEntry[] {
+  return ownedFolders.filter((f) => isFolder(f) && !f.parents?.length).sort(byName);
 }
 
 export const driveSampleId = (fileId: string) => `drive:${fileId}`;

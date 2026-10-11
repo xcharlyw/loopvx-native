@@ -86,7 +86,7 @@ tests/              server tests (anything in api/ is deployed as a function)
   `config.ts`); `api/drive-token.ts` returns the granted `scope`, `driveCanRead()` gates the **Drive import** (Library →
   `DriveImport`: browse folders, tick files or import a folder recursively; pure logic in `driveImport.ts`, run in
   `driveImportRun.ts`; samples get id `drive:<fileId>`, dedupe by `driveId`, folder path + name give category/BPM/key; the
-  copies are then synced into LOOPVX/Samples like any sample). Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
+  copies are then synced into LOOPVX/Samples like any sample). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; not verified against a real Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
 ## Splice

@@ -1,4 +1,4 @@
-import { browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
+import { COMPUTERS_ID, SHARED_ID, VIRTUAL_ROOTS, computerFolders, isVirtualId, browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
 
 const folder = (id: string, name: string): DriveEntry => ({ id, name, mimeType: 'application/vnd.google-apps.folder' });
 const file = (id: string, name: string, mimeType = 'audio/wav', size?: string): DriveEntry => ({ id, name, mimeType, size });
@@ -77,5 +77,24 @@ describe('sizeText', () => {
     expect(sizeText('12345678')).toBe('12,3 MB');
     expect(sizeText('52000')).toBe('52 KB');
     expect(sizeText(undefined)).toBe('');
+  });
+});
+
+describe('places outside My Drive', () => {
+  it('lists Computer and Shared with me as virtual folders', () => {
+    expect(VIRTUAL_ROOTS.map((f) => f.name)).toEqual(['Computer', 'Mit mir geteilt']);
+    expect(isVirtualId(COMPUTERS_ID)).toBe(true);
+    expect(isVirtualId(SHARED_ID)).toBe(true);
+    expect(isVirtualId('root')).toBe(false);
+  });
+
+  it('finds backed-up computers as owned folders without a parent', () => {
+    const folders: DriveEntry[] = [
+      { ...folder('m', 'My Mac'), parents: [] },
+      { ...folder('w', 'Windows PC') },
+      { ...folder('loops', 'Loops'), parents: ['root-id'] },
+      { ...file('a', 'x.wav'), parents: [] },
+    ];
+    expect(computerFolders(folders).map((f) => f.name)).toEqual(['My Mac', 'Windows PC']);
   });
 });

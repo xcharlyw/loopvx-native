@@ -1,4 +1,5 @@
 import { DRIVE_TOKEN_ENDPOINT } from '../config';
+import { COMPUTERS_ID, SHARED_ID, computerFolders } from './driveImport';
 import { getGoogleRefreshToken, getSession } from './supabase';
 
 // Google Drive REST v3, limited to files this app created (drive.file scope).
@@ -11,6 +12,7 @@ export interface DriveFile {
   id: string;
   name: string;
   mimeType?: string;
+  parents?: string[];
   /** Bytes, as a string (Drive's way). */
   size?: string;
   modifiedTime?: string;
@@ -84,7 +86,7 @@ export async function listFiles(q: string): Promise<DriveFile[]> {
   const out: DriveFile[] = [];
   let pageToken = '';
   do {
-    const params = new URLSearchParams({ q: `${q} and trashed = false`, fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, appProperties)', pageSize: '1000', spaces: 'drive' });
+    const params = new URLSearchParams({ q: `${q} and trashed = false`, fields: 'nextPageToken, files(id, name, mimeType, parents, size, modifiedTime, appProperties)', pageSize: '1000', spaces: 'drive' });
     if (pageToken) params.set('pageToken', pageToken);
     const json = (await (await call(`${API}/files?${params}`)).json()) as { files: DriveFile[]; nextPageToken?: string };
     out.push(...json.files);
@@ -95,6 +97,13 @@ export async function listFiles(q: string): Promise<DriveFile[]> {
 
 export function childrenOf(folderId: string): Promise<DriveFile[]> {
   return listFiles(`'${escapeQ(folderId)}' in parents`);
+}
+
+/** What the import browser shows inside a folder or one of the virtual places (computers, shared with me). */
+export async function browseChildren(id: string): Promise<DriveFile[]> {
+  if (id === COMPUTERS_ID) return computerFolders(await listFiles(`mimeType = '${FOLDER_MIME}' and 'me' in owners`));
+  if (id === SHARED_ID) return listFiles('sharedWithMe = true');
+  return childrenOf(id);
 }
 
 /** Audio and folders anywhere in Drive whose name contains `text` (needs the read scope). */

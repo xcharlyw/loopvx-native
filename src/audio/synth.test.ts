@@ -1,4 +1,5 @@
-import { adsrPoints, isDrumWave, kickSweep, noiseSamples, noteHold, pitchRate, SAMPLE_ROOT, voicePeak } from './synth';
+import { midiToHz } from '../lib/midi';
+import { adsrPoints, isDrumWave, kickSweep, noiseSamples, noteHold, pitchRate, planVoice, SAMPLE_ROOT, voicePeak } from './synth';
 
 describe('adsrPoints', () => {
   const env = { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 };
@@ -61,5 +62,62 @@ describe('synthesized drums', () => {
     expect(Math.min(...n)).toBeLessThan(-0.99);
     expect(Math.max(...n)).toBeGreaterThan(0.99);
     expect(Math.max(...n)).toBeLessThan(1);
+  });
+});
+
+describe('planVoice', () => {
+  const base = { wave: 'sawtooth' as const, cutoff: 2000, resonance: 2, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.2 };
+  const power = (p: { oscs: { gain: number }[] }) => p.oscs.reduce((a, o) => a + o.gain * o.gain, 0);
+
+  it('a plain synth is one oscillator at full gain on the note', () => {
+    const p = planVoice(base, 69, 150);
+    expect(p.oscs).toEqual([{ wave: 'sawtooth', freq: 440, gain: 1 }]);
+    expect(p.sub).toBeNull();
+    expect(p.noise).toBe(0);
+    expect(p.filter).toMatchObject({ type: 'lowpass', cutoff: 2000, startCutoff: 2000, lfoHz: 0, lfoDepthHz: 0 });
+  });
+
+  it('unison spreads detuned copies evenly around the pitch and keeps the level', () => {
+    const p = planVoice({ ...base, unison: 5, spread: 40 }, 69, 150);
+    expect(p.oscs).toHaveLength(5);
+    const ratio = (i: number) => 1200 * Math.log2(p.oscs[i].freq / 440);
+    expect(ratio(0)).toBeCloseTo(-20);
+    expect(ratio(2)).toBeCloseTo(0);
+    expect(ratio(4)).toBeCloseTo(20);
+    expect(power(p)).toBeCloseTo(1);
+  });
+
+  it('a second oscillator is tuned by octave and cents, and the sum keeps its level', () => {
+    const p = planVoice({ ...base, unison: 3, spread: 20, oscB: { wave: 'square', octave: -1, detune: 12, level: 0.8 } }, 69, 150);
+    expect(p.oscs).toHaveLength(6);
+    const b = p.oscs.filter((o) => o.wave === 'square');
+    expect(b).toHaveLength(3);
+    expect(1200 * Math.log2(b[1].freq / 220)).toBeCloseTo(12); // middle copy: octave below plus 12 cents
+    expect(power(p)).toBeCloseTo(1);
+  });
+
+  it('ignores a silent second oscillator and clamps absurd values', () => {
+    expect(planVoice({ ...base, oscB: { wave: 'sine', octave: 0, detune: 0, level: 0 } }, 60, 150).oscs).toHaveLength(1);
+    expect(planVoice({ ...base, unison: 99 }, 60, 150).oscs).toHaveLength(7);
+    expect(planVoice({ ...base, unison: 0 }, 60, 150).oscs).toHaveLength(1);
+    expect(planVoice({ ...base, oscB: { wave: 'sine', octave: 9, detune: 0, level: 1 } }, 60, 150).oscs[1].freq).toBeCloseTo(midiToHz(60 + 36));
+  });
+
+  it('sub sits an octave below, noise is scaled down', () => {
+    const p = planVoice({ ...base, sub: 1, noise: 1 }, 69, 150);
+    expect(p.sub!.freq).toBeCloseTo(220);
+    expect(p.sub!.gain).toBeCloseTo(0.7);
+    expect(p.noise).toBeCloseTo(0.5);
+  });
+
+  it('filter envelope starts octaves above the cutoff; LFO follows the tempo', () => {
+    const p = planVoice({ ...base, filterType: 'bandpass', filterEnv: 2, filterDecay: 0.4, lfoRate: 2, lfoDepth: 0.5 }, 60, 120);
+    expect(p.filter.type).toBe('bandpass');
+    expect(p.filter.startCutoff).toBeCloseTo(8000);
+    expect(p.filter.decay).toBe(0.4);
+    expect(p.filter.lfoHz).toBeCloseTo(1); // 120 BPM = 0.5 bars/s, 2 cycles per bar
+    expect(p.filter.lfoDepthHz).toBeCloseTo(900);
+    expect(planVoice({ ...base, filterEnv: 9 }, 60, 120).filter.startCutoff).toBe(20000);
+    expect(planVoice({ ...base, lfoRate: 2, lfoDepth: 0 }, 60, 120).filter.lfoHz).toBe(0);
   });
 });

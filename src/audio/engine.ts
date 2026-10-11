@@ -11,13 +11,12 @@ import {
   OscillatorNode,
 } from 'react-native-audio-api';
 import { Platform } from 'react-native';
-import type { Clip, Project, Sample, SynthSettings, Track } from '../types';
-import { midiToHz } from '../lib/midi';
+import type { Clip, OscWave, Project, Sample, SynthSettings, Track } from '../types';
 import { arrangementSampleIds, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { createLimiter, MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
-import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, voicePeak } from './synth';
+import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, planVoice, voicePeak } from './synth';
 import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
@@ -92,8 +91,31 @@ function startVoice(
   return src;
 }
 
-/** A playing sound: a sample voice or a synth note. Both stop and report their end the same way. */
-type Voice = AudioBufferSourceNode | OscillatorNode;
+/**
+ * A synth note made of several nodes (unison oscillators, sub, noise, LFO): stops them all together and
+ * reports the end of its longest part, so it behaves like a single source for the transport.
+ */
+class SynthVoice {
+  constructor(
+    private parts: { stop(when?: number): void }[],
+    private lead: { onEnded: unknown },
+  ) {}
+  stop(when?: number) {
+    for (const p of this.parts) {
+      try {
+        p.stop(when);
+      } catch {
+        /* already stopped */
+      }
+    }
+  }
+  set onEnded(fn: (() => void) | null) {
+    this.lead.onEnded = fn;
+  }
+}
+
+/** A playing sound: a sample voice or a synth note. All stop and report their end the same way. */
+type Voice = AudioBufferSourceNode | OscillatorNode | SynthVoice;
 
 const noiseBuffers = new WeakMap<AnyContext, AudioBuffer>();
 
@@ -108,8 +130,76 @@ function noiseBuffer(ctx: AnyContext): AudioBuffer {
   return b;
 }
 
+const isOscWave = (w: SynthSettings['wave']): w is OscWave => w === 'sawtooth' || w === 'square' || w === 'sine' || w === 'triangle';
+
 /**
- * One instrument note: oscillator, synthesized kick, noise or the instrument's sample (re-pitched)
+ * The oscillator synth: unison oscillators of A (and B), sub and noise -> filter (envelope, tempo-synced
+ * LFO) -> ADSR gain -> destination. The recipe comes from planVoice; this only builds the nodes.
+ */
+function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, level: number, when: number, hold: number, bpm: number, dest: AudioNode): Voice {
+  const plan = planVoice(synth, pitch, bpm);
+  const points = adsrPoints(synth, level, hold);
+  const end = when + points[points.length - 1].t + 0.01;
+  const filter = ctx.createBiquadFilter();
+  const f = plan.filter;
+  filter.type = f.type;
+  filter.Q.value = f.q;
+  filter.frequency.setValueAtTime(f.startCutoff, when);
+  if (f.startCutoff > f.cutoff) filter.frequency.exponentialRampToValueAtTime(f.cutoff, when + f.decay);
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0, when);
+  for (const p of points) amp.gain.linearRampToValueAtTime(p.v, when + p.t);
+  const mix = ctx.createGain();
+  mix.connect(filter);
+  filter.connect(amp);
+  amp.connect(dest);
+
+  const parts: { stop(when?: number): void }[] = [];
+  let lead: OscillatorNode | null = null;
+  const addOsc = (wave: OscWave, freq: number, gain: number) => {
+    const o = ctx.createOscillator();
+    o.type = wave;
+    o.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    o.connect(g);
+    g.connect(mix);
+    o.start(when);
+    o.stop(end);
+    parts.push(o);
+    lead ??= o;
+  };
+  for (const o of plan.oscs) addOsc(o.wave, o.freq, o.gain);
+  if (plan.sub) addOsc('sine', plan.sub.freq, plan.sub.gain);
+  if (plan.noise > 0) {
+    const n = ctx.createBufferSource({ pitchCorrection: false });
+    n.buffer = noiseBuffer(ctx);
+    n.loop = true;
+    const g = ctx.createGain();
+    g.gain.value = plan.noise;
+    n.connect(g);
+    g.connect(mix);
+    n.start(when);
+    n.stop(end);
+    parts.push(n);
+  }
+  if (f.lfoHz > 0) {
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = f.lfoHz;
+    const depth = ctx.createGain();
+    depth.gain.value = f.lfoDepthHz;
+    lfo.connect(depth);
+    depth.connect(filter.frequency);
+    lfo.start(when);
+    lfo.stop(end);
+    parts.push(lfo);
+  }
+  return new SynthVoice(parts, lead!);
+}
+
+/**
+ * One instrument note: oscillator synth, synthesized kick, noise or the instrument's sample (re-pitched)
  * -> filter -> ADSR gain -> destination. A sample instrument without its sample stays silent (null).
  */
 function startSynthVoice(
@@ -121,8 +211,10 @@ function startSynthVoice(
   hold: number,
   dest: AudioNode,
   buffers: Map<string, AudioBuffer>,
+  bpm: number,
 ): Voice | null {
-  let osc: Voice;
+  if (isOscWave(synth.wave)) return startOscVoice(ctx, synth, pitch, level, when, hold, bpm, dest);
+  let osc: AudioBufferSourceNode | OscillatorNode;
   if (synth.wave === 'sample') {
     const buffer = synth.sampleId ? buffers.get(synth.sampleId) : undefined;
     if (!buffer) return null;
@@ -145,10 +237,7 @@ function startSynthVoice(
     o.frequency.exponentialRampToValueAtTime(sweep.to, when + sweep.time);
     osc = o;
   } else {
-    const o = ctx.createOscillator();
-    o.type = synth.wave;
-    o.frequency.value = midiToHz(pitch);
-    osc = o;
+    return null;
   }
   hold = noteHold(synth, hold);
   const filter = ctx.createBiquadFilter();
@@ -188,7 +277,7 @@ function scheduleNotes(
     const begin = Math.max(start, fromBar);
     if (begin >= end - 1e-9 || start >= clipEnd) continue;
     const level = voicePeak(synth, note.velocity) * clipGainAt(clip, begin - clip.start);
-    const voice = startSynthVoice(ctx, synth, note.pitch, level, time + (begin - fromBar) * spb, (end - begin) * spb, dest, buffers);
+    const voice = startSynthVoice(ctx, synth, note.pitch, level, time + (begin - fromBar) * spb, (end - begin) * spb, dest, buffers, 240 / spb);
     if (voice) voices.push(voice);
   }
   return voices;
@@ -635,7 +724,7 @@ export class AudioEngine {
   async previewNote(synth: SynthSettings, pitch: number) {
     const ctx = await this.unlock();
     if (synth.wave === 'sample' && synth.sampleId) await this.loadBuffer(synth.sampleId).catch(() => undefined);
-    startSynthVoice(ctx, synth, pitch, voicePeak(synth, 0.8), ctx.currentTime + 0.01, 0.2, this.master!, this.buffers);
+    startSynthVoice(ctx, synth, pitch, voicePeak(synth, 0.8), ctx.currentTime + 0.01, 0.2, this.master!, this.buffers, this.project?.bpm ?? 150);
   }
 
   async preview(sample: Sample, projectBpm: number) {

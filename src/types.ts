@@ -45,12 +45,12 @@ export interface SynthSettings {
    * An oscillator; 'sample': the library sample `sampleId` played chromatically; 'kick': a synthesized
    * kick (sine with a pitch drop); 'noise': white noise through a highpass (hats, snares, risers).
    */
-  wave: 'sawtooth' | 'square' | 'sine' | 'triangle' | 'sample' | 'kick' | 'noise';
+  wave: OscWave | 'sample' | 'kick' | 'noise';
   /** wave 'sample': which sample; it sounds at its original pitch on C3 (60). */
   sampleId?: string;
   /** wave 'sample': every note plays the whole sample, whatever its length (drums). */
   oneShot?: boolean;
-  /** Lowpass cutoff in Hz and its resonance (Q). */
+  /** Filter cutoff in Hz and its resonance (Q). */
   cutoff: number;
   resonance: number;
   /** Envelope in seconds (sustain is a level 0..1). */
@@ -58,7 +58,27 @@ export interface SynthSettings {
   decay: number;
   sustain: number;
   release: number;
+
+  // ---- oscillator synth only (wave is an oscillator); every field is optional and defaults to "off" ----
+  /** Second oscillator: wave, octaves (-2..2), fine tune in cents and level 0..1. */
+  oscB?: { wave: OscWave; octave: number; detune: number; level: number };
+  /** Unison: 1..7 detuned copies of each oscillator, spread over `spread` cents in total. */
+  unison?: number;
+  spread?: number;
+  /** Sine one octave below (0..1) and white noise (0..1). */
+  sub?: number;
+  noise?: number;
+  /** Filter type (default lowpass). */
+  filterType?: 'lowpass' | 'highpass' | 'bandpass';
+  /** Filter envelope: the cutoff starts `filterEnv` octaves higher and falls back within `filterDecay` seconds. */
+  filterEnv?: number;
+  filterDecay?: number;
+  /** LFO on the cutoff, tempo-synced: `lfoRate` cycles per bar, `lfoDepth` 0..1 of the cutoff. */
+  lfoRate?: number;
+  lfoDepth?: number;
 }
+
+export type OscWave = 'sawtooth' | 'square' | 'sine' | 'triangle';
 
 export interface TrackFx {
   /** DJ filter: -1 lowpass closed … 0 off … 1 highpass closed. */

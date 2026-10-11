@@ -1,5 +1,5 @@
 import type { Note } from '../types';
-import { hypnoticLine, padChords, progArp, raveStabs, reeseLine, tranceLead, type MelodyOpts, type ScaleName } from './melody';
+import { arpLine, hypnoticLine, padChords, progArp, raveStabs, reeseLine, tranceLead, type MelodyOpts, type ScaleName } from './melody';
 
 // Pattern generator for MIDI clips: hard techno building blocks in a minor key.
 // Pure and seeded, so "Würfeln" gives a new variation and tests stay deterministic.
@@ -39,7 +39,7 @@ export const PATTERN_GROUPS: { label: string; styles: { id: PatternStyle; label:
 export const PATTERN_STYLES = PATTERN_GROUPS.flatMap((g) => g.styles);
 
 /** Styles that follow the chosen scale and chord progression (the others are fixed minor patterns). */
-const MELODIC: Partial<Record<PatternStyle, (o: MelodyOpts) => Note[]>> = { reese: reeseLine, trance: tranceLead, hypnotic: hypnoticLine, prog: progArp, pad: padChords, rave: raveStabs };
+const MELODIC: Partial<Record<PatternStyle, (o: MelodyOpts) => Note[]>> = { arp: arpLine, reese: reeseLine, trance: tranceLead, hypnotic: hypnoticLine, prog: progArp, pad: padChords, rave: raveStabs };
 export const usesScale = (style: PatternStyle) => style in MELODIC;
 
 /** For sample instruments: one drum sound per track, on the sample's own pitch (C3). */
@@ -123,29 +123,6 @@ function acid(root: number, rand: () => number): Note[] {
   return notes;
 }
 
-/** Minor-key arpeggio in 16ths over i – VI – VII – i, one chord per bar. */
-function arp(root: number, rand: () => number): Note[] {
-  const chords = [
-    [0, 3, 7],
-    [-4, 0, 3], // VI, voiced close around the root so the line stays in a two-octave view
-    [-2, 2, 5], // VII
-    [0, 3, 7],
-  ];
-  const shapes = [
-    [0, 1, 2, 3],
-    [0, 2, 1, 3],
-    [3, 2, 1, 0],
-    [0, 1, 2, 1],
-  ];
-  const shape = shapes[Math.floor(rand() * shapes.length)];
-  const notes: Note[] = [];
-  chords.forEach((chord, bar) => {
-    const tones = [...chord, chord[0] + 12].map((d) => LEAD + root + d);
-    for (let i = 0; i < 16; i++) notes.push(note(tones[shape[i % 4]], bar * 16 + i, 1, i % 4 === 0 ? 0.9 : 0.7));
-  });
-  return notes;
-}
-
 /** Short minor chords on syncopated 16ths, one bar repeated. */
 function stabs(root: number, rand: () => number): Note[] {
   const slots = [2, 3, 6, 7, 10, 11, 14, 15];
@@ -183,18 +160,18 @@ function hats16(_root: number, rand: () => number): Note[] {
   return notes;
 }
 
-const PHRASE_BARS: Partial<Record<PatternStyle, number>> = { rumble: 2, offbeat: 2, acid: 2, arp: 4, stabs: 1, kick: 2, hat: 2, clap: 2, hats16: 2 };
+const PHRASE_BARS: Partial<Record<PatternStyle, number>> = { rumble: 2, offbeat: 2, acid: 2, stabs: 1, kick: 2, hat: 2, clap: 2, hats16: 2 };
 
 /**
  * A pattern of `style` on `root` (0 = C … 11 = B), filling `bars` bars. The melodic styles follow `scale`
  * (default minor) and a chord progression of it; the older ones are fixed minor patterns.
  */
-export function generatePattern(style: PatternStyle, opts: { root: number; bars: number; seed: number; scale?: ScaleName }): Note[] {
+export function generatePattern(style: PatternStyle, opts: { root: number; bars: number; seed: number; scale?: ScaleName; progression?: number }): Note[] {
   const rand = seededRandom(opts.seed);
   const root = ((Math.round(opts.root) % 12) + 12) % 12;
   const bars = Math.max(STEP, opts.bars);
   const melodic = MELODIC[style];
-  if (melodic) return melodic({ root, scale: opts.scale ?? 'minor', bars, rand });
-  const make = { rumble, offbeat, acid, arp, stabs, kick, hat, clap, hats16 }[style as 'rumble'];
+  if (melodic) return melodic({ root, scale: opts.scale ?? 'minor', bars, rand, progression: opts.progression });
+  const make = { rumble, offbeat, acid, stabs, kick, hat, clap, hats16 }[style as 'rumble'];
   return repeat(make(root, rand), PHRASE_BARS[style] ?? 1, bars);
 }

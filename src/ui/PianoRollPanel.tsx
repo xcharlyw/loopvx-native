@@ -9,7 +9,7 @@ import { C, mono } from '../constants/theme';
 import { exportMidiClip, togglePlay } from '../lib/actions';
 import { noteName } from '../lib/midi';
 import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_GROUPS, usesScale, type PatternStyle } from '../lib/patterns';
-import { SCALES, scaleOf, type ScaleName } from '../lib/melody';
+import { progressionLabel, SCALES, scaleOf, type ScaleName } from '../lib/melody';
 import { addNote, duplicateNote, findClip, findNote, mapTrack, noteIndexAt, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
 import { discardLastHistory, recordHistory, setState, updateProject, useStore } from '../lib/store';
 import { clampPitch, clampScroll, edgeScrollSpeed, GRIP_W, movedNote, noteHitAreas, resizedNote } from '../lib/noteDrag';
@@ -55,6 +55,7 @@ function initialLow(notes: Note[], sampler = false): number {
 let lastStyle: PatternStyle = 'rumble';
 let lastDrum: PatternStyle = 'kick';
 let lastRoot = 5; // F minor
+let lastProgression = 0;
 let lastScale: ScaleName = 'minor';
 
 /**
@@ -183,6 +184,7 @@ export function PianoRollPanel() {
   const style = sampler === isDrumStyle(picked) ? picked : sampler ? lastDrum : lastStyle;
   const [root, setRoot] = useState(lastRoot);
   const [scale, setScale] = useState<ScaleName>(lastScale);
+  const [progression, setProgression] = useState(lastProgression);
 
   if (!found?.clip.notes) {
     return (
@@ -258,7 +260,8 @@ export function PianoRollPanel() {
     else lastStyle = style;
     lastRoot = root;
     lastScale = scale;
-    const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31), scale });
+    lastProgression = progression;
+    const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31), scale, progression });
     updateProject((p) => updateClip(p, clip.id, { notes: next }));
     setLow(initialLow(next, sampler));
     setSel(null);
@@ -480,8 +483,19 @@ export function PianoRollPanel() {
             <Txt style={s.sub}>Tonleiter</Txt>
             <View style={s.toolbar}>
               {SCALES.map((sc) => (
-                <Chip key={sc.id} variant={scale === sc.id ? 'on' : 'ghost'} onPress={() => setScale(sc.id)}>
+                <Chip key={sc.id} variant={scale === sc.id ? 'on' : 'ghost'} onPress={() => {
+                    setScale(sc.id);
+                    setProgression(0);
+                  }}>
                   {sc.label}
+                </Chip>
+              ))}
+            </View>
+            <Txt style={[s.sub, { marginTop: 10 }]}>Akkordfolge (für alle Spuren gleich wählen, dann passt es zusammen)</Txt>
+            <View style={s.toolbar}>
+              {scaleOf(scale).progressions.map((prog, i) => (
+                <Chip key={i} variant={progression === i ? 'on' : 'ghost'} onPress={() => setProgression(i)}>
+                  {progressionLabel(scale, prog)}
                 </Chip>
               ))}
             </View>

@@ -103,6 +103,11 @@ built by `startOscVoice` in the engine as one `SynthVoice` that stops all its no
 track's drive/reverb/delay/pump, never the DJ filter or pan. UI: `InstrumentPanel` (opened from the track
 sheet). `melody.ts` generators are scale-aware and tested for musical properties (in key, register, phrase
 endings, second phrase answers the first); `SUGGESTED_PRESET` maps a generator style to a sound.
+All melodic styles (arp, reese, trance, prog-arp, pad, rave) take `progression` (index into the scale's chord
+progressions): the piano roll's "Akkordfolge" chips keep it across generations, so bass and arp built on the same
+progression play the same chord in every bar (tested). Without it a generator picks one at random.
+WaveShapers that distort (track drive, master limiter, saturator, limiter device) use `oversample` to avoid aliasing
+hash; the track drive only while it is turned up (CPU).
 
 ## Sound panel (Serum-style)
 

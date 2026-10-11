@@ -45,6 +45,8 @@ export interface MelodyOpts {
   scale: ScaleName;
   bars: number;
   rand: () => number;
+  /** Index into the scale's chord progressions. Generators that share it play the same chords (default: random). */
+  progression?: number;
 }
 
 const STEP = 1 / 16;
@@ -71,7 +73,23 @@ function loop(phrase: Note[], phraseBars: number, bars: number): Note[] {
   return fit(out, bars);
 }
 
-const progressionFor = (o: MelodyOpts) => pick(scaleOf(o.scale).progressions, o.rand);
+const progressionFor = (o: MelodyOpts) => {
+  const all = scaleOf(o.scale).progressions;
+  return o.progression === undefined ? pick(all, o.rand) : all[((Math.round(o.progression) % all.length) + all.length) % all.length];
+};
+
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
+/** A progression as roman numerals, lower case for minor chords: "i – VI – III – VII". */
+export function progressionLabel(scale: ScaleName, prog: number[]): string {
+  const steps = scaleOf(scale).steps;
+  return prog
+    .map((d) => {
+      const third = (steps[(d + 2) % 7] + (d + 2 >= 7 ? 12 : 0)) - steps[d];
+      return third === 3 ? ROMAN[d].toLowerCase() : ROMAN[d];
+    })
+    .join(' – ');
+}
 
 // ---------------------------------------------------------------- Reese bass
 
@@ -244,6 +262,25 @@ export function progArp(o: MelodyOpts): Note[] {
       const lift = bar % 2 === 1 && i >= 12 ? 7 : 0;
       out.push(note(degreePitch(o.scale, tones[shape[i % 4]] + lift, base), bar * 16 + i, strong ? 2 : 1, strong ? 0.95 : 0.6 + 0.1 * (i % 2)));
     }
+  }
+  return fit(out, o.bars);
+}
+
+/**
+ * A 16th-note arpeggio over the triads of the progression (one chord per bar, up to the octave), so it plays the
+ * same chords as the bass and pads built on the same progression. The chords sit close around the root to keep
+ * the line in one register.
+ */
+export function arpLine(o: MelodyOpts): Note[] {
+  const prog = progressionFor(o);
+  const shape = pick(ARP_SHAPES, o.rand);
+  const base = rootPitch(o.root, 60);
+  const out: Note[] = [];
+  for (let bar = 0; bar < o.bars; bar++) {
+    const deg = prog[bar % 4];
+    const d = deg >= 4 ? deg - 7 : deg; // V, VI, VII below the root
+    const tones = [d, d + 2, d + 4, d + 7];
+    for (let i = 0; i < 16; i++) out.push(note(degreePitch(o.scale, tones[shape[i % 4]], base), bar * 16 + i, 1, i % 4 === 0 ? 0.9 : 0.7));
   }
   return fit(out, o.bars);
 }

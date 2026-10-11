@@ -1,9 +1,18 @@
-import type { AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode } from 'react-native-audio-api';
+import type { AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode, WaveShaperNode } from 'react-native-audio-api';
 import { audibleGain } from '../lib/project';
 import type { Project, Track } from '../types';
 import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
 import { DeviceBay } from './devicebay';
 import { beatsInWindow, secondsPerBar } from './timing';
+
+/** Oversampling keeps a shaper's harmonics from folding back as inharmonic hash; not every platform has it. */
+function oversample(shaper: WaveShaperNode, mode: 'none' | '2x' | '4x') {
+  try {
+    shaper.oversample = mode;
+  } catch {
+    // unsupported: the shaper runs without
+  }
+}
 
 /**
  * Safety limiter for the master sum: connect the sources to `.input`, take the result from `.output`.
@@ -14,6 +23,7 @@ export function createLimiter(ctx: BaseAudioContext): { input: AudioNode; output
   input.gain.value = 1 / LIMITER_RANGE;
   const shaper = ctx.createWaveShaper();
   shaper.curve = limiterCurve();
+  oversample(shaper, '2x'); // peaks that reach the shoulder would alias without it
   input.connect(shaper);
   return { input, output: shaper };
 }
@@ -27,6 +37,7 @@ class TrackChain {
   private lp: BiquadFilterNode;
   private dry: GainNode;
   private pre: GainNode;
+  private shaper: WaveShaperNode;
   private wet: GainNode;
   private pan: StereoPannerNode;
   /** Ducking on the beat; automated by the scheduler, never by `apply`. */
@@ -49,8 +60,8 @@ class TrackChain {
     this.dry = ctx.createGain();
     this.pre = ctx.createGain();
     this.pre.gain.value = 1;
-    const shaper = ctx.createWaveShaper();
-    shaper.curve = driveCurve();
+    this.shaper = ctx.createWaveShaper();
+    this.shaper.curve = driveCurve();
     this.wet = ctx.createGain();
     this.wet.gain.value = 0;
     this.pan = ctx.createStereoPanner();
@@ -61,8 +72,8 @@ class TrackChain {
     this.hp.connect(this.lp);
     this.lp.connect(this.dry);
     this.lp.connect(this.pre);
-    this.pre.connect(shaper);
-    shaper.connect(this.wet);
+    this.pre.connect(this.shaper);
+    this.shaper.connect(this.wet);
     this.dry.connect(this.pan);
     this.wet.connect(this.pan);
     this.pan.connect(this.pump);
@@ -78,6 +89,8 @@ class TrackChain {
     const drive = driveGains(fx.drive);
     const set = (param: { setTargetAtTime: (v: number, t: number, c: number) => unknown; setValueAtTime: (v: number, t: number) => unknown }, v: number) =>
       smooth ? param.setTargetAtTime(v, ctx.currentTime, 0.015) : param.setValueAtTime(v, 0);
+    // Oversampling costs CPU: only while the distortion is on.
+    oversample(this.shaper, fx.drive > 0 ? '4x' : 'none');
     set(this.lp.frequency, lowpass);
     set(this.hp.frequency, highpass);
     set(this.dry.gain, drive.dry);

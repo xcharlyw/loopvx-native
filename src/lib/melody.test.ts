@@ -1,4 +1,4 @@
-import { degreePitch, hypnoticLine, padChords, pitchClasses, progArp, raveStabs, reeseLine, rootPitch, SCALES, scaleOf, tranceLead, type MelodyOpts, type ScaleName } from './melody';
+import { arpLine, degreePitch, progressionLabel, hypnoticLine, padChords, pitchClasses, progArp, raveStabs, reeseLine, rootPitch, SCALES, scaleOf, tranceLead, type MelodyOpts, type ScaleName } from './melody';
 import { generatePattern, PATTERN_GROUPS, seededRandom, usesScale } from './patterns';
 import type { Note } from '../types';
 
@@ -207,5 +207,50 @@ describe('integration with generatePattern', () => {
     }
     expect(usesScale('rumble')).toBe(false);
     expect(usesScale('kick')).toBe(false);
+  });
+});
+
+describe('shared chord progression', () => {
+  const firstOfBar = (notes: Note[], b: number) => notes.filter((n) => bar(n) === b).sort((a, c) => a.start - c.start || a.pitch - c.pitch)[0];
+
+  it('arp and reese on the same progression play the same chord root in every bar', () => {
+    for (const sc of SCALES) {
+      for (let progression = 0; progression < sc.progressions.length; progression++) {
+        for (const root of ROOTS) {
+          const arp = arpLine({ ...opts(root, sc.id, 8, 3), progression });
+          const bass = reeseLine({ ...opts(root, sc.id, 8, 9), progression });
+          for (let b = 0; b < 8; b++) expect(pcOf(firstOfBar(arp, b))).toBe(pcOf(firstOfBar(bass, b)));
+        }
+      }
+    }
+  });
+
+  it('the arp stays in key and in one register', () => {
+    for (const sc of SCALES) {
+      for (const root of ROOTS) {
+        const key = pitchClasses(root, sc.id);
+        for (const n of arpLine({ ...opts(root, sc.id, 4, 5), progression: 0 })) {
+          expect(key.has(pcOf(n))).toBe(true);
+          expect(n.pitch).toBeGreaterThanOrEqual(48);
+          expect(n.pitch).toBeLessThanOrEqual(84);
+        }
+      }
+    }
+  });
+
+  it('through generatePattern the progression option reaches every melodic style', () => {
+    for (const style of ['arp', 'reese', 'trance', 'prog', 'pad', 'rave', 'hypnotic'] as const) {
+      const a = generatePattern(style, { root: 5, bars: 4, seed: 1, progression: 1 });
+      const b = generatePattern(style, { root: 5, bars: 4, seed: 1, progression: 1 });
+      expect(a).toEqual(b);
+    }
+    // a fixed progression makes the bass independent of the seed in its chord roots
+    const roots = (seed: number) => [0, 1, 2, 3].map((b) => pcOf(generatePattern('reese', { root: 5, bars: 4, seed, progression: 2 }).filter((n) => bar(n) === b)[0]));
+    expect(roots(1)).toEqual(roots(99));
+  });
+
+  it('labels progressions in roman numerals, minor chords lower case', () => {
+    expect(progressionLabel('minor', [0, 5, 2, 6])).toBe('i – VI – III – VII');
+    expect(progressionLabel('major', [0, 4, 5, 3])).toBe('I – V – vi – IV');
   });
 });

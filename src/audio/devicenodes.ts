@@ -526,7 +526,15 @@ const buildUtility: Builder = (k) => {
   };
 };
 
+/** The Splice slot makes no sound of its own: it is a place to search and load sounds from, so the signal passes through. */
+const buildSplice: Builder = (k) => {
+  const { input, output } = shell(k);
+  input.connect(output);
+  return { input, output, update() {} };
+};
+
 const BUILDERS: Record<DeviceType, Builder> = {
+  splice: buildSplice,
   eq: buildEq,
   comp: buildComp,
   sat: buildSat,

@@ -7,7 +7,7 @@ describe('device presets', () => {
       const list = DEVICE_PRESETS[type];
       expect(list[0].id).toBe('default');
       expect(list[0].params).toEqual({});
-      expect(list.length).toBeGreaterThanOrEqual(5);
+      if (DEVICE_DEFS[type].params.length) expect(list.length).toBeGreaterThanOrEqual(5); // the Splice slot has nothing to preset
       expect(new Set(list.map((p) => p.id)).size).toBe(list.length);
       expect(new Set(list.map((p) => p.name)).size).toBe(list.length);
     }

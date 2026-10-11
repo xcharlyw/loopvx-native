@@ -13,6 +13,7 @@ export interface DevicePreset {
 const P = (id: string, name: string, params: Record<string, number> = {}): DevicePreset => ({ id, name, params });
 
 export const DEVICE_PRESETS: Record<DeviceType, DevicePreset[]> = {
+  splice: [P('default', 'Standard')],
   eq: [
     P('default', 'Standard'),
     P('lowcut-30', 'Low Cut 30 Hz', { hp: 30 }),

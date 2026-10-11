@@ -107,7 +107,7 @@ export interface TrackFx {
 }
 
 /** Effects that can sit in a track's device chain (after the instrument or the audio clips). */
-export type DeviceType = 'eq' | 'comp' | 'sat' | 'echo' | 'reverb' | 'chorus' | 'filter' | 'limiter' | 'utility';
+export type DeviceType = 'eq' | 'comp' | 'sat' | 'echo' | 'reverb' | 'chorus' | 'filter' | 'limiter' | 'utility' | 'splice';
 
 export interface Device {
   id: string;

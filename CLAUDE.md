@@ -103,7 +103,7 @@ client). Client: `src/lib/splice.ts` (PKCE, login redirect to `/splice-callback`
 `src/app/splice-callback.tsx` (clears `?code=` from the URL first so the Supabase client does not take it; `cleanUrls`
 in `vercel.json` serves `/splice-callback`), `spliceResults.ts` (parses Splice's Markdown answer; tested with a real one),
 UI `SpliceSearch.tsx`. The **first download of a sound costs the user a Splice credit**: always ask first (done in the UI).
-Web only for now. **Never verified against the real Splice server** (the sandbox could not reach mcp.splice.com; tests
+The same search also lives in the device chain as the **Splice slot** (`DeviceType 'splice'`, group "Sounds", no parameters, the signal passes through): `SpliceSearch` gets the track and the button becomes "Auf Spur" (audio track: `placeSample` at the playhead) or "Als Sampler" (MIDI track: sample instrument via `applyInstrument` + `SAMPLER_PRESET`); sounds already in the library skip the download and the credit prompt. Web only for now. **Never verified against the real Splice server** (the sandbox could not reach mcp.splice.com; tests
 use a mock): if the login fails, look at the registration step (Splice may restrict redirect URIs) and at the text
 `download_asset` answers with (`extractDownloadUrl`).
 

@@ -2,8 +2,13 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { SpliceAuthError, connectSplice, disconnectSplice, downloadFromSplice, searchSplice, spliceAvailable, spliceConnected } from '../lib/splice';
+import { placeSample } from '../lib/actions';
+import { DEFAULT_SYNTH, mapTrack, trackKind } from '../lib/project';
 import { spliceSampleId, type SpliceResult } from '../lib/spliceResults';
-import { errorText, toast, useStore } from '../lib/store';
+import { applyInstrument } from '../audio/presets';
+import { SAMPLER_PRESET } from '../audio/synth';
+import { errorText, toast, updateProject, useStore } from '../lib/store';
+import type { Sample, Track } from '../types';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Txt } from './kit';
 
@@ -14,12 +19,13 @@ type Kind = 'loop' | 'oneshot' | undefined;
  * through LOOPVX's server; the Splice login stays on this device). The first download of a sound costs one Splice
  * credit, so every download asks first.
  */
-export function SpliceSearch() {
+export function SpliceSearch({ track }: { track?: Track } = {}) {
+  const midi = !!track && trackKind(track) === 'midi';
   const bpm = useStore((st) => st.project.bpm);
   const samples = useStore((st) => st.samples);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [query, setQuery] = useState('');
-  const [kind, setKind] = useState<Kind>('loop');
+  const [kind, setKind] = useState<Kind>(midi ? 'oneshot' : 'loop');
   const [tempoMatch, setTempoMatch] = useState(true);
   const [results, setResults] = useState<SpliceResult[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,13 +73,22 @@ export function SpliceSearch() {
     }
   };
 
+  /** Into the library; with a track (the Splice slot of a track): onto that track too. */
   const load = async (r: SpliceResult) => {
-    const ok = await confirmDestructive(`„${r.name.replace(/\.[a-z0-9]+$/i, '')}“ von Splice laden?`, 'Der erste Download eines Sounds kostet einen Splice-Credit, danach ist er kostenlos.', 'Laden');
-    if (!ok) return;
+    let sample: Sample | undefined = samples.find((x) => x.id === spliceSampleId(r.uuid));
+    if (!sample) {
+      const ok = await confirmDestructive(`„${r.name.replace(/\.[a-z0-9]+$/i, '')}“ von Splice laden?`, 'Der erste Download eines Sounds kostet einen Splice-Credit, danach ist er kostenlos.', 'Laden');
+      if (!ok) return;
+    }
     setBusy(r.uuid);
     try {
-      await downloadFromSplice(r);
-      toast('Von Splice geladen: in der Library');
+      sample ??= await downloadFromSplice(r);
+      if (!track) toast('Von Splice geladen: in der Library');
+      else if (midi) {
+        const loaded = sample;
+        updateProject((p) => mapTrack(p, track.id, (t) => applyInstrument(t, { ...DEFAULT_SYNTH, ...SAMPLER_PRESET, sampleId: loaded.id })));
+        toast(`${sample.name} ist jetzt der Sampler von „${track.name}“. Noten setzt du in der Piano Roll.`);
+      } else await placeSample(sample, { trackId: track.id });
     } catch (e) {
       fail(e);
       toast(errorText(e), 'error');
@@ -134,8 +149,8 @@ export function SpliceSearch() {
                 </Txt>
               )}
             </View>
-            <Btn small disabled={have || busy !== null} accessibilityLabel={`${r.name} laden`} onPress={() => void load(r)}>
-              {have ? 'In Library' : busy === r.uuid ? 'Lädt …' : 'Laden'}
+            <Btn small disabled={(have && !track) || busy !== null} accessibilityLabel={`${r.name} laden`} onPress={() => void load(r)}>
+              {busy === r.uuid ? 'Lädt …' : track ? (midi ? 'Als Sampler' : 'Auf Spur') : have ? 'In Library' : 'Laden'}
             </Btn>
           </View>
         );

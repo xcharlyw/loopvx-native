@@ -24,11 +24,12 @@ export interface DeviceDef {
   label: string;
   /** One line shown in the browser. */
   blurb: string;
-  group: 'dynamics' | 'eq' | 'distortion' | 'space' | 'utility';
+  group: 'source' | 'dynamics' | 'eq' | 'distortion' | 'space' | 'utility';
   params: ParamDef[];
 }
 
 export const GROUP_LABELS: Record<DeviceDef['group'], string> = {
+  source: 'Sounds',
   dynamics: 'Dynamik',
   eq: 'EQ & Filter',
   distortion: 'Verzerrung',
@@ -166,10 +167,17 @@ export const DEVICE_DEFS: Record<DeviceType, DeviceDef> = {
       P('invert', 'Phase', 0, 1, 0, 'switch', { step: 1, options: ['Normal', 'Invertiert'] }),
     ],
   },
+  splice: {
+    type: 'splice',
+    label: 'Splice',
+    blurb: 'Splice-Katalog durchsuchen und Sounds direkt auf diese Spur laden',
+    group: 'source',
+    params: [],
+  },
 };
 
 /** Order the browser lists the groups in. */
-export const GROUP_ORDER: DeviceDef['group'][] = ['dynamics', 'eq', 'distortion', 'space', 'utility'];
+export const GROUP_ORDER: DeviceDef['group'][] = ['source', 'dynamics', 'eq', 'distortion', 'space', 'utility'];
 
 export const DEVICE_TYPES = Object.keys(DEVICE_DEFS) as DeviceType[];
 
@@ -269,6 +277,8 @@ export function deviceSummary(device: Pick<Device, 'type' | 'params'>): string {
       return `${f('type')} · ${f('cutoff')}`;
     case 'limiter':
       return `Gain ${f('gain')} · Ceiling ${f('ceiling')}`;
+    case 'splice':
+      return 'Katalog-Suche';
     case 'utility':
       return `${f('gain')}${Math.abs(p.pan) > 0.005 ? ` · ${f('pan')}` : ''}${p.invert >= 0.5 ? ' · Phase' : ''}`;
   }

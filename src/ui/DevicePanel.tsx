@@ -11,6 +11,7 @@ import type { Device, DeviceType, Track } from '../types';
 import { Close } from './icons';
 import { Btn, Chip, Txt } from './kit';
 import { Sheet } from './Sheet';
+import { SpliceSearch } from './SpliceSearch';
 import { Card } from './synth/Tabs';
 import { Knob, KnobRow } from './synth/Knob';
 import { CompScope, EchoScope, EqScope, LimiterScope, ReverbScope, SatScope } from './synth/DeviceScopes';
@@ -108,7 +109,7 @@ export function DevicePanel() {
         )}
 
         {devices.map((d, i) => (
-          <DeviceCard key={d.id} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
+          <DeviceCard key={d.id} track={track} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
         ))}
 
         {devices.length === 0 && <Txt style={[s.note, { marginBottom: 10 }]}>Noch keine Effekte. Füge Geräte hinzu: EQ, Compressor, Saturator, Echo, Reverb ...</Txt>}
@@ -167,7 +168,7 @@ function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
   );
 }
 
-function DeviceCard({ device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onRemove }: { device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
+function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onRemove }: { track: Track; device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
   const [listOpen, setListOpen] = useState(false);
   const def = DEVICE_DEFS[device.type];
   if (!def) return null;
@@ -186,9 +187,11 @@ function DeviceCard({ device, folded: isFolded, onToggle, index, count, bpm, wid
 
   const header = (
     <View style={s.controls}>
-      <Chip variant={device.on ? 'on' : 'ghost'} onPress={() => onChange({ on: !device.on })} textStyle={{ fontSize: 11 }}>
-        {device.on ? 'AN' : 'AUS'}
-      </Chip>
+      {device.type !== 'splice' && (
+        <Chip variant={device.on ? 'on' : 'ghost'} onPress={() => onChange({ on: !device.on })} textStyle={{ fontSize: 11 }}>
+          {device.on ? 'AN' : 'AUS'}
+        </Chip>
+      )}
       <Pressable accessibilityLabel={`${def.label} nach vorne`} disabled={index === 0} onPress={() => onMove(-1)} style={[s.small, index === 0 && s.disabled]}>
         <Txt style={s.smallText}>▲</Txt>
       </Pressable>
@@ -237,7 +240,12 @@ function DeviceCard({ device, folded: isFolded, onToggle, index, count, bpm, wid
           </Pressable>
           {header}
         </View>
-        {!isFolded && (
+        {!isFolded && device.type === 'splice' && (
+          <View style={{ marginTop: 8 }}>
+            <SpliceSearch track={track} />
+          </View>
+        )}
+        {!isFolded && device.type !== 'splice' && (
           <>
             <View style={s.presetRow}>
               <Pressable accessibilityLabel={`${def.label} vorheriges Preset`} onPress={() => pick(at < 0 ? presets.length - 1 : at - 1)} style={s.small}>

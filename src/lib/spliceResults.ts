@@ -79,3 +79,60 @@ export function sampleFromSplice(r: SpliceResult, ext: string, now = Date.now())
     addedAt: now,
   };
 }
+
+// ---------------------------------------------------------------- pasted links
+
+export interface LinkQuery {
+  kind: 'sound' | 'pack';
+  /** Words to search for. */
+  query: string;
+}
+
+const words = (slug: string) =>
+  decodeURIComponent(slug)
+    .replace(/\.(wav|mp3|aif|aiff|flac)$/i, '')
+    .replace(/-(wav|mp3|aif|aiff|flac)$/i, '')
+    .replace(/[-_+]+/g, ' ')
+    .trim();
+
+/**
+ * A Splice link pasted into the search box, turned into search words: a link to a sound
+ * (`/sounds/sample/<hash>/<name-slug>`) finds that sound by its name, a link to a pack
+ * (`/sounds/packs/.../<pack-slug>`) searches for the pack's name. Anything else is not a link: null.
+ */
+export function queryFromSpliceLink(text: string): LinkQuery | null {
+  let url: URL;
+  try {
+    url = new URL(text.trim());
+  } catch {
+    return null;
+  }
+  if (!/(^|\.)splice\.com$/i.test(url.hostname)) return null;
+  const parts = url.pathname.split('/').filter(Boolean);
+  const at = parts.indexOf('sounds');
+  if (at < 0) return null;
+  if (parts[at + 1] === 'sample' && parts[at + 3]) return { kind: 'sound', query: words(parts[at + 3]) };
+  if (parts[at + 1] === 'packs' && parts.length > at + 2) {
+    // /sounds/packs/<label>/<pack> or /sounds/packs/<pack>: the last two readable parts name it
+    const named = parts.slice(at + 2).filter((p) => !/^[0-9a-f]{16,}$/i.test(p) && !/^\d+$/.test(p));
+    if (named.length) return { kind: 'pack', query: named.slice(-2).map(words).join(' ') };
+  }
+  return null;
+}
+
+/** What to ask in addition to a pack's name to get at different kinds of its sounds (one search returns only ten). */
+export const PACK_FACETS = ['kick', 'snare clap', 'hat percussion', 'bass', 'synth lead', 'loop', 'fx vocal'];
+
+/** Results of several searches as one list: the first occurrence of each sound, capped. */
+export function mergeResults(lists: SpliceResult[][], cap = 70): SpliceResult[] {
+  const seen = new Set<string>();
+  const out: SpliceResult[] = [];
+  for (const list of lists) {
+    for (const r of list) {
+      if (seen.has(r.uuid) || out.length >= cap) continue;
+      seen.add(r.uuid);
+      out.push(r);
+    }
+  }
+  return out;
+}

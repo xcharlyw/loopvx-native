@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
-import { SpliceAuthError, connectSplice, disconnectSplice, downloadFromSplice, searchSplice, spliceAvailable, spliceConnected } from '../lib/splice';
+import { SpliceAuthError, connectSplice, disconnectSplice, downloadFromSplice, searchPackNamed, searchSplice, spliceAvailable, spliceConnected } from '../lib/splice';
 import { placeSample } from '../lib/actions';
 import { DEFAULT_SYNTH, mapTrack, trackKind } from '../lib/project';
-import { spliceSampleId, type SpliceResult } from '../lib/spliceResults';
+import { queryFromSpliceLink, spliceSampleId, type SpliceResult } from '../lib/spliceResults';
 import { applyInstrument } from '../audio/presets';
 import { SAMPLER_PRESET } from '../audio/synth';
 import { errorText, toast, updateProject, useStore } from '../lib/store';
@@ -64,7 +64,11 @@ export function SpliceSearch({ track }: { track?: Track } = {}) {
     setLoading(true);
     setError(null);
     try {
-      setResults(await searchSplice({ query: q, type: kind, ...(tempoMatch && kind !== 'oneshot' ? { bpmMin: Math.round(bpm) - 3, bpmMax: Math.round(bpm) + 3 } : {}) }));
+      const link = queryFromSpliceLink(q);
+      const filters = { type: link ? undefined : kind, ...(tempoMatch && kind !== 'oneshot' && !link ? { bpmMin: Math.round(bpm) - 3, bpmMax: Math.round(bpm) + 3 } : {}) };
+      if (link) setQuery(link.query);
+      // A pack link asks for a cross-section of that pack; a sound link finds the sound by its name.
+      setResults(link?.kind === 'pack' ? await searchPackNamed(link.query, filters) : await searchSplice({ query: link?.query ?? q, ...filters }));
     } catch (e) {
       fail(e);
       setResults(null);
@@ -101,7 +105,7 @@ export function SpliceSearch({ track }: { track?: Track } = {}) {
     <View style={{ gap: 10 }}>
       <TextInput
         style={s.search}
-        placeholder="z. B. dark rumble kick, acid loop, rave stab …"
+        placeholder="z. B. dark rumble kick, oder einen Splice-Link einfügen …"
         placeholderTextColor={C.dim}
         value={query}
         onChangeText={setQuery}

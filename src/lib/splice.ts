@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { SPLICE_ENDPOINT } from '../config';
 import type { Sample } from '../types';
-import { parseSearchResults, sampleFromSplice, spliceSampleId, type SpliceResult } from './spliceResults';
+import { PACK_FACETS, mergeResults, parseSearchResults, sampleFromSplice, spliceSampleId, type SpliceResult } from './spliceResults';
 import { getSession } from './supabase';
 import { getState, setSamples } from './store';
 import { storeSampleAudio } from './samples';
@@ -130,6 +130,18 @@ export interface SearchOptions {
 export async function searchSplice(opts: SearchOptions): Promise<SpliceResult[]> {
   const res = await post({ action: 'search', accessToken: await accessToken(), ...opts });
   return parseSearchResults(((await res.json()) as { text: string }).text);
+}
+
+/**
+ * Sounds that go with a pack's name. Splice's search answers ten sounds per question, so this asks several (the name plus
+ * kick, snare, bass ...) and merges them: a good cross-section of the pack (or its label), not the complete pack.
+ */
+export async function searchPackNamed(name: string, opts: Omit<SearchOptions, 'query'> = {}): Promise<SpliceResult[]> {
+  const token = await accessToken();
+  const lists = await Promise.all(
+    PACK_FACETS.map(async (facet) => parseSearchResults(((await (await post({ action: 'search', accessToken: token, query: `${name} ${facet}`, ...opts })).json()) as { text: string }).text)),
+  );
+  return mergeResults(lists);
 }
 
 export const spliceInLibrary = (r: SpliceResult) => getState().samples.some((s) => s.id === spliceSampleId(r.uuid));

@@ -77,3 +77,32 @@ describe('sampleFromSplice', () => {
     expect(niceKey('???')).toBeUndefined();
   });
 });
+
+import { PACK_FACETS, mergeResults, queryFromSpliceLink, type SpliceResult } from './spliceResults';
+
+describe('pasted Splice links', () => {
+  it('turns a sound link into the words of its name', () => {
+    expect(queryFromSpliceLink('https://splice.com/sounds/sample/a81f61d6/ds-ht-150-drum-kick-bomber-rumble-c-wav')).toEqual({ kind: 'sound', query: 'ds ht 150 drum kick bomber rumble c' });
+    expect(queryFromSpliceLink('  https://www.splice.com/sounds/sample/abc/snare-08-wav?x=1  ')).toEqual({ kind: 'sound', query: 'snare 08' });
+  });
+
+  it('turns a pack link into the pack name (label and pack)', () => {
+    expect(queryFromSpliceLink('https://splice.com/sounds/packs/dropgun-samples/hard-techno')).toEqual({ kind: 'pack', query: 'dropgun samples hard techno' });
+    expect(queryFromSpliceLink('https://splice.com/sounds/packs/some-pack')).toEqual({ kind: 'pack', query: 'some pack' });
+  });
+
+  it('leaves normal search text and foreign links alone', () => {
+    expect(queryFromSpliceLink('dark rumble kick')).toBeNull();
+    expect(queryFromSpliceLink('https://example.com/sounds/sample/a/b-wav')).toBeNull();
+    expect(queryFromSpliceLink('https://splice.com/pricing')).toBeNull();
+  });
+});
+
+describe('mergeResults', () => {
+  const r = (uuid: string): SpliceResult => ({ uuid, name: uuid, tags: [] });
+  it('keeps the first occurrence and the order, and caps the list', () => {
+    expect(mergeResults([[r('a'), r('b')], [r('b'), r('c')]]).map((x) => x.uuid)).toEqual(['a', 'b', 'c']);
+    expect(mergeResults([[r('a'), r('b'), r('c')]], 2)).toHaveLength(2);
+    expect(PACK_FACETS.length).toBeGreaterThan(3);
+  });
+});

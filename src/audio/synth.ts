@@ -73,8 +73,8 @@ export function planVoice(s: SynthSettings, pitch: number, bpm: number): VoicePl
 /** The note on which a sample instrument plays its sample unchanged (C3 in Ableton's naming). */
 export const SAMPLE_ROOT = 60;
 
-/** Playback rate that puts a sample instrument's sample on `pitch`. */
-export const pitchRate = (pitch: number) => Math.pow(2, (pitch - SAMPLE_ROOT) / 12);
+/** Playback rate that puts a sample instrument's sample on `pitch`: `root` is where it sounds unchanged, `tune` is in cents. */
+export const pitchRate = (pitch: number, root = SAMPLE_ROOT, tune = 0) => Math.pow(2, (pitch - root) / 12 + tune / 1200);
 
 /** What switching an instrument to a sample sets: open filter, no envelope shaping, one-shot. */
 export const SAMPLER_PRESET: Partial<SynthSettings> = { wave: 'sample', cutoff: 16000, resonance: 0.7, attack: 0.001, decay: 1.5, sustain: 1, release: 0.05, oneShot: true };
@@ -89,9 +89,9 @@ export const NOISE_PRESET: Partial<SynthSettings> = { wave: 'noise', cutoff: 750
 export const isDrumWave = (wave: SynthSettings['wave']) => wave === 'sample' || wave === 'kick' || wave === 'noise';
 
 /** Peak level of one voice: synth notes leave headroom for chords, drums and samples come in hot. */
-export function voicePeak(synth: Pick<SynthSettings, 'wave'>, velocity: number): number {
+export function voicePeak(synth: Pick<SynthSettings, 'wave' | 'gainDb'>, velocity: number): number {
   const peak = synth.wave === 'sample' || synth.wave === 'kick' ? 0.9 : synth.wave === 'noise' ? 0.45 : 0.25;
-  return peak * velocity;
+  return peak * velocity * Math.pow(10, (synth.gainDb ?? 0) / 20);
 }
 
 /** The kick's pitch drop: from a click-like high start down to the body within 80 ms. */

@@ -220,7 +220,7 @@ function startSynthVoice(
     if (!buffer) return null;
     const src = ctx.createBufferSource({ pitchCorrection: false });
     src.buffer = buffer;
-    src.playbackRate.value = pitchRate(pitch);
+    src.playbackRate.value = pitchRate(pitch, synth.sampleRoot, synth.tune);
     // One-shot: the sample plays out (drums); otherwise the note length gates it like a synth.
     if (synth.oneShot) hold = Math.max(hold, buffer.duration / src.playbackRate.value);
     osc = src;

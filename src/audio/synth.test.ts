@@ -121,3 +121,22 @@ describe('planVoice', () => {
     expect(planVoice({ ...base, lfoRate: 2, lfoDepth: 0 }, 60, 120).filter.lfoHz).toBe(0);
   });
 });
+
+describe('sampler root, tune and gain', () => {
+  it('the root note plays the sample unchanged, whatever it is', () => {
+    expect(pitchRate(36, 36)).toBe(1);
+    expect(pitchRate(48, 36)).toBeCloseTo(2);
+    expect(pitchRate(60)).toBe(1); // default root is C3
+  });
+  it('tune moves it by cents', () => {
+    expect(pitchRate(60, 60, 1200)).toBeCloseTo(2);
+    expect(pitchRate(60, 60, -100)).toBeCloseTo(Math.pow(2, -1 / 12));
+    expect(pitchRate(60, 60, 50)).toBeGreaterThan(1);
+  });
+  it('gain scales the level in dB', () => {
+    expect(voicePeak({ wave: 'sample', gainDb: 0 }, 1)).toBeCloseTo(0.9);
+    expect(voicePeak({ wave: 'sample', gainDb: -6.0206 }, 1)).toBeCloseTo(0.45, 3);
+    expect(voicePeak({ wave: 'sample', gainDb: 6.0206 }, 1)).toBeCloseTo(1.8, 3);
+    expect(voicePeak({ wave: 'sawtooth' }, 1)).toBeCloseTo(0.25);
+  });
+});

@@ -50,6 +50,11 @@ export interface SynthSettings {
   sampleId?: string;
   /** wave 'sample': every note plays the whole sample, whatever its length (drums). */
   oneShot?: boolean;
+  /** wave 'sample': the note on which the sample sounds unchanged (default C3 = 60), fine tune in cents. */
+  sampleRoot?: number;
+  tune?: number;
+  /** Level of the instrument in dB (default 0), for samples and drums that come in too hot or too quiet. */
+  gainDb?: number;
   /** Filter cutoff in Hz and its resonance (Q). */
   cutoff: number;
   resonance: number;

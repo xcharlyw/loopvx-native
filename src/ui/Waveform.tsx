@@ -7,7 +7,7 @@ import { sampleLengthBars } from '../audio/timing';
 const peakCache = new Map<string, Float32Array>();
 
 /** Downsampled absolute peaks of a buffer, cached per sample. */
-function getPeaks(sampleId: string, buffer: AudioBuffer, points = 512): Float32Array {
+export function getPeaks(sampleId: string, buffer: AudioBuffer, points = 512): Float32Array {
   const hit = peakCache.get(sampleId);
   if (hit) return hit;
   const data = buffer.getChannelData(0);

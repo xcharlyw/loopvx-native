@@ -103,6 +103,17 @@ track's drive/reverb/delay/pump, never the DJ filter or pan. UI: `InstrumentPane
 sheet). `melody.ts` generators are scale-aware and tested for musical properties (in key, register, phrase
 endings, second phrase answers the first); `SUGGESTED_PRESET` maps a generator style to a sound.
 
+## Sound panel (Serum-style)
+
+`InstrumentPanel` is built like a plugin: preset switcher (◀ ▶ through `PRESETS`), "Instrument laden" tiles
+(Synth / Sampler / Kick / Noise, `applyInstrument` replaces the instrument and the track's sound effects),
+tabs per kind (`TABS`) with rotary `Knob`s (`src/ui/synth/`) and live scopes: wave shape, the **real filter
+response** (`filterResponse` in `audio/scopes.ts` equals Chromium's `getFrequencyResponse` to 0.000 dB; note
+that lowpass/highpass resonance is in **dB** in Web Audio, bandpass Q is linear), amp envelope, LFO (cycles per
+bar over a window of whole bars), sample peaks. Knob math is pure (`lib/knobMath.ts`): vertical drag,
+log curves, steps, double tap resets. The keyboard (`Keys`) uses the responder grant, not `Pressable.onPressIn`,
+which waits and swallows quick taps on web. Sampler settings: `sampleRoot`, `tune` (cents), `gainDb`.
+
 ## Piano roll dragging
 
 A selected note gets a move area and a length grip (`noteHitAreas`, `src/lib/noteDrag.ts`): the move area is

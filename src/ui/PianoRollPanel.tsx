@@ -3,12 +3,14 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Line, Rect } from 'react-native-svg';
 import { engine } from '../audio/engine';
 import { formatBarPosition } from '../audio/timing';
+import { applyPreset, presetById, SUGGESTED_PRESET } from '../audio/presets';
 import { isDrumWave } from '../audio/synth';
 import { C, mono } from '../constants/theme';
 import { exportMidiClip, togglePlay } from '../lib/actions';
 import { noteName } from '../lib/midi';
-import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_STYLES, type PatternStyle } from '../lib/patterns';
-import { addNote, duplicateNote, findClip, findNote, noteIndexAt, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
+import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_GROUPS, usesScale, type PatternStyle } from '../lib/patterns';
+import { SCALES, scaleOf, type ScaleName } from '../lib/melody';
+import { addNote, duplicateNote, findClip, findNote, mapTrack, noteIndexAt, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
 import { setState, updateProject, useStore } from '../lib/store';
 import type { Note } from '../types';
 import { tapX, tapY } from './events';
@@ -33,18 +35,25 @@ const clampLow = (v: number) => Math.max(0, Math.min(127 - ROWS + 1, v));
 const pct = (v: number) => `${Math.round(v * 100)} %`;
 const lengthText = (bars: number) => LENGTHS.find((l) => Math.abs(l.bars - bars) < 1e-6)?.label ?? `${Math.round(bars * 64)}/64`;
 
-/** Lowest shown pitch: the octave of the clip's lowest note, else C1 (bass range) or C2 for a sample instrument (C3 in view). */
+/**
+ * Lowest shown pitch. Empty clip: C1 (bass range), C2 for drum instruments (C3 in view). Otherwise the
+ * grid starts just under the lowest note when the whole clip fits in two octaves (a trance lead spanning
+ * 57..80 shows completely), else at the octave of the lowest note.
+ */
 function initialLow(notes: Note[], sampler = false): number {
   if (!notes.length) return sampler ? 48 : 36;
   const lowest = Math.min(...notes.map((n) => n.pitch));
-  // A sample instrument's notes mostly sit on C3: keep an octave below in view too.
-  return Math.max(0, Math.min(127 - ROWS + 1, Math.floor(lowest / 12) * 12 - (sampler ? 12 : 0)));
+  const highest = Math.max(...notes.map((n) => n.pitch));
+  if (sampler) return clampLow(Math.floor(lowest / 12) * 12 - 12); // drums sit on C3: keep an octave below in view too
+  if (highest - lowest <= ROWS - 3) return clampLow(lowest - 2);
+  return clampLow(Math.floor(lowest / 12) * 12);
 }
 
 // The generator's last choice, kept while the app runs so every clip of a track lands in the same key.
 let lastStyle: PatternStyle = 'rumble';
 let lastDrum: PatternStyle = 'kick';
 let lastRoot = 5; // F minor
+let lastScale: ScaleName = 'minor';
 
 /**
  * Step piano roll, two octaves at a time. Tap an empty cell to add a note (and hear it), tap a note to
@@ -64,6 +73,7 @@ export function PianoRollPanel() {
   // The instrument may change while the roll is open: drum styles only for sample instruments.
   const style = sampler === isDrumStyle(picked) ? picked : sampler ? lastDrum : lastStyle;
   const [root, setRoot] = useState(lastRoot);
+  const [scale, setScale] = useState<ScaleName>(lastScale);
 
   if (!found?.clip.notes) {
     return (
@@ -137,12 +147,21 @@ export function PianoRollPanel() {
     if (isDrumStyle(style)) lastDrum = style;
     else lastStyle = style;
     lastRoot = root;
-    const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31) });
+    lastScale = scale;
+    const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31), scale });
     updateProject((p) => updateClip(p, clip.id, { notes: next }));
     setLow(initialLow(next, sampler));
     setSel(null);
   };
   const shiftKey = (by: number) => setRoot((r) => (r + by + 12) % 12);
+  /** The preset that suits the chosen style, unless the track plays a sample or already has it. */
+  const suggestion = presetById(SUGGESTED_PRESET[style]);
+  const offerSuggestion = !!suggestion && track.synth?.wave !== 'sample' && track.synth?.preset !== suggestion.id && !(sampler && !isDrumStyle(style));
+  const loadSuggestion = () => {
+    if (!suggestion) return;
+    updateProject((p) => mapTrack(p, track.id, (t) => applyPreset(t, suggestion)));
+    void engine.previewNote(suggestion.synth, suggestion.note);
+  };
 
   return (
     <Sheet title="Piano Roll">
@@ -289,20 +308,47 @@ export function PianoRollPanel() {
       </Section>
 
       <Section title="Pattern-Generator" style={{ marginTop: 14 }}>
-        <View style={s.toolbar}>
-          {(sampler ? DRUM_STYLES : PATTERN_STYLES).map((p) => (
-            <Chip key={p.id} variant={style === p.id ? 'on' : 'ghost'} onPress={() => setStyle(p.id)}>
-              {p.label}
-            </Chip>
-          ))}
-        </View>
-        <View style={[s.toolbar, { marginTop: 10 }]}>
+        {sampler ? (
+          <View style={s.toolbar}>
+            {DRUM_STYLES.map((p) => (
+              <Chip key={p.id} variant={style === p.id ? 'on' : 'ghost'} onPress={() => setStyle(p.id)}>
+                {p.label}
+              </Chip>
+            ))}
+          </View>
+        ) : (
+          PATTERN_GROUPS.map((g, i) => (
+            <View key={g.label} style={{ marginTop: i ? 10 : 0 }}>
+              <Txt style={s.sub}>{g.label}</Txt>
+              <View style={s.toolbar}>
+                {g.styles.map((p) => (
+                  <Chip key={p.id} variant={style === p.id ? 'on' : 'ghost'} onPress={() => setStyle(p.id)}>
+                    {p.label}
+                  </Chip>
+                ))}
+              </View>
+            </View>
+          ))
+        )}
+        {usesScale(style) && (
+          <View style={{ marginTop: 12 }}>
+            <Txt style={s.sub}>Tonleiter</Txt>
+            <View style={s.toolbar}>
+              {SCALES.map((sc) => (
+                <Chip key={sc.id} variant={scale === sc.id ? 'on' : 'ghost'} onPress={() => setScale(sc.id)}>
+                  {sc.label}
+                </Chip>
+              ))}
+            </View>
+          </View>
+        )}
+        <View style={[s.toolbar, { marginTop: 12 }]}>
           {!isDrumStyle(style) && (
             <>
               <Btn small onPress={() => shiftKey(-1)} accessibilityLabel="Tonart tiefer">
                 ◀
               </Btn>
-              <Txt style={s.key2}>{`${KEY_NAMES[root]}-Moll`}</Txt>
+              <Txt style={s.key2}>{usesScale(style) ? `${KEY_NAMES[root]} ${scaleOf(scale).label}` : `${KEY_NAMES[root]}-Moll`}</Txt>
               <Btn small onPress={() => shiftKey(1)} accessibilityLabel="Tonart höher">
                 ▶
               </Btn>
@@ -312,7 +358,15 @@ export function PianoRollPanel() {
             Würfeln
           </Btn>
         </View>
-        <Txt style={[s.note, { marginTop: 8 }]}>Ersetzt die Noten des Clips. Gefällt es nicht: nochmal würfeln oder rückgängig machen.</Txt>
+        <Txt style={[s.note, { marginTop: 8 }]}>Ersetzt die Noten des Clips. Gefällt es nicht: nochmal würfeln oder rückgängig machen. Melodie, Reese, Pad und Rave-Stabs folgen der Tonleiter und einer Akkordfolge.</Txt>
+        {offerSuggestion && suggestion && (
+          <View style={[s.toolbar, { marginTop: 10 }]}>
+            <Txt style={[s.note, { flex: 1 }]}>{`Passender Sound: ${suggestion.name}`}</Txt>
+            <Btn small onPress={loadSuggestion}>
+              Sound laden
+            </Btn>
+          </View>
+        )}
       </Section>
 
       <Section title="Clip" style={{ marginTop: 14 }}>

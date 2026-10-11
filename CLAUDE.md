@@ -47,9 +47,12 @@ src/app/            expo-router entry (one screen; the app is src/ui/App.tsx)
 src/ui/             screens and panels (ArrangeView, SessionView, *Panel sheets, BottomBar, TopBar)
 src/audio/          engine.ts (react-native-audio-api), mixgraph.ts (track strips: filter, drive, pan,
                     fader, reverb/delay sends; one per context, live and offline), fx.ts + synth.ts
-                    (pure effect/instrument math), timing.ts (pure tempo math), wav.ts, pageAudio.ts
+                    (pure effect/instrument math; synth.ts `planVoice` is the recipe of one synth note),
+                    presets.ts (sound library + applyPreset), tempo.ts (BPM detection),
+                    timing.ts (pure tempo math), wav.ts, pageAudio.ts
 src/lib/            store.ts (state, undo, autosave), project.ts (pure project mutations), actions.ts,
-                    midi.ts (.mid read/write), patterns.ts (seeded pattern generator),
+                    midi.ts (.mid read/write), patterns.ts (seeded pattern generator, drums and bass),
+                    melody.ts (scales, chord progressions, trance/reese/hypnotic/pad/stab generators),
                     samples(.web).ts, sync*.ts + drive.ts (Google Drive sync), supabase.ts, vocals.ts
 src/storage/db.ts   AsyncStorage persistence; emits change events (Drive sync listens)
 api/                Vercel Functions (vocals.ts, drive-token.ts); api/_lib is shared, not deployed
@@ -88,6 +91,17 @@ autocorrelation peaks, a prior around 150 BPM for octave ties, and a crest-facto
 speech give "no tempo". Used by the "Tempo erkennen" button (ClipPanel) and `autoDetectTempos` on upload
 (loops only, never vocals, only confident results). Checked on a real 160 BPM loop and its variants
 (mp3, trimmed, offset, +-10 % speed): all within 0.4 %.
+
+## Synth, presets and melodies
+
+An oscillator instrument (`track.synth`, wave sawtooth/square/sine/triangle) is planned by the pure
+`planVoice` (unison copies of oscillator A and B, sub, noise, filter with envelope, tempo-synced LFO) and
+built by `startOscVoice` in the engine as one `SynthVoice` that stops all its nodes together. All new
+`SynthSettings` fields are optional so old projects sound as before. `presets.ts` is the sound library
+(Bass, Lead, Pad, Pluck & Stab, Drums): `applyPreset`/`applyInstrument` replace the whole instrument and the
+track's drive/reverb/delay/pump, never the DJ filter or pan. UI: `InstrumentPanel` (opened from the track
+sheet). `melody.ts` generators are scale-aware and tested for musical properties (in key, register, phrase
+endings, second phrase answers the first); `SUGGESTED_PRESET` maps a generator style to a sound.
 
 ## Not done yet
 

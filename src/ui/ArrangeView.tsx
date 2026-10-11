@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { C, RULER_H, font, layout } from '../constants/theme';
 import { engine } from '../audio/engine';
@@ -13,6 +13,7 @@ import { usePlayhead, useSmall } from './hooks';
 import { Plus } from './icons';
 import { Mono, MsButton, Txt } from './kit';
 import { tapX } from './events';
+import { useDrag, web, type DragPhase } from './drag';
 import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
@@ -26,8 +27,6 @@ const touchDistance = (t: { pageX: number; pageY: number }[]) => Math.hypot(t[0]
 const LOOP_GRIP = 24;
 /** Mouse/trackpad: clips drag straight away. Touch: a clip must be selected first, so swiping over clips still scrolls. */
 const FINE_POINTER = Platform.OS === 'web' && typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches;
-/** Web-only style keys RN's types don't know. */
-const web = (style: Record<string, string>) => (Platform.OS === 'web' ? (style as ViewStyle) : undefined);
 
 interface Drag {
   clipId: string;
@@ -333,7 +332,6 @@ export function ArrangeView() {
   );
 }
 
-type DragPhase = 'move' | 'end' | 'cancel';
 
 /** A MIDI clip's notes in miniature, scaled to the pitch range they use (at least an octave). */
 function MidiPreview({ notes, width, height, zoom }: { notes: Note[]; width: number; height: number; zoom: number }) {
@@ -355,39 +353,6 @@ function MidiPreview({ notes, width, height, zoom }: { notes: Note[]; width: num
         />
       ))}
     </Svg>
-  );
-}
-
-/** The responder system's touch record (present on native and react-native-web, missing from RN's event type). */
-interface TouchHistory {
-  indexOfSingleActiveTouch: number;
-  touchBank: ({ startPageX: number; startPageY: number; currentPageX: number; currentPageY: number } | undefined)[];
-}
-
-/** Pan gesture that reports its offset; `claim` decides whether it takes over the touch. */
-function useDrag(claim: 'start' | 'move', enabled: boolean, onDrag: (dx: number, dy: number, phase: DragPhase) => void) {
-  const latest = useRef({ enabled, onDrag });
-  latest.current = { enabled, onDrag };
-  // The gesture's dx/dy restart at 0 when it takes over mid-move; add back the distance travelled before that.
-  const lead = useRef({ dx: 0, dy: 0 });
-  return useMemo(
-    () =>
-      PanResponder.create({
-        onPanResponderGrant: (e) => {
-          const history = (e as unknown as { touchHistory: TouchHistory }).touchHistory;
-          const touch = history.touchBank[history.indexOfSingleActiveTouch];
-          lead.current = touch ? { dx: touch.currentPageX - touch.startPageX, dy: touch.currentPageY - touch.startPageY } : { dx: 0, dy: 0 };
-        },
-        // Edge handles take the touch at once; the clip body only once it moves, so a tap still reaches its Pressable.
-        onStartShouldSetPanResponder: () => claim === 'start' && latest.current.enabled,
-        onMoveShouldSetPanResponderCapture: (_, g) =>
-          claim === 'move' && latest.current.enabled && (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 6),
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderMove: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'move'),
-        onPanResponderRelease: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'end'),
-        onPanResponderTerminate: () => latest.current.onDrag(0, 0, 'cancel'),
-      }).panHandlers,
-    [claim],
   );
 }
 

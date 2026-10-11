@@ -103,6 +103,16 @@ track's drive/reverb/delay/pump, never the DJ filter or pan. UI: `InstrumentPane
 sheet). `melody.ts` generators are scale-aware and tested for musical properties (in key, register, phrase
 endings, second phrase answers the first); `SUGGESTED_PRESET` maps a generator style to a sound.
 
+## Piano roll dragging
+
+A selected note gets a move area and a length grip (`noteHitAreas`, `src/lib/noteDrag.ts`): the move area is
+the note, the grip sits behind its end (inside for long notes and notes at the clip end) so even a single
+16th (24 px) can be grabbed in its middle. Drags use the shared `useDrag` (`src/ui/drag.ts`, `touchAction:
+none`); the grid's ScrollView is disabled only while a drag runs, so swiping empty cells still scrolls.
+Every move is computed from the notes at gesture start (no accumulated error), and the whole drag is one undo
+step: `recordHistory()` once, then `updateProject(..., { record: false })`; a drag that ends where it began
+discards its step (`discardLastHistory`).
+
 ## Not done yet
 
 Drive import of existing loop folders (needs `drive.readonly` or the Picker), audio recording,

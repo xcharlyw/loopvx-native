@@ -54,3 +54,23 @@ describe('History', () => {
     expect(seen).toEqual([9, 8, 7]);
   });
 });
+
+describe('discardLast', () => {
+  it('forgets the newest step without touching older ones', () => {
+    const h = new History<number>();
+    h.record(1);
+    h.record(2);
+    h.discardLast();
+    expect(h.undo(99)).toBe(1);
+    expect(h.canUndo).toBe(false);
+  });
+  it('is harmless on an empty history and ends a merge burst', () => {
+    const h = new History<number>(100, 700);
+    h.discardLast();
+    expect(h.canUndo).toBe(false);
+    h.record(1, { continuous: true, now: 1000 });
+    h.discardLast();
+    h.record(2, { continuous: true, now: 1100 });
+    expect(h.undo(9)).toBe(2); // not merged into the discarded burst
+  });
+});

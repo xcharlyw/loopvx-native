@@ -119,15 +119,22 @@ export function recordHistory(opts: { continuous?: boolean } = {}) {
   syncHistory();
 }
 
+/** Drop the undo step recorded by `recordHistory` (the gesture it was for changed nothing in the end). */
+export function discardLastHistory() {
+  history.discardLast();
+  syncHistory();
+}
+
 /**
  * The one way to change the project. Changes with reschedule:false (faders, names, mute/solo, tempo)
  * come in bursts and merge into one undo step per burst; `merge` does the same for a burst that
  * must also be heard right away (a clip gain fader).
  */
-export function updateProject(fn: (p: Project) => Project, opts: { reschedule?: boolean; merge?: boolean } = {}) {
+export function updateProject(fn: (p: Project) => Project, opts: { reschedule?: boolean; merge?: boolean; record?: boolean } = {}) {
   const before = state.project;
   const changed = fn(before);
-  if (changed !== before) {
+  // `record: false`: the caller already recorded the undo step (a drag records once, however long it takes).
+  if (changed !== before && opts.record !== false) {
     history.record({ project: before, samples: state.samples }, { continuous: opts.merge ?? opts.reschedule === false });
   }
   commit({ ...changed, updatedAt: Date.now() }, opts.reschedule !== false);

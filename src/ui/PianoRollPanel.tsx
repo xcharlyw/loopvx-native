@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Line, Rect } from 'react-native-svg';
 import { engine } from '../audio/engine';
@@ -11,8 +11,10 @@ import { noteName } from '../lib/midi';
 import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_GROUPS, usesScale, type PatternStyle } from '../lib/patterns';
 import { SCALES, scaleOf, type ScaleName } from '../lib/melody';
 import { addNote, duplicateNote, findClip, findNote, mapTrack, noteIndexAt, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
-import { setState, updateProject, useStore } from '../lib/store';
+import { discardLastHistory, recordHistory, setState, updateProject, useStore } from '../lib/store';
+import { clampPitch, GRIP_W, movedNote, noteHitAreas, resizedNote } from '../lib/noteDrag';
 import type { Note } from '../types';
+import { useDrag, web } from './drag';
 import { tapX, tapY } from './events';
 import { Fader } from './Fader';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -65,9 +67,48 @@ export function PianoRollPanel() {
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
   const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? [], !!found?.track.synth && isDrumWave(found.track.synth.wave)));
   const [noteLen, setNoteLen] = useState(1 / 16);
+  const [dragging, setDragging] = useState(false);
+  /** What the drag handlers need at the moment of the gesture (they are created once, the state moves on). */
+  const live = useRef<{ notes: Note[]; selIndex: number; clipId: string; clipLength: number; low: number; high: number; hear: (pitch: number) => void } | null>(null);
+  /** The running gesture: the notes as they were when it began, so every move is computed from the start. */
+  const gesture = useRef<{ notes: Note[]; index: number; base: Note; last: Note; recorded: boolean } | null>(null);
   const [tool, setTool] = useState<'draw' | 'erase'>('draw');
   /** The selected note, by identity (pitch and start): stays valid across undo and re-sorting. */
   const [sel, setSel] = useState<{ pitch: number; start: number } | null>(null);
+  const drag = (mode: 'move' | 'resize', dx: number, dy: number, phase: 'move' | 'end' | 'cancel') => {
+    const c = live.current;
+    if (!c) return;
+    if (phase !== 'move') {
+      const g = gesture.current;
+      // Dragged out and back to where it began: nothing changed, so there is nothing to undo either.
+      if (g?.recorded && g.last.pitch === g.base.pitch && Math.abs(g.last.start - g.base.start) < 1e-9 && Math.abs(g.last.length - g.base.length) < 1e-9) discardLastHistory();
+      gesture.current = null;
+      setDragging(false);
+      return;
+    }
+    let g = gesture.current;
+    if (!g) {
+      if (c.selIndex < 0) return;
+      const base = c.notes[c.selIndex];
+      g = gesture.current = { notes: c.notes, index: c.selIndex, base, last: base, recorded: false };
+      setDragging(true);
+    }
+    const patch = mode === 'move' ? movedNote(g.base, dx, dy, STEP_W, ROW_H) : resizedNote(g.base, dx, STEP_W);
+    if (patch.pitch !== undefined) patch.pitch = clampPitch(patch.pitch, c.low, c.high);
+    const r = updateNote(g.notes, g.index, patch, c.clipLength);
+    const l = g.last;
+    if (r.note.pitch === l.pitch && Math.abs(r.note.start - l.start) < 1e-9 && Math.abs(r.note.length - l.length) < 1e-9) return;
+    if (!g.recorded) {
+      recordHistory(); // the whole drag is one undo step, however long it takes
+      g.recorded = true;
+    }
+    if (r.note.pitch !== l.pitch) c.hear(r.note.pitch);
+    g.last = r.note;
+    setSel({ pitch: r.note.pitch, start: r.note.start });
+    updateProject((p) => updateClip(p, c.clipId, { notes: r.notes }), { record: false });
+  };
+  const moveDrag = useDrag('start', true, (dx, dy, phase) => drag('move', dx, dy, phase));
+  const resizeDrag = useDrag('start', true, (dx, _dy, phase) => drag('resize', dx, 0, phase));
   const sampler = !!found?.track.synth && isDrumWave(found.track.synth.wave); // drum styles, C3 centred
   const [picked, setStyle] = useState(sampler ? lastDrum : lastStyle);
   // The instrument may change while the roll is open: drum styles only for sample instruments.
@@ -93,6 +134,7 @@ export function PianoRollPanel() {
   const selected = selIndex >= 0 ? notes[selIndex] : null;
   const setNotes = (next: Note[], opts: { merge?: boolean } = {}) => updateProject((p) => updateClip(p, clip.id, { notes: next }), opts);
   const hear = (pitch: number) => void engine.previewNote(trackSynth(track), pitch);
+  live.current = { notes, selIndex, clipId: clip.id, clipLength: clip.length, low, high, hear };
 
   const onTap = (e: Parameters<typeof tapX>[0]) => {
     const step = Math.floor(tapX(e) / STEP_W);
@@ -206,7 +248,7 @@ export function PianoRollPanel() {
             );
           })}
         </View>
-        <ScrollView horizontal style={{ flex: 1 }}>
+        <ScrollView horizontal style={{ flex: 1 }} scrollEnabled={!dragging}>
           <View style={{ width, height }}>
             <Svg width={width} height={height}>
               {Array.from({ length: ROWS }, (_, row) =>
@@ -244,6 +286,28 @@ export function PianoRollPanel() {
                 ))}
             </Svg>
             <Pressable accessibilityLabel="Notenraster" onPress={onTap} style={StyleSheet.absoluteFill} />
+            {selected && tool === 'draw' && selected.pitch >= low && selected.pitch <= high && (() => {
+              const x = selected.start * STEPS_PER_BAR * STEP_W;
+              const w = Math.max(4, selected.length * STEPS_PER_BAR * STEP_W);
+              const top = (high - selected.pitch) * ROW_H;
+              const hit = noteHitAreas(x, w, width);
+              return (
+                <>
+                  <View
+                    {...moveDrag}
+                    accessibilityLabel="Note verschieben"
+                    style={[s.noteHit, { left: hit.move.left, top: top - 4, width: hit.move.width, height: ROW_H + 8 }, web({ touchAction: 'none', cursor: 'grab' })]}
+                  />
+                  <View
+                    {...resizeDrag}
+                    accessibilityLabel="Notenlänge ziehen"
+                    style={[s.noteGrip, { left: hit.grip.left, width: hit.grip.width, top: top - 9, alignItems: hit.gripInside ? 'center' : 'flex-start', paddingLeft: hit.gripInside ? 0 : 4 }, web({ touchAction: 'none', cursor: 'ew-resize' })]}
+                  >
+                    <View pointerEvents="none" style={s.gripBar} />
+                  </View>
+                </>
+              );
+            })()}
           </View>
         </ScrollView>
       </View>
@@ -252,6 +316,7 @@ export function PianoRollPanel() {
         {selected ? (
           <>
             <Txt style={s.value}>{`${noteName(selected.pitch)} · ${formatBarPosition(selected.start)} · ${lengthText(selected.length)} · Anschlag ${pct(selected.velocity)}`}</Txt>
+            <Txt style={[s.note, { marginTop: 6 }]}>Im Raster ziehen: Note bewegen. Weißen Griff am Ende ziehen: Länge ändern.</Txt>
             <Txt style={[s.sub, { marginTop: 10 }]}>Verschieben</Txt>
             <View style={s.toolbar}>
               <Btn small accessibilityLabel="Note früher" onPress={() => edit({ start: selected.start - 1 / STEPS_PER_BAR })}>
@@ -302,7 +367,7 @@ export function PianoRollPanel() {
           <Txt style={s.note}>
             {tool === 'erase'
               ? 'Radierer: Tippe eine Note an, um sie zu löschen.'
-              : 'Tippe eine leere Zelle, um eine Note zu setzen. Tippe eine Note an, um sie zu verschieben, zu verlängern oder leiser zu machen.'}
+              : 'Tippe eine leere Zelle, um eine Note zu setzen. Tippe eine Note an, um sie auszuwählen: dann kannst du sie im Raster ziehen, am Griff verlängern oder unten leiser machen.'}
           </Txt>
         )}
       </Section>
@@ -414,5 +479,9 @@ const s = StyleSheet.create({
   key2: { ...mono(), fontSize: 13, minWidth: 64, textAlign: 'center' },
   note: { color: C.muted, fontSize: 12, lineHeight: 17 },
   value: { ...mono(), fontSize: 13 },
+  // Touch targets over the selected note: the body moves it, the strip at its right edge changes its length.
+  noteHit: { position: 'absolute' },
+  noteGrip: { position: 'absolute', width: GRIP_W, height: ROW_H + 18, alignItems: 'center', justifyContent: 'center' },
+  gripBar: { width: 4, height: ROW_H - 4, borderRadius: 2, backgroundColor: '#fff' },
   sub: { color: C.muted, fontSize: 13, marginBottom: 8 },
 });

@@ -30,6 +30,12 @@ export class History<T> {
     if (this.undoStack.length > this.limit) this.undoStack.shift();
   }
 
+  /** Forget the newest undo step (a gesture that ended where it began leaves nothing to undo). */
+  discardLast() {
+    this.undoStack.pop();
+    this.lastContinuousAt = 0;
+  }
+
   /** The state to go back to, given the current one (which becomes redo-able). */
   undo(current: T): T | undefined {
     const previous = this.undoStack.pop();

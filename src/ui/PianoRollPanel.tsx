@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import Svg, { Line, Rect } from 'react-native-svg';
 import { engine } from '../audio/engine';
@@ -12,7 +12,7 @@ import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_GROUPS, u
 import { SCALES, scaleOf, type ScaleName } from '../lib/melody';
 import { addNote, duplicateNote, findClip, findNote, mapTrack, noteIndexAt, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
 import { discardLastHistory, recordHistory, setState, updateProject, useStore } from '../lib/store';
-import { clampPitch, GRIP_W, movedNote, noteHitAreas, resizedNote } from '../lib/noteDrag';
+import { clampPitch, clampScroll, edgeScrollSpeed, GRIP_W, movedNote, noteHitAreas, resizedNote } from '../lib/noteDrag';
 import type { Note } from '../types';
 import { useDrag, web } from './drag';
 import { tapX, tapY } from './events';
@@ -69,31 +69,48 @@ export function PianoRollPanel() {
   const [noteLen, setNoteLen] = useState(1 / 16);
   const [dragging, setDragging] = useState(false);
   /** What the drag handlers need at the moment of the gesture (they are created once, the state moves on). */
-  const live = useRef<{ notes: Note[]; selIndex: number; clipId: string; clipLength: number; low: number; high: number; hear: (pitch: number) => void } | null>(null);
-  /** The running gesture: the notes as they were when it began, so every move is computed from the start. */
-  const gesture = useRef<{ notes: Note[]; index: number; base: Note; last: Note; recorded: boolean } | null>(null);
+  const live = useRef<{ notes: Note[]; selIndex: number; clipId: string; clipLength: number; low: number; high: number; contentWidth: number; hear: (pitch: number) => void } | null>(null);
+  /**
+   * The running gesture: the notes as they were when it began, so every move is computed from the start,
+   * plus the finger and the visible area for auto-scroll. `dx`/`dy` are the finger's offset on screen; the
+   * distance the grid has scrolled since the start is added, so the note stays under the finger.
+   */
+  const gesture = useRef<{
+    mode: 'move' | 'resize';
+    notes: Note[];
+    index: number;
+    base: Note;
+    last: Note;
+    recorded: boolean;
+    scrollStart: number;
+    dx: number;
+    dy: number;
+    fingerX?: number;
+    viewLeft?: number;
+    viewRight?: number;
+    tickAt: number;
+  } | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const viewRef = useRef<View>(null);
+  const scrollX = useRef(0);
+  const viewW = useRef(0);
+  const ticker = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopTicker = () => {
+    if (ticker.current) clearInterval(ticker.current);
+    ticker.current = null;
+  };
+  useEffect(() => stopTicker, []);
   const [tool, setTool] = useState<'draw' | 'erase'>('draw');
   /** The selected note, by identity (pitch and start): stays valid across undo and re-sorting. */
   const [sel, setSel] = useState<{ pitch: number; start: number } | null>(null);
-  const drag = (mode: 'move' | 'resize', dx: number, dy: number, phase: 'move' | 'end' | 'cancel') => {
+
+  /** Put the dragged note where the finger is now (including what the grid scrolled since the start). */
+  const applyDrag = () => {
+    const g = gesture.current;
     const c = live.current;
-    if (!c) return;
-    if (phase !== 'move') {
-      const g = gesture.current;
-      // Dragged out and back to where it began: nothing changed, so there is nothing to undo either.
-      if (g?.recorded && g.last.pitch === g.base.pitch && Math.abs(g.last.start - g.base.start) < 1e-9 && Math.abs(g.last.length - g.base.length) < 1e-9) discardLastHistory();
-      gesture.current = null;
-      setDragging(false);
-      return;
-    }
-    let g = gesture.current;
-    if (!g) {
-      if (c.selIndex < 0) return;
-      const base = c.notes[c.selIndex];
-      g = gesture.current = { notes: c.notes, index: c.selIndex, base, last: base, recorded: false };
-      setDragging(true);
-    }
-    const patch = mode === 'move' ? movedNote(g.base, dx, dy, STEP_W, ROW_H) : resizedNote(g.base, dx, STEP_W);
+    if (!g || !c) return;
+    const dx = g.dx + (scrollX.current - g.scrollStart);
+    const patch = g.mode === 'move' ? movedNote(g.base, dx, g.dy, STEP_W, ROW_H) : resizedNote(g.base, dx, STEP_W);
     if (patch.pitch !== undefined) patch.pitch = clampPitch(patch.pitch, c.low, c.high);
     const r = updateNote(g.notes, g.index, patch, c.clipLength);
     const l = g.last;
@@ -107,8 +124,59 @@ export function PianoRollPanel() {
     setSel({ pitch: r.note.pitch, start: r.note.start });
     updateProject((p) => updateClip(p, c.clipId, { notes: r.notes }), { record: false });
   };
-  const moveDrag = useDrag('start', true, (dx, dy, phase) => drag('move', dx, dy, phase));
-  const resizeDrag = useDrag('start', true, (dx, _dy, phase) => drag('resize', dx, 0, phase));
+
+  /** Every frame of a drag: near an edge of the visible grid, scroll it (the finger may be holding still). */
+  const autoScroll = () => {
+    const g = gesture.current;
+    const c = live.current;
+    if (!g || !c || g.fingerX === undefined || g.viewLeft === undefined || g.viewRight === undefined) return;
+    const now = Date.now();
+    const dt = Math.min(50, now - g.tickAt);
+    g.tickAt = now;
+    const speed = edgeScrollSpeed(g.fingerX, g.viewLeft, g.viewRight);
+    if (!speed) return;
+    const next = clampScroll(scrollX.current + (speed * dt) / 1000, c.contentWidth, viewW.current);
+    if (next === scrollX.current) return;
+    scrollX.current = next;
+    scrollRef.current?.scrollTo({ x: next, animated: false });
+    applyDrag();
+  };
+
+  const drag = (mode: 'move' | 'resize', dx: number, dy: number, phase: 'move' | 'end' | 'cancel', at?: { x: number; y: number }) => {
+    const c = live.current;
+    if (!c) return;
+    if (phase !== 'move') {
+      const g = gesture.current;
+      // Dragged out and back to where it began: nothing changed, so there is nothing to undo either.
+      if (g?.recorded && g.last.pitch === g.base.pitch && Math.abs(g.last.start - g.base.start) < 1e-9 && Math.abs(g.last.length - g.base.length) < 1e-9) discardLastHistory();
+      stopTicker();
+      gesture.current = null;
+      setDragging(false);
+      return;
+    }
+    let g = gesture.current;
+    if (!g) {
+      if (c.selIndex < 0) return;
+      const base = c.notes[c.selIndex];
+      g = gesture.current = { mode, notes: c.notes, index: c.selIndex, base, last: base, recorded: false, scrollStart: scrollX.current, dx: 0, dy: 0, tickAt: Date.now() };
+      setDragging(true);
+      // Where the visible grid is on screen, to tell when the finger is at its edge.
+      viewRef.current?.measureInWindow((x, _y, w) => {
+        if (gesture.current) {
+          gesture.current.viewLeft = x;
+          gesture.current.viewRight = x + w;
+        }
+      });
+      stopTicker();
+      ticker.current = setInterval(autoScroll, 16);
+    }
+    g.dx = dx;
+    g.dy = dy;
+    if (at) g.fingerX = at.x;
+    applyDrag();
+  };
+  const moveDrag = useDrag('start', true, (dx, dy, phase, at) => drag('move', dx, dy, phase, at));
+  const resizeDrag = useDrag('start', true, (dx, _dy, phase, at) => drag('resize', dx, 0, phase, at));
   const sampler = !!found?.track.synth && isDrumWave(found.track.synth.wave); // drum styles, C3 centred
   const [picked, setStyle] = useState(sampler ? lastDrum : lastStyle);
   // The instrument may change while the roll is open: drum styles only for sample instruments.
@@ -134,7 +202,7 @@ export function PianoRollPanel() {
   const selected = selIndex >= 0 ? notes[selIndex] : null;
   const setNotes = (next: Note[], opts: { merge?: boolean } = {}) => updateProject((p) => updateClip(p, clip.id, { notes: next }), opts);
   const hear = (pitch: number) => void engine.previewNote(trackSynth(track), pitch);
-  live.current = { notes, selIndex, clipId: clip.id, clipLength: clip.length, low, high, hear };
+  live.current = { notes, selIndex, clipId: clip.id, clipLength: clip.length, low, high, contentWidth: steps * STEP_W, hear };
 
   const onTap = (e: Parameters<typeof tapX>[0]) => {
     const step = Math.floor(tapX(e) / STEP_W);
@@ -248,7 +316,18 @@ export function PianoRollPanel() {
             );
           })}
         </View>
-        <ScrollView horizontal style={{ flex: 1 }} scrollEnabled={!dragging}>
+        <View ref={viewRef} style={{ flex: 1 }} onLayout={(e) => (viewW.current = e.nativeEvent.layout.width)}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          style={{ flex: 1 }}
+          scrollEnabled={!dragging}
+          scrollEventThrottle={16}
+          onScroll={(e) => {
+            // While dragging we drive the offset ourselves; a late scroll event must not set it back.
+            if (!gesture.current) scrollX.current = e.nativeEvent.contentOffset.x;
+          }}
+        >
           <View style={{ width, height }}>
             <Svg width={width} height={height}>
               {Array.from({ length: ROWS }, (_, row) =>
@@ -310,6 +389,7 @@ export function PianoRollPanel() {
             })()}
           </View>
         </ScrollView>
+        </View>
       </View>
 
       <Section title="Note" style={{ marginTop: 14 }}>

@@ -111,7 +111,11 @@ the note, the grip sits behind its end (inside for long notes and notes at the c
 none`); the grid's ScrollView is disabled only while a drag runs, so swiping empty cells still scrolls.
 Every move is computed from the notes at gesture start (no accumulated error), and the whole drag is one undo
 step: `recordHistory()` once, then `updateProject(..., { record: false })`; a drag that ends where it began
-discards its step (`discardLastHistory`).
+discards its step (`discardLastHistory`). Auto-scroll: while a drag runs, a 16 ms ticker scrolls the grid when
+the finger is within `EDGE_ZONE` of the visible edge (`edgeScrollSpeed`, up to 900 px/s) and re-applies the
+drag with the distance scrolled so far, so the note stays under the finger even when it holds still. The grid's
+offset is tracked in a ref (`onScroll` is ignored mid-drag). react-native-web logs the dev-only warning
+"ScrollView doesn't take rejection well" during drags; it is harmless (the responder refuses to hand over).
 
 ## Not done yet
 

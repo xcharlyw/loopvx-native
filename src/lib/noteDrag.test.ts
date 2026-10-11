@@ -1,4 +1,4 @@
-import { clampPitch, GRIP_W, movedNote, noteHitAreas, resizedNote } from './noteDrag';
+import { clampPitch, clampScroll, EDGE_MAX_SPEED, EDGE_ZONE, edgeScrollSpeed, GRIP_W, movedNote, noteHitAreas, resizedNote } from './noteDrag';
 
 const note = { pitch: 48, start: 0.25, length: 0.125, velocity: 0.8 };
 const W = 24;
@@ -72,4 +72,37 @@ describe('noteHitAreas', () => {
     expect(a.move.left + a.move.width).toBeLessThanOrEqual(a.grip.left + 1e-9); // and no overlap with the move area
     expect(a.move.width).toBeGreaterThanOrEqual(8);
   });
+});
+
+describe('edgeScrollSpeed', () => {
+  const L = 100;
+  const R = 400;
+  it('is still in the middle of the view', () => {
+    expect(edgeScrollSpeed(250, L, R)).toBe(0);
+    expect(edgeScrollSpeed(L + EDGE_ZONE + 1, L, R)).toBe(0);
+    expect(edgeScrollSpeed(R - EDGE_ZONE - 1, L, R)).toBe(0);
+  });
+  it('scrolls left near the left edge and right near the right edge, faster the nearer', () => {
+    expect(edgeScrollSpeed(L + EDGE_ZONE / 2, L, R)).toBeCloseTo(-EDGE_MAX_SPEED / 2);
+    expect(edgeScrollSpeed(R - EDGE_ZONE / 2, L, R)).toBeCloseTo(EDGE_MAX_SPEED / 2);
+    expect(Math.abs(edgeScrollSpeed(L + 5, L, R))).toBeGreaterThan(Math.abs(edgeScrollSpeed(L + 30, L, R)));
+  });
+  it('stays at full speed beyond the edge, whichever side', () => {
+    expect(edgeScrollSpeed(L - 200, L, R)).toBe(-EDGE_MAX_SPEED);
+    expect(edgeScrollSpeed(R + 500, L, R)).toBe(EDGE_MAX_SPEED);
+  });
+  it('is safe with a missing or tiny view', () => {
+    expect(edgeScrollSpeed(10, 0, 0)).toBe(0);
+    expect(edgeScrollSpeed(NaN, L, R)).toBe(0);
+    expect(edgeScrollSpeed(30, 0, 60)).toBe(0); // the middle third of a tiny view is calm
+    expect(edgeScrollSpeed(50, 0, 60)).toBeGreaterThan(0);
+    expect(edgeScrollSpeed(1, 0, 60)).toBeLessThan(0);
+  });
+});
+
+it('clampScroll keeps the offset inside the content', () => {
+  expect(clampScroll(-30, 1536, 300)).toBe(0);
+  expect(clampScroll(400, 1536, 300)).toBe(400);
+  expect(clampScroll(9999, 1536, 300)).toBe(1236);
+  expect(clampScroll(50, 200, 300)).toBe(0); // content narrower than the view
 });

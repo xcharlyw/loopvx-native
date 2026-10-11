@@ -6,6 +6,12 @@ export const web = (style: Record<string, string>) => (Platform.OS === 'web' ? (
 
 export type DragPhase = 'move' | 'end' | 'cancel';
 
+/** Where the finger is on the page (absolute), for gestures that care about screen edges. */
+export interface DragPoint {
+  x: number;
+  y: number;
+}
+
 /** The responder system's touch record (present on native and react-native-web, missing from RN's event type). */
 interface TouchHistory {
   indexOfSingleActiveTouch: number;
@@ -13,7 +19,7 @@ interface TouchHistory {
 }
 
 /** Pan gesture that reports its offset; `claim` decides whether it takes over the touch. */
-export function useDrag(claim: 'start' | 'move', enabled: boolean, onDrag: (dx: number, dy: number, phase: DragPhase) => void) {
+export function useDrag(claim: 'start' | 'move', enabled: boolean, onDrag: (dx: number, dy: number, phase: DragPhase, at?: DragPoint) => void) {
   const latest = useRef({ enabled, onDrag });
   latest.current = { enabled, onDrag };
   // The gesture's dx/dy restart at 0 when it takes over mid-move; add back the distance travelled before that.
@@ -31,8 +37,8 @@ export function useDrag(claim: 'start' | 'move', enabled: boolean, onDrag: (dx: 
         onMoveShouldSetPanResponderCapture: (_, g) =>
           claim === 'move' && latest.current.enabled && (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 6),
         onPanResponderTerminationRequest: () => false,
-        onPanResponderMove: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'move'),
-        onPanResponderRelease: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'end'),
+        onPanResponderMove: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'move', { x: g.moveX, y: g.moveY }),
+        onPanResponderRelease: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'end', { x: g.moveX, y: g.moveY }),
         onPanResponderTerminate: () => latest.current.onDrag(0, 0, 'cancel'),
       }).panHandlers,
     [claim],

@@ -39,3 +39,26 @@ export function noteHitAreas(x: number, w: number, gridWidth: number): { move: {
   return { move: { left: x, width: Math.max(10, w) }, grip: { left: end - 2, width: GRIP_W }, gripInside: false };
 }
 
+
+/** How close to the edge of the visible grid the finger must be before it scrolls, in px. */
+export const EDGE_ZONE = 56;
+/** Scroll speed at the very edge, in px per second. */
+export const EDGE_MAX_SPEED = 900;
+
+/**
+ * Auto-scroll while dragging: 0 in the middle, growing the nearer the finger gets to an edge of the
+ * visible area (negative = scroll left, positive = right). Past the edge it stays at the maximum, so a
+ * finger dragged off-screen keeps scrolling at full speed.
+ */
+export function edgeScrollSpeed(fingerX: number, viewLeft: number, viewRight: number, zone = EDGE_ZONE, max = EDGE_MAX_SPEED): number {
+  if (!(viewRight > viewLeft) || !Number.isFinite(fingerX)) return 0;
+  const z = Math.min(zone, (viewRight - viewLeft) / 3); // a tiny view still keeps a calm middle
+  const intoLeft = (viewLeft + z - fingerX) / z;
+  const intoRight = (fingerX - (viewRight - z)) / z;
+  if (intoLeft > 0) return -Math.min(1, intoLeft) * max;
+  if (intoRight > 0) return Math.min(1, intoRight) * max;
+  return 0;
+}
+
+/** A scroll offset kept inside the content: 0 .. contentWidth - viewWidth. */
+export const clampScroll = (x: number, contentWidth: number, viewWidth: number) => Math.max(0, Math.min(Math.max(0, contentWidth - viewWidth), x));

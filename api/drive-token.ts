@@ -4,8 +4,9 @@
 import { authorize, text } from './_lib/auth';
 
 export async function POST(req: Request): Promise<Response> {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  // trim: a pasted secret often carries a trailing newline or space, which Google answers with invalid_client
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
   if (!clientId || !clientSecret) return text(500, 'Google Drive ist auf dem Server nicht eingerichtet (GOOGLE_CLIENT_ID/SECRET fehlen)');
   const denied = await authorize(req);
   if (denied) return text(401, denied);
@@ -26,6 +27,8 @@ export async function POST(req: Request): Promise<Response> {
   const json = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
   // invalid_grant: revoked, expired (7 days while the consent screen is in "Testing"), or a different client.
   if (json.error === 'invalid_grant') return text(401, 'Google-Drive-Zugriff abgelaufen, bitte neu mit Google anmelden');
+  // The client ID is public; naming it shows which client the server used (secret never leaves the server).
+  if (json.error === 'invalid_client') return text(502, `Google: invalid_client (Server-Client ${clientId}, Secret ${clientSecret.length} Zeichen)`);
   if (!res.ok || !json.access_token) return text(502, `Google: ${json.error ?? res.status}`);
   return Response.json({ accessToken: json.access_token, expiresIn: json.expires_in ?? 3600 }, { headers: { 'Cache-Control': 'no-store' } });
 }

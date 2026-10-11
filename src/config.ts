@@ -19,5 +19,8 @@ export const VOCALS_ENDPOINT = `${API_BASE}/vocals`;
 /** Trades the Google refresh token for a Drive access token (needs the client secret, so server-side). */
 export const DRIVE_TOKEN_ENDPOINT = `${API_BASE}/drive-token`;
 
-/** Drive access: only files this app created (non-sensitive scope, no Google review needed). */
-export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+/** Drive access: the app's own LOOPVX folder (drive.file) for sync ... */
+export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+/** ... plus read-only access to the rest of Drive, only used to import loops the user picks (never writes there). */
+export const DRIVE_READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+export const DRIVE_SCOPE = `${DRIVE_FILE_SCOPE} ${DRIVE_READ_SCOPE}`;

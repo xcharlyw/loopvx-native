@@ -8,6 +8,7 @@ import { deleteSample, importSamplesFromDevice } from '../lib/samples';
 import { errorText, getState, setSamples, setState, toast, upsertSample, useStore } from '../lib/store';
 import { db } from '../storage/db';
 import type { Sample, SampleCategory } from '../types';
+import { DriveImport } from './DriveImport';
 import { useEngine } from './hooks';
 import { Check, Play, Plus, Stop, Upload } from './icons';
 import { Btn, Chip, IconBtn, Section, Txt } from './kit';
@@ -75,12 +76,15 @@ export function LibraryPanel() {
   return (
     <Sheet title="Library">
       <Section title="Google Drive">
-        <Txt style={s.note}>Drive ist noch nicht eingerichtet. Samples kannst du direkt vom Gerät hochladen.</Txt>
+        <Txt style={s.note}>Loops aus deinen Drive-Ordnern importieren oder direkt vom Gerät hochladen.</Txt>
         <View style={[s.row, { marginTop: 10 }]}>
           <Btn small onPress={() => void upload()}>
             <Upload size={14} />
             Vom Gerät hochladen
           </Btn>
+        </View>
+        <View style={{ marginTop: 10 }}>
+          <DriveImport />
         </View>
       </Section>
 

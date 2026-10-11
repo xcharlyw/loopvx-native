@@ -42,6 +42,12 @@ describe('POST /api/drive-token', () => {
     expect(form.get('grant_type')).toBe('refresh_token');
   });
 
+  it('passes on the scopes the user granted', async () => {
+    setup({ body: { access_token: 'ya29.x', expires_in: 3599, scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly' } });
+    const json = (await (await POST(request({ refreshToken: '1//r' }))).json()) as { scope: string };
+    expect(json.scope).toContain('drive.readonly');
+  });
+
   it('rejects users that are not on the allow list without calling Google', async () => {
     const calls = setup({ body: {} }, 'someone@else.com');
     const res = await POST(request({ refreshToken: '1//r' }));

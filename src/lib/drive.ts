@@ -10,6 +10,10 @@ export const FOLDER_MIME = 'application/vnd.google-apps.folder';
 export interface DriveFile {
   id: string;
   name: string;
+  mimeType?: string;
+  /** Bytes, as a string (Drive's way). */
+  size?: string;
+  modifiedTime?: string;
   appProperties?: Record<string, string>;
 }
 
@@ -25,7 +29,7 @@ export interface DriveMeta {
 /** Drive access is missing or was revoked: the fix is signing in with Google again. */
 export class DriveAuthError extends Error {}
 
-let cached: { token: string; expires: number } | null = null;
+let cached: { token: string; expires: number; scope: string } | null = null;
 
 export async function driveLinked(): Promise<boolean> {
   return Boolean((await getGoogleRefreshToken()) && (await getSession()));
@@ -46,9 +50,15 @@ async function accessToken(): Promise<string> {
   });
   if (res.status === 401) throw new DriveAuthError((await res.text()) || 'Bitte neu mit Google anmelden');
   if (!res.ok) throw new Error((await res.text()) || `Drive-Anmeldung fehlgeschlagen (${res.status})`);
-  const json = (await res.json()) as { accessToken: string; expiresIn: number };
-  cached = { token: json.accessToken, expires: Date.now() + json.expiresIn * 1000 };
+  const json = (await res.json()) as { accessToken: string; expiresIn: number; scope?: string };
+  cached = { token: json.accessToken, expires: Date.now() + json.expiresIn * 1000, scope: json.scope ?? '' };
   return cached.token;
+}
+
+/** True when the user granted read access to their whole Drive (needed to import loops from existing folders). */
+export async function driveCanRead(): Promise<boolean> {
+  await accessToken();
+  return /drive\.readonly/.test(cached?.scope ?? '');
 }
 
 async function call(url: string, init: RequestInit = {}, retried = false): Promise<Response> {
@@ -74,7 +84,7 @@ export async function listFiles(q: string): Promise<DriveFile[]> {
   const out: DriveFile[] = [];
   let pageToken = '';
   do {
-    const params = new URLSearchParams({ q: `${q} and trashed = false`, fields: 'nextPageToken, files(id, name, appProperties)', pageSize: '1000', spaces: 'drive' });
+    const params = new URLSearchParams({ q: `${q} and trashed = false`, fields: 'nextPageToken, files(id, name, mimeType, size, modifiedTime, appProperties)', pageSize: '1000', spaces: 'drive' });
     if (pageToken) params.set('pageToken', pageToken);
     const json = (await (await call(`${API}/files?${params}`)).json()) as { files: DriveFile[]; nextPageToken?: string };
     out.push(...json.files);
@@ -85,6 +95,11 @@ export async function listFiles(q: string): Promise<DriveFile[]> {
 
 export function childrenOf(folderId: string): Promise<DriveFile[]> {
   return listFiles(`'${escapeQ(folderId)}' in parents`);
+}
+
+/** Audio and folders anywhere in Drive whose name contains `text` (needs the read scope). */
+export function searchByName(text: string): Promise<DriveFile[]> {
+  return listFiles(`name contains '${escapeQ(text)}' and mimeType != 'application/vnd.google-apps.shortcut'`);
 }
 
 /** The app's folder for `role`, created on first use. Found by app property, so renaming it in Drive is fine. */

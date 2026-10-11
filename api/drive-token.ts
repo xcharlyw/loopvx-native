@@ -24,11 +24,12 @@ export async function POST(req: Request): Promise<Response> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
   });
-  const json = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
+  const json = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; scope?: string; error?: string };
   // invalid_grant: revoked, expired (7 days while the consent screen is in "Testing"), or a different client.
   if (json.error === 'invalid_grant') return text(401, 'Google-Drive-Zugriff abgelaufen, bitte neu mit Google anmelden');
   // The client ID is public; naming it shows which client the server used (secret never leaves the server).
   if (json.error === 'invalid_client') return text(502, `Google: invalid_client (Server-Client ${clientId}, Secret ${clientSecret.length} Zeichen)`);
   if (!res.ok || !json.access_token) return text(502, `Google: ${json.error ?? res.status}`);
-  return Response.json({ accessToken: json.access_token, expiresIn: json.expires_in ?? 3600 }, { headers: { 'Cache-Control': 'no-store' } });
+  // scope: what the user granted (the app shows the Drive import only when drive.readonly is part of it)
+  return Response.json({ accessToken: json.access_token, expiresIn: json.expires_in ?? 3600, scope: json.scope }, { headers: { 'Cache-Control': 'no-store' } });
 }

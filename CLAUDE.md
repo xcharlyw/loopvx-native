@@ -82,7 +82,11 @@ tests/              server tests (anything in api/ is deployed as a function)
   device and traded for access tokens by `api/drive-token.ts` (needs `GOOGLE_CLIENT_ID/SECRET` of the
   same OAuth client). Sync mirrors projects (JSON) and samples (audio) into a "LOOPVX" Drive folder;
   `syncPlan.ts` is the merge (newest wins, deletions via synced/deleted memory). Never hard-delete on
-  Drive (trash only). The SoulVX Supabase project and its Google client are unrelated: don't touch.
+  Drive (trash only). Sign-in asks for `drive.file` (the LOOPVX sync folder) **and** `drive.readonly` (`DRIVE_SCOPE` in
+  `config.ts`); `api/drive-token.ts` returns the granted `scope`, `driveCanRead()` gates the **Drive import** (Library →
+  `DriveImport`: browse folders, tick files or import a folder recursively; pure logic in `driveImport.ts`, run in
+  `driveImportRun.ts`; samples get id `drive:<fileId>`, dedupe by `driveId`, folder path + name give category/BPM/key; the
+  copies are then synced into LOOPVX/Samples like any sample). Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
 ## Tempo detection
@@ -178,7 +182,7 @@ offset is tracked in a ref (`onScroll` is ignored mid-drag). react-native-web lo
 
 ## Not done yet
 
-Drive import of existing loop folders (needs `drive.readonly` or the Picker), audio recording,
+Audio recording,
 App Store build (EAS; never tested on a real device natively; the effect graph and sample instrument
 use WaveShaper/Convolver/StereoPanner, which react-native-audio-api implements natively but nobody
 has heard on a phone yet).

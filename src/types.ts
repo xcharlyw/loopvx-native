@@ -1,3 +1,5 @@
+import type { ScaleName } from './lib/melody';
+
 export type SampleCategory = 'kick' | 'top' | 'synth' | 'vocal' | 'other';
 
 export interface Sample {
@@ -167,6 +169,9 @@ export interface Project {
   name: string;
   bpm: number;
   key: string;
+  /** Scale the MIDI generators use (default: the mode of `key`) and the index of their shared chord progression. */
+  scale?: ScaleName;
+  progression?: number;
   tracks: Track[];
   sceneCount: number;
   loop: { enabled: boolean; start: number; end: number };

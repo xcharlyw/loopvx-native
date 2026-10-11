@@ -1,5 +1,6 @@
 import { snapBars } from '../audio/timing';
 import { MAX_DEVICES, createDevice, deviceParams } from '../audio/devices';
+import type { ScaleName } from './melody';
 import type { Clip, Device, DeviceType, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
 
 export const uid = (): string =>
@@ -391,6 +392,22 @@ export function audibleGain(track: Track, anySolo: boolean): number {
   if (track.muted) return 0;
   if (anySolo && !track.solo) return 0;
   return track.volume;
+}
+
+/** Root (0 = C … 11 = B) and mode of a key name like "F# minor". */
+export function parseKey(key: string): { root: number; mode: 'minor' | 'major' } {
+  const [name, mode] = key.trim().split(/\s+/);
+  const root = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(name);
+  return { root: root < 0 ? 0 : root, mode: mode?.toLowerCase().startsWith('maj') ? 'major' : 'minor' };
+}
+
+/**
+ * What every MIDI generator of the project plays in: the key's root, the scale (chosen, else the key's mode) and
+ * the chord progression. Sharing it is what makes a bass and an arp from separate clips fit together.
+ */
+export function projectHarmony(project: Pick<Project, 'key' | 'scale' | 'progression'>): { root: number; scale: ScaleName; progression: number } {
+  const { root, mode } = parseKey(project.key);
+  return { root, scale: project.scale ?? mode, progression: project.progression ?? 0 };
 }
 
 export const KEYS = [

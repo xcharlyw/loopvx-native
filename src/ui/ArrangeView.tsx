@@ -234,7 +234,7 @@ export function ArrangeView() {
                   onLongPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'track' })}
                 >
                   <View style={s.trackTitle}>
-                    <View style={[s.dot, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
+                    <View style={[s.dot, trackKind(track) === 'midi' && s.dotMidi, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
                     <Txt numberOfLines={1} style={s.trackName}>
                       {track.name}
                     </Txt>
@@ -250,7 +250,13 @@ export function ArrangeView() {
                       on={track.solo}
                       onPress={() => updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, solo: !t.solo })), { reschedule: false })}
                     />
-                    <Txt style={[s.kindBadge, trackKind(track) === 'midi' && s.kindBadgeMidi]}>{trackKind(track) === 'midi' ? 'MIDI' : 'AUDIO'}</Txt>
+                    <Pressable
+                      accessibilityLabel={`Geräte von ${track.name}`}
+                      onPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'devices' })}
+                      style={[s.fxBtn, !!track.devices?.length && s.fxBtnOn]}
+                    >
+                      <Txt style={[s.fxText, !!track.devices?.length && { color: C.accentInk }]}>{track.devices?.length ? `FX${track.devices.length}` : 'FX'}</Txt>
+                    </Pressable>
                     {!small && (
                       <Fader
                         value={track.volume}
@@ -479,8 +485,11 @@ const s = StyleSheet.create({
   trackTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, overflow: 'hidden' },
   dot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   trackName: { ...font(600), fontSize: 13, flexShrink: 1 },
-  kindBadge: { ...mono(), fontSize: 8, color: C.dim, letterSpacing: 0.6, marginLeft: 2 },
-  kindBadgeMidi: { color: C.accent },
+  fxBtn: { minWidth: 24, height: 24, paddingHorizontal: 3, borderRadius: 7, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  fxBtnOn: { backgroundColor: C.accent, borderColor: C.accent },
+  fxText: { ...mono(), fontSize: 9, color: C.muted },
+  /** MIDI tracks get a square dot, audio tracks a round one. */
+  dotMidi: { borderRadius: 2 },
   trackControls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   addTrack: { flexDirection: 'row', alignItems: 'center', gap: 2, height: ADD_ROW_H },
   addTrackText: { color: C.dim, fontSize: 11 },

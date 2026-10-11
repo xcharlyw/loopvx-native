@@ -105,7 +105,10 @@ sheet). `melody.ts` generators are scale-aware and tested for musical properties
 endings, second phrase answers the first); `SUGGESTED_PRESET` maps a generator style to a sound.
 All melodic styles (arp, reese, trance, prog-arp, pad, rave) take `progression` (index into the scale's chord
 progressions): the piano roll's "Akkordfolge" chips keep it across generations, so bass and arp built on the same
-progression play the same chord in every bar (tested). Without it a generator picks one at random.
+progression play the same chord in every bar (tested). Key (`project.key`, the TopBar), scale (`project.scale`, default the
+key's mode) and progression (`project.progression`) belong to the **project** (`projectHarmony`), not to a clip: every
+generator on every track plays in them. The reese bass only plays root, fifth and octave of the bar's own chord and the
+arp only its triad, so they cannot clash (tested). Without a progression index a generator picks one at random.
 WaveShapers that distort (track drive, master limiter, saturator, limiter device) use `oversample` to avoid aliasing
 hash; the track drive only while it is turned up (CPU).
 
@@ -127,7 +130,8 @@ notes means MIDI). Audio tracks take samples (Drive, uploads, AI vocals) and nev
 take only MIDI clips and carry the instrument (`canHoldClip` guards cross-track clip drags, `trackForSample`
 only picks audio tracks, `createMidiClipOnTrack` refuses audio tracks, Session slots of MIDI tracks are
 disabled). The type can only be changed on an empty track (`setTrackKind`, TrackPanel "Spurtyp"). The arrange
-header shows an AUDIO / MIDI badge; the add row has "+ Audio" and "+ MIDI".
+header marks MIDI tracks with a square colour dot (audio: round) and has an FX button (opens the device chain, shows the
+device count); the add row has "+ Audio" and "+ MIDI".
 
 ## Device chain (plugin slots)
 

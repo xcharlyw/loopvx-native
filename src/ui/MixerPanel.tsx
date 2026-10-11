@@ -4,7 +4,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { C, font } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { mapTrack } from '../lib/project';
-import { setMetronome, updateProject, useStore } from '../lib/store';
+import { setMetronome, setState, updateProject, useStore } from '../lib/store';
 import { Fader } from './Fader';
 import { Metronome } from './icons';
 import { Chip, Mono, MsButton, Section, Txt } from './kit';
@@ -123,6 +123,9 @@ export function MixerPanel() {
                 onPress={() => updateProject((p) => mapTrack(p, t.id, (x) => ({ ...x, solo: !x.solo })), { reschedule: false })}
               />
             </View>
+            <Chip variant={t.devices?.length ? 'on' : 'ghost'} onPress={() => setState({ selectedTrackId: t.id, panel: 'devices' })} textStyle={{ fontSize: 11 }}>
+              {t.devices?.length ? `FX ${t.devices.length}` : 'FX +'}
+            </Chip>
           </View>
         ))}
       </ScrollView>

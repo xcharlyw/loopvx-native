@@ -93,19 +93,20 @@ export function progressionLabel(scale: ScaleName, prog: number[]): string {
 
 // ---------------------------------------------------------------- Reese bass
 
-type BassBar = { at: number; len: number; vel: number; to?: 'next' | 'octave' | 'fifth' }[];
+type BassBar = { at: number; len: number; vel: number; to?: 'octave' | 'fifth' }[];
 
 /** Rhythm cells for one bar of bass (16ths): long notes, a pickup into the next chord, a gallop. */
 const BASS_BARS: BassBar[] = [
   [{ at: 0, len: 16, vel: 1 }],
-  [{ at: 0, len: 12, vel: 1 }, { at: 12, len: 4, vel: 0.85, to: 'next' }],
+  [{ at: 0, len: 12, vel: 1 }, { at: 12, len: 4, vel: 0.85, to: 'fifth' }],
   [{ at: 0, len: 6, vel: 1 }, { at: 6, len: 6, vel: 0.8 }, { at: 12, len: 4, vel: 0.9, to: 'octave' }],
   [{ at: 0, len: 8, vel: 1 }, { at: 8, len: 4, vel: 0.8, to: 'fifth' }, { at: 12, len: 4, vel: 0.9 }],
 ];
 
 /**
  * A reese bassline: long, legato notes on the roots of the chord progression (one chord per bar),
- * with pickups into the next chord and occasional octave or fifth jumps. Low register, built for
+ * with occasional octave or fifth jumps. It only ever plays root, fifth and octave of the bar's own chord (never a
+ * pickup into the next one), so it cannot rub against an arp or pad that plays that chord. Low register, built for
  * detuned saws with a slow filter.
  */
 export function reeseLine(o: MelodyOpts): Note[] {
@@ -114,10 +115,9 @@ export function reeseLine(o: MelodyOpts): Note[] {
   const out: Note[] = [];
   for (let bar = 0; bar < o.bars; bar++) {
     const deg = prog[bar % 4];
-    const next = prog[(bar + 1) % 4];
     const cell = bar % 4 === 0 ? pick([BASS_BARS[0], BASS_BARS[1], BASS_BARS[3]], o.rand) : bar % 4 === 3 ? pick([BASS_BARS[1], BASS_BARS[2]], o.rand) : pick(BASS_BARS, o.rand);
     for (const c of cell) {
-      const d = c.to === 'next' ? next : c.to === 'fifth' ? deg + 4 : c.to === 'octave' ? deg + 7 : deg;
+      const d = c.to === 'fifth' ? deg + 4 : c.to === 'octave' ? deg + 7 : deg;
       out.push(note(degreePitch(o.scale, d, base), bar * 16 + c.at, c.len, c.vel));
     }
   }

@@ -44,7 +44,7 @@ function KeyPicker({ small }: { small: boolean }) {
                   key={k}
                   style={[s.menuItem, k === key && s.menuItemOn]}
                   onPress={() => {
-                    updateProject((p) => ({ ...p, key: k }), { reschedule: false });
+                    updateProject((p) => ({ ...p, key: k, scale: undefined }), { reschedule: false });
                     setOpen(false);
                   }}
                 >

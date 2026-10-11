@@ -1,6 +1,7 @@
 import { arpLine, degreePitch, progressionLabel, hypnoticLine, padChords, pitchClasses, progArp, raveStabs, reeseLine, rootPitch, SCALES, scaleOf, tranceLead, type MelodyOpts, type ScaleName } from './melody';
 import { generatePattern, PATTERN_GROUPS, seededRandom, usesScale } from './patterns';
 import type { Note } from '../types';
+import { parseKey, projectHarmony } from './project';
 
 const opts = (root: number, scale: ScaleName, bars: number, seed: number): MelodyOpts => ({ root, scale, bars, rand: seededRandom(seed) });
 const pcOf = (n: Note) => ((n.pitch % 12) + 12) % 12;
@@ -223,6 +224,33 @@ describe('shared chord progression', () => {
         }
       }
     }
+  });
+
+  it('bass and arp only play tones of the bar\'s own chord, so they never rub', () => {
+    for (const sc of SCALES) {
+      for (let progression = 0; progression < sc.progressions.length; progression++) {
+        for (const root of ROOTS) {
+          const base = rootPitch(root, 60);
+          const triadPcs = (b: number) => {
+            const d = sc.progressions[progression][b % 4];
+            return new Set([d, d + 2, d + 4].map((deg) => ((degreePitch(sc.id, deg, base) % 12) + 12) % 12));
+          };
+          for (const seed of SEEDS) {
+            const arp = arpLine({ ...opts(root, sc.id, 8, seed), progression });
+            const bass = reeseLine({ ...opts(root, sc.id, 8, seed + 20), progression });
+            for (const n of [...arp, ...bass]) expect(triadPcs(bar(n)).has(pcOf(n))).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('parses keys and derives the project harmony', () => {
+    expect(parseKey('F# minor')).toEqual({ root: 6, mode: 'minor' });
+    expect(parseKey('A major')).toEqual({ root: 9, mode: 'major' });
+    expect(parseKey('???')).toEqual({ root: 0, mode: 'minor' });
+    expect(projectHarmony({ key: 'F minor' })).toEqual({ root: 5, scale: 'minor', progression: 0 });
+    expect(projectHarmony({ key: 'C major', scale: 'dorian', progression: 2 })).toEqual({ root: 0, scale: 'dorian', progression: 2 });
   });
 
   it('the arp stays in key and in one register', () => {

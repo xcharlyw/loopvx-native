@@ -10,7 +10,7 @@ import { exportMidiClip, togglePlay } from '../lib/actions';
 import { noteName } from '../lib/midi';
 import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_GROUPS, usesScale, type PatternStyle } from '../lib/patterns';
 import { progressionLabel, SCALES, scaleOf, type ScaleName } from '../lib/melody';
-import { addNote, duplicateNote, findClip, findNote, mapTrack, noteIndexAt, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
+import { addNote, duplicateNote, findClip, findNote, mapTrack, noteIndexAt, parseKey, projectHarmony, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
 import { discardLastHistory, recordHistory, setState, updateProject, useStore } from '../lib/store';
 import { clampPitch, clampScroll, edgeScrollSpeed, GRIP_W, movedNote, noteHitAreas, resizedNote } from '../lib/noteDrag';
 import type { Note } from '../types';
@@ -51,12 +51,9 @@ function initialLow(notes: Note[], sampler = false): number {
   return clampLow(Math.floor(lowest / 12) * 12);
 }
 
-// The generator's last choice, kept while the app runs so every clip of a track lands in the same key.
+// The generator's last style, kept while the app runs. Key, scale and chord progression belong to the project.
 let lastStyle: PatternStyle = 'rumble';
 let lastDrum: PatternStyle = 'kick';
-let lastRoot = 5; // F minor
-let lastProgression = 0;
-let lastScale: ScaleName = 'minor';
 
 /**
  * Step piano roll, two octaves at a time. Tap an empty cell to add a note (and hear it), tap a note to
@@ -182,9 +179,12 @@ export function PianoRollPanel() {
   const [picked, setStyle] = useState(sampler ? lastDrum : lastStyle);
   // The instrument may change while the roll is open: drum styles only for sample instruments.
   const style = sampler === isDrumStyle(picked) ? picked : sampler ? lastDrum : lastStyle;
-  const [root, setRoot] = useState(lastRoot);
-  const [scale, setScale] = useState<ScaleName>(lastScale);
-  const [progression, setProgression] = useState(lastProgression);
+  const projectKey = useStore((st) => st.project.key);
+  const projectScale = useStore((st) => st.project.scale);
+  const projectProgression = useStore((st) => st.project.progression);
+  const { root, scale, progression } = projectHarmony({ key: projectKey, scale: projectScale, progression: projectProgression });
+  /** Key, scale and progression are the project's: every generator on every track plays in them. */
+  const setHarmony = (patch: { key?: string; scale?: ScaleName | undefined; progression?: number }) => updateProject((p) => ({ ...p, ...patch }), { reschedule: false });
 
   if (!found?.clip.notes) {
     return (
@@ -258,15 +258,12 @@ export function PianoRollPanel() {
   const generate = () => {
     if (isDrumStyle(style)) lastDrum = style;
     else lastStyle = style;
-    lastRoot = root;
-    lastScale = scale;
-    lastProgression = progression;
     const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31), scale, progression });
     updateProject((p) => updateClip(p, clip.id, { notes: next }));
     setLow(initialLow(next, sampler));
     setSel(null);
   };
-  const shiftKey = (by: number) => setRoot((r) => (r + by + 12) % 12);
+  const shiftKey = (by: number) => setHarmony({ key: `${KEY_NAMES[(root + by + 12) % 12]} ${parseKey(projectKey).mode}` });
   /** The preset that suits the chosen style, unless the track plays a sample or already has it. */
   const suggestion = presetById(SUGGESTED_PRESET[style]);
   const offerSuggestion = !!suggestion && track.synth?.wave !== 'sample' && track.synth?.preset !== suggestion.id && !(sampler && !isDrumStyle(style));
@@ -483,18 +480,15 @@ export function PianoRollPanel() {
             <Txt style={s.sub}>Tonleiter</Txt>
             <View style={s.toolbar}>
               {SCALES.map((sc) => (
-                <Chip key={sc.id} variant={scale === sc.id ? 'on' : 'ghost'} onPress={() => {
-                    setScale(sc.id);
-                    setProgression(0);
-                  }}>
+                <Chip key={sc.id} variant={scale === sc.id ? 'on' : 'ghost'} onPress={() => setHarmony({ scale: sc.id, progression: 0 })}>
                   {sc.label}
                 </Chip>
               ))}
             </View>
-            <Txt style={[s.sub, { marginTop: 10 }]}>Akkordfolge (für alle Spuren gleich wählen, dann passt es zusammen)</Txt>
+            <Txt style={[s.sub, { marginTop: 10 }]}>Akkordfolge (gilt für das ganze Projekt: Bass, Arp und Pads passen zusammen)</Txt>
             <View style={s.toolbar}>
               {scaleOf(scale).progressions.map((prog, i) => (
-                <Chip key={i} variant={progression === i ? 'on' : 'ghost'} onPress={() => setProgression(i)}>
+                <Chip key={i} variant={progression === i ? 'on' : 'ghost'} onPress={() => setHarmony({ progression: i })}>
                   {progressionLabel(scale, prog)}
                 </Chip>
               ))}

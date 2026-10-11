@@ -3,7 +3,7 @@ import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { C, font, layout, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { placeSample, sceneToArrangement } from '../lib/actions';
-import { setSlot } from '../lib/project';
+import { setSlot, trackKind } from '../lib/project';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { useEngine, useSmall } from './hooks';
 import { Play, Stop, TimelineIcon } from './icons';
@@ -101,6 +101,14 @@ export function SessionView() {
                 </View>
               </Pressable>
               {project.tracks.map((t) => {
+                if (trackKind(t) === 'midi') {
+                  // MIDI tracks play notes from the arrangement; the session grid launches audio loops.
+                  return (
+                    <View key={t.id} style={[s.slot, { width: slotW, opacity: 0.35 }]}>
+                      <Txt style={s.slotText}>{scene === 0 ? 'MIDI' : ''}</Txt>
+                    </View>
+                  );
+                }
                 const slot = t.slots[scene];
                 const sample = slot ? sampleById.get(slot.sampleId) : undefined;
                 const playing = active.get(t.id) === scene;

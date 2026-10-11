@@ -10,7 +10,7 @@ import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { readMidiFile, writeMidiFile } from './midi';
-import { addClip, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
+import { addClip, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
@@ -309,6 +309,11 @@ export async function importProjectFile() {
 
 /** A new, empty MIDI clip (4 bars) on a track at the playhead, selected and opened in the piano roll. */
 export function createMidiClipOnTrack(trackId: string) {
+  const track = getState().project.tracks.find((t) => t.id === trackId);
+  if (!track || trackKind(track) !== 'midi') {
+    toast('Das ist eine Audio-Spur. Lege eine MIDI-Spur an (Spur + MIDI) oder ändere den Spurtyp einer leeren Spur.');
+    return;
+  }
   const clip = createMidiClip(Math.floor(getState().cursor), 4);
   updateProject((p) => addClip(p, trackId, clip));
   setState({ selectedClipId: clip.id, selectedTrackId: trackId, panel: 'piano' });

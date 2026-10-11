@@ -125,6 +125,9 @@ export interface SessionSlot {
   sampleId: string;
 }
 
+/** An audio track holds audio clips; a MIDI track holds MIDI clips and has an instrument. */
+export type TrackKind = 'audio' | 'midi';
+
 export interface Track {
   id: string;
   name: string;
@@ -135,6 +138,8 @@ export interface Track {
   muted: boolean;
   solo: boolean;
   clips: Clip[];
+  /** Missing in older projects: see `trackKind` (inferred from what the track holds). */
+  kind?: TrackKind;
   /** Instrument for the track's MIDI clips (defaults apply when missing). */
   synth?: SynthSettings;
   /** Track effects; absent means none. */

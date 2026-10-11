@@ -1,4 +1,4 @@
-import { addClip, addNote, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -196,5 +196,72 @@ describe('piano roll note editing', () => {
 
   it('addNote keeps the list sorted', () => {
     expect(addNote(notes, { pitch: 30, start: 0, length: 0.1, velocity: 1 }).map((n) => n.pitch)).toEqual([30, 36, 43]);
+  });
+});
+
+describe('track kinds', () => {
+  const audioClip = { id: 'a', sampleId: 's', start: 0, length: 4, offset: 0 };
+  const midiClip = { id: 'm', sampleId: '', start: 0, length: 4, offset: 0, notes: [] };
+
+  it('new default tracks are audio tracks', () => {
+    for (const t of createProject().tracks) expect(trackKind(t)).toBe('audio');
+  });
+
+  it('infers the kind of older tracks from what they hold', () => {
+    const p = createProject();
+    const [t0] = p.tracks;
+    const { kind: _kind, ...old } = t0;
+    expect(trackKind(old)).toBe('audio');
+    expect(trackKind({ ...old, clips: [midiClip] })).toBe('midi');
+    expect(trackKind({ ...old, synth: { wave: 'sawtooth', cutoff: 1000, resonance: 1, attack: 0, decay: 0, sustain: 1, release: 0 } })).toBe('midi');
+    expect(trackKind({ ...old, kind: 'midi' })).toBe('midi'); // an explicit kind wins
+  });
+
+  it('a MIDI track takes MIDI clips and an audio track takes audio clips, never the other way round', () => {
+    const audio = createProject().tracks[0];
+    const midi = createMidiTrack(8);
+    expect(canHoldClip(audio, audioClip)).toBe(true);
+    expect(canHoldClip(audio, midiClip)).toBe(false);
+    expect(canHoldClip(midi, midiClip)).toBe(true);
+    expect(canHoldClip(midi, audioClip)).toBe(false);
+  });
+
+  it('a MIDI track is created blue and named MIDI', () => {
+    const t = createMidiTrack(8);
+    expect(t.kind).toBe('midi');
+    expect(t.name).toBe('MIDI');
+    expect(t.slots).toHaveLength(8);
+  });
+
+  it('only an empty track can change its kind', () => {
+    let p = createProject();
+    const id = p.tracks[0].id;
+    p = setTrackKind(p, id, 'midi');
+    expect(trackKind(p.tracks[0])).toBe('midi');
+    p = addClip(p, id, midiClip);
+    expect(setTrackKind(p, id, 'audio')).toBe(p); // has a clip: refused
+    const empty = createProject();
+    expect(setTrackKind(empty, empty.tracks[1].id, 'audio')).toBe(empty); // already audio: unchanged
+    expect(setTrackKind(empty, 'nope', 'midi')).toBe(empty);
+  });
+
+  it('switching back to audio drops the instrument', () => {
+    let p = createProject();
+    const id = p.tracks[0].id;
+    p = setTrackKind(p, id, 'midi');
+    p = mapTrack(p, id, (t) => ({ ...t, synth: { wave: 'sine', cutoff: 1000, resonance: 1, attack: 0, decay: 0, sustain: 1, release: 0 } }));
+    p = setTrackKind(p, id, 'audio');
+    expect(p.tracks[0].synth).toBeUndefined();
+    expect(trackKind(p.tracks[0])).toBe('audio');
+  });
+
+  it('samples are placed on audio tracks only, even when a MIDI track is selected or has the category', () => {
+    let p = createProject();
+    p = { ...p, tracks: [createMidiTrack(8), ...p.tracks] };
+    const midiId = p.tracks[0].id;
+    const sample = { id: 's', name: 'x', category: 'synth', addedAt: 0 } as never;
+    const target = trackForSample(p, sample, midiId)!;
+    expect(trackKind(target)).toBe('audio');
+    expect(target.category).toBe('synth'); // the audio "Synth / Lead" track, not the MIDI one
   });
 });

@@ -114,6 +114,15 @@ bar over a window of whole bars), sample peaks. Knob math is pure (`lib/knobMath
 log curves, steps, double tap resets. The keyboard (`Keys`) uses the responder grant, not `Pressable.onPressIn`,
 which waits and swallows quick taps on web. Sampler settings: `sampleRoot`, `tune` (cents), `gainDb`.
 
+## Track types
+
+`Track.kind` is `'audio' | 'midi'` (optional: old projects derive it via `trackKind()`: a synth or clips with
+notes means MIDI). Audio tracks take samples (Drive, uploads, AI vocals) and never get MIDI clips; MIDI tracks
+take only MIDI clips and carry the instrument (`canHoldClip` guards cross-track clip drags, `trackForSample`
+only picks audio tracks, `createMidiClipOnTrack` refuses audio tracks, Session slots of MIDI tracks are
+disabled). The type can only be changed on an empty track (`setTrackKind`, TrackPanel "Spurtyp"). The arrange
+header shows an AUDIO / MIDI badge; the add row has "+ Audio" and "+ MIDI".
+
 ## Piano roll dragging
 
 A selected note gets a move area and a length grip (`noteHitAreas`, `src/lib/noteDrag.ts`): the move area is

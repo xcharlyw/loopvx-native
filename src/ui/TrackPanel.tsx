@@ -4,12 +4,12 @@ import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
-import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
-import { getState, setState, updateProject, useStore } from '../lib/store';
+import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, setTrackKind, trackKind, trackSynth } from '../lib/project';
+import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import type { TrackFx } from '../types';
 import { confirmDestructive } from './confirm';
 import { Plus, Trash } from './icons';
-import { Btn, Section, Txt } from './kit';
+import { Btn, Chip, Section, Txt } from './kit';
 import { hz, Param, pct } from './Param';
 import { Sheet } from './Sheet';
 
@@ -26,6 +26,15 @@ export function TrackPanel() {
   }
   const trackId = track.id;
   const synth = trackSynth(track);
+  const kind = trackKind(track);
+  const pickKind = (k: 'audio' | 'midi') => {
+    if (k === kind) return;
+    if (track.clips.length) {
+      toast('Die Spur hat noch Clips. Lösche sie zuerst, dann kannst du den Typ ändern.');
+      return;
+    }
+    updateProject((p) => setTrackKind(p, trackId, k), { reschedule: false });
+  };
   const value = draft ?? track.name;
   const preset = presetById(synth.preset);
   const soundName = preset ? preset.name : synth.wave === 'sample' ? 'Sample-Instrument' : synth.wave === 'kick' ? 'Synth-Kick' : synth.wave === 'noise' ? 'Noise / Hat' : synth.preset === undefined && !track.synth ? 'Standard-Saw' : 'Eigener Sound';
@@ -83,6 +92,22 @@ export function TrackPanel() {
         </View>
       </Section>
 
+      <Section title="Spurtyp">
+        <View style={s.buttons}>
+          <Chip variant={kind === 'audio' ? 'on' : 'ghost'} onPress={() => pickKind('audio')}>
+            Audio
+          </Chip>
+          <Chip variant={kind === 'midi' ? 'on' : 'ghost'} onPress={() => pickKind('midi')}>
+            MIDI
+          </Chip>
+        </View>
+        <Txt style={s.note}>
+          {kind === 'midi'
+            ? 'MIDI-Spur: Noten in der Piano Roll, gespielt von einem Instrument (Synth, Sampler oder Drum-Synth).'
+            : 'Audio-Spur: Loops und Samples aus der Bibliothek. Für Noten und Synth lege eine MIDI-Spur an (der Spurtyp lässt sich nur bei leeren Spuren ändern).'}
+        </Txt>
+      </Section>
+
       <Section title="Effekte">
         <Param
           label="Filter"
@@ -114,6 +139,8 @@ export function TrackPanel() {
         )}
       </Section>
 
+      {kind === 'midi' && (
+        <>
       <Section title="MIDI">
         <Txt style={[s.note, { marginTop: 0, marginBottom: 10 }]}>
           MIDI-Clips spielen das Instrument dieser Spur. Noten setzt du in der Piano Roll (Clip zweimal antippen).
@@ -138,6 +165,8 @@ export function TrackPanel() {
           </Btn>
         </View>
       </Section>
+        </>
+      )}
 
       <Section title="Spur">
         <View style={{ flexDirection: 'row' }}>

@@ -1,11 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { C, RULER_H, font, layout } from '../constants/theme';
+import { C, RULER_H, font, layout, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
-import { addClip, createTrack, editClip, mapTrack, removeClip, updateClip, type ClipEdit } from '../lib/project';
+import { addClip, canHoldClip, createMidiTrack, createTrack, editClip, mapTrack, removeClip, trackKind, updateClip, type ClipEdit } from '../lib/project';
 import { getState, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
 import { Fader } from './Fader';
@@ -125,7 +125,9 @@ export function ArrangeView() {
     setDrag(null);
     if (phase === 'cancel') return;
     const edit = editClip(clip, mode, dx / zoom, grid);
-    const target = project.tracks[index + (mode === 'move' ? trackDelta(index, dy) : 0)];
+    const wanted = project.tracks[index + (mode === 'move' ? trackDelta(index, dy) : 0)];
+    // An audio clip cannot sit on a MIDI track and the other way round: the clip stays on its own track.
+    const target = wanted && canHoldClip(wanted, clip) ? wanted : project.tracks[index];
     if (target && target.id !== project.tracks[index].id) {
       updateProject((p) => addClip(removeClip(p, clip.id), target.id, { ...clip, ...edit }));
       setState({ selectedTrackId: target.id });
@@ -248,6 +250,7 @@ export function ArrangeView() {
                       on={track.solo}
                       onPress={() => updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, solo: !t.solo })), { reschedule: false })}
                     />
+                    <Txt style={[s.kindBadge, trackKind(track) === 'midi' && s.kindBadgeMidi]}>{trackKind(track) === 'midi' ? 'MIDI' : 'AUDIO'}</Txt>
                     {!small && (
                       <Fader
                         value={track.volume}
@@ -259,13 +262,22 @@ export function ArrangeView() {
                 </Pressable>
               );
             })}
-            <View style={[s.trackHeader, { height: ADD_ROW_H }]}>
+            <View style={[s.trackHeader, { height: ADD_ROW_H, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
               <Pressable
                 style={s.addTrack}
+                accessibilityLabel="Audio-Spur hinzufügen"
                 onPress={() => updateProject((p) => ({ ...p, tracks: [...p.tracks, createTrack('other', p.sceneCount)] }), { reschedule: false })}
               >
-                <Plus size={14} color={C.dim} />
-                <Txt style={s.addTrackText}>Spur</Txt>
+                <Plus size={12} color={C.dim} />
+                <Txt style={s.addTrackText}>Audio</Txt>
+              </Pressable>
+              <Pressable
+                style={s.addTrack}
+                accessibilityLabel="MIDI-Spur hinzufügen"
+                onPress={() => updateProject((p) => ({ ...p, tracks: [...p.tracks, createMidiTrack(p.sceneCount)] }), { reschedule: false })}
+              >
+                <Plus size={12} color={C.accent} />
+                <Txt style={[s.addTrackText, { color: C.accent }]}>MIDI</Txt>
               </Pressable>
             </View>
           </View>
@@ -467,9 +479,11 @@ const s = StyleSheet.create({
   trackTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, overflow: 'hidden' },
   dot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   trackName: { ...font(600), fontSize: 13, flexShrink: 1 },
+  kindBadge: { ...mono(), fontSize: 8, color: C.dim, letterSpacing: 0.6, marginLeft: 2 },
+  kindBadgeMidi: { color: C.accent },
   trackControls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  addTrack: { flexDirection: 'row', alignItems: 'center', gap: 8, height: ADD_ROW_H },
-  addTrackText: { color: C.dim, fontSize: 13 },
+  addTrack: { flexDirection: 'row', alignItems: 'center', gap: 2, height: ADD_ROW_H },
+  addTrackText: { color: C.dim, fontSize: 11 },
   lane: { borderBottomWidth: 1, borderBottomColor: C.lineSoft },
   laneSelected: { backgroundColor: 'rgba(255,255,255,0.015)' },
   clip: {

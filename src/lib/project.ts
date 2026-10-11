@@ -1,5 +1,5 @@
 import { snapBars } from '../audio/timing';
-import type { Clip, Note, Project, Sample, SampleCategory, SynthSettings, Track } from '../types';
+import type { Clip, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
 
 export const uid = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -22,10 +22,39 @@ export const CATEGORY_LABELS: Record<SampleCategory, string> = {
   other: 'Sonstiges',
 };
 
-export function createTrack(category: SampleCategory, sceneCount: number, name = CATEGORY_LABELS[category]): Track {
+export const TRACK_KIND_LABELS = { audio: 'Audio', midi: 'MIDI' } as const;
+
+/**
+ * What a track is. Projects from before track types have no `kind`: a track with notes or an instrument was
+ * a MIDI track, anything else held audio.
+ */
+export function trackKind(track: Track): TrackKind {
+  return track.kind ?? (track.synth || track.clips.some((c) => Array.isArray(c.notes)) ? 'midi' : 'audio');
+}
+
+/** Audio tracks take audio clips, MIDI tracks take MIDI clips: dragging a clip to the other kind is refused. */
+export const canHoldClip = (track: Track, clip: Clip): boolean => (trackKind(track) === 'midi') === Array.isArray(clip.notes);
+
+/** A MIDI track named "MIDI", with the synth colour so it reads differently from audio tracks at a glance. */
+export function createMidiTrack(sceneCount: number, name = 'MIDI'): Track {
+  return { ...createTrack('synth', sceneCount, name, 'midi'), color: '#3dd6ff' };
+}
+
+/**
+ * Switch a track between audio and MIDI. Only an empty track can change (its clips would be the wrong kind):
+ * otherwise the project is returned unchanged.
+ */
+export function setTrackKind(project: Project, trackId: string, kind: TrackKind): Project {
+  const track = project.tracks.find((t) => t.id === trackId);
+  if (!track || trackKind(track) === kind || track.clips.length > 0) return project;
+  return mapTrack(project, trackId, (t) => ({ ...t, kind, ...(kind === 'audio' && { synth: undefined }) }));
+}
+
+export function createTrack(category: SampleCategory, sceneCount: number, name = CATEGORY_LABELS[category], kind: TrackKind = 'audio'): Track {
   return {
     id: uid(),
     name,
+    kind,
     category,
     color: CATEGORY_COLORS[category],
     volume: 0.8,
@@ -263,11 +292,9 @@ export function scaleClip(clip: Clip, factor: number): Partial<Clip> {
 
 /** Best track for a sample: first track of the same category, else the selected one. */
 export function trackForSample(project: Project, sample: Sample, selectedTrackId?: string | null): Track | undefined {
-  return (
-    project.tracks.find((t) => t.category === sample.category) ??
-    project.tracks.find((t) => t.id === selectedTrackId) ??
-    project.tracks[0]
-  );
+  // Samples are audio: they only go to audio tracks (a MIDI track cannot play them as a clip).
+  const audio = project.tracks.filter((t) => trackKind(t) === 'audio');
+  return audio.find((t) => t.category === sample.category) ?? audio.find((t) => t.id === selectedTrackId) ?? audio[0];
 }
 
 /** Whether stored data has the shape of a project at all (anything else would crash rendering). */

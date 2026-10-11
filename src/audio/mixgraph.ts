@@ -1,8 +1,21 @@
 import type { AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode } from 'react-native-audio-api';
 import { audibleGain } from '../lib/project';
 import type { Project, Track } from '../types';
-import { DELAY_FEEDBACK, delaySeconds, djFilter, driveCurve, driveGains, pumpEvents, reverbImpulse, trackFx } from './fx';
+import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
 import { beatsInWindow, secondsPerBar } from './timing';
+
+/**
+ * Safety limiter for the master sum: connect the sources to `.input`, take the result from `.output`.
+ * Below 0.8 full scale the signal passes untouched; peaks above are rounded off up to +6 dBFS.
+ */
+export function createLimiter(ctx: BaseAudioContext): { input: AudioNode; output: AudioNode } {
+  const input = ctx.createGain();
+  input.gain.value = 1 / LIMITER_RANGE;
+  const shaper = ctx.createWaveShaper();
+  shaper.curve = limiterCurve();
+  input.connect(shaper);
+  return { input, output: shaper };
+}
 
 /** One track's strip: input -> highpass -> lowpass -> drive (dry + shaped) -> pan -> pump -> fader. */
 class TrackChain {

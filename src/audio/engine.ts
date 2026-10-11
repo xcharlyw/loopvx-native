@@ -15,7 +15,7 @@ import type { Clip, Project, Sample, SynthSettings, Track } from '../types';
 import { midiToHz } from '../lib/midi';
 import { arrangementSampleIds, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
-import { MixGraph } from './mixgraph';
+import { createLimiter, MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
 import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, voicePeak } from './synth';
 import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
@@ -284,7 +284,9 @@ export class AudioEngine {
       this.master = this.ctx.createGain();
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 1024;
-      this.master.connect(this.analyser);
+      const limiter = createLimiter(this.ctx);
+      this.master.connect(limiter.input);
+      limiter.output.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
       this.mix = new MixGraph(this.ctx, this.master);
     }
@@ -677,7 +679,9 @@ export class AudioEngine {
     // Stretchers compensate their latency only for audio scheduled ahead: give them a short lead-in.
     const lead = Platform.OS === 'web' && usesStretch(project, this.samples) ? 0.1 : 0;
     const off = new OfflineAudioContext(2, Math.ceil((seconds + lead) * sampleRate) + sampleRate, sampleRate);
-    const mix = new MixGraph(off, off.destination);
+    const limiter = createLimiter(off);
+    limiter.output.connect(off.destination);
+    const mix = new MixGraph(off, limiter.input);
     mix.apply(project, false);
     mix.schedulePump(project, lead, region.from, region.to);
     const voices = scheduleWindow(off, project, this.samples, this.buffers, (t) => mix.input(t), lead, region.from, region.to);

@@ -1,4 +1,4 @@
-import { delaySeconds, pumpEvents, djFilter, driveCurve, driveGains, fxIsDefault, reverbImpulse, trackFx } from './fx';
+import { delaySeconds, limiterCurve, softLimit, pumpEvents, djFilter, driveCurve, driveGains, fxIsDefault, reverbImpulse, trackFx } from './fx';
 
 describe('djFilter', () => {
   it('is transparent at 0', () => {
@@ -71,5 +71,30 @@ describe('pumpEvents', () => {
   });
   it('half amount ducks half way', () => {
     expect(pumpEvents(0, 0.5, 0.4)[1].v).toBeCloseTo(0.525);
+  });
+});
+
+describe('master limiter', () => {
+  it('passes everything below the knee untouched', () => {
+    for (const a of [0, 0.1, -0.5, 0.79, -0.8]) expect(softLimit(a)).toBe(a);
+  });
+  it('rounds peaks off below full scale, monotonic and odd', () => {
+    expect(softLimit(1)).toBeLessThan(1);
+    expect(softLimit(2)).toBeLessThan(1);
+    expect(softLimit(2)).toBeGreaterThan(0.95);
+    expect(softLimit(-1.5)).toBeCloseTo(-softLimit(1.5));
+    let prev = -Infinity;
+    for (let a = -3; a <= 3; a += 0.05) {
+      expect(softLimit(a)).toBeGreaterThanOrEqual(prev);
+      prev = softLimit(a);
+    }
+  });
+  it('curve maps x to a half-scale input: linear in the middle, bounded at the ends', () => {
+    const c = limiterCurve(4097);
+    expect(c[2048]).toBe(0);
+    expect(c[2048 + 819]).toBeCloseTo(((819 / 2048) * 2), 2); // a = 0.8 stays 0.8
+    expect(Math.max(...c)).toBeLessThan(1);
+    expect(Math.min(...c)).toBeGreaterThan(-1);
+    expect(c[0]).toBeCloseTo(-c[4096]);
   });
 });

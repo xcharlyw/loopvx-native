@@ -41,6 +41,27 @@ export function driveCurve(points = 2048): Float32Array {
   return curve;
 }
 
+/** The master limiter sees the sum at half level, so its curve covers peaks up to ±LIMITER_RANGE. */
+export const LIMITER_RANGE = 2;
+export const LIMITER_KNEE = 0.8;
+
+/** Transparent below the knee, a smooth tanh shoulder above it that never reaches 1. */
+export function softLimit(a: number, knee = LIMITER_KNEE): number {
+  const m = Math.abs(a);
+  if (m <= knee) return a;
+  return Math.sign(a) * (knee + (1 - knee) * Math.tanh((m - knee) / (1 - knee)));
+}
+
+/**
+ * WaveShaper curve for the master limiter. Input x in [-1, 1] stands for a signal of x * LIMITER_RANGE
+ * (the node before it halves the level), so sums up to +6 dBFS are caught instead of hard clipping.
+ */
+export function limiterCurve(points = 4097): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(points);
+  for (let i = 0; i < points; i++) curve[i] = softLimit(((i / (points - 1)) * 2 - 1) * LIMITER_RANGE);
+  return curve;
+}
+
 /**
  * A stereo room impulse: decaying noise, slightly different per channel for width, with the
  * high end dying faster than the lows (one-pole smoothing that grows over the tail).

@@ -59,6 +59,9 @@ export interface SynthSettings {
   sustain: number;
   release: number;
 
+  /** Id of the preset this sound started from (display only). */
+  preset?: string;
+
   // ---- oscillator synth only (wave is an oscillator); every field is optional and defaults to "off" ----
   /** Second oscillator: wave, octaves (-2..2), fine tune in cents and level 0..1. */
   oscB?: { wave: OscWave; octave: number; detune: number; level: number };

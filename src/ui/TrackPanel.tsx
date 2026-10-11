@@ -1,23 +1,21 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { engine } from '../audio/engine';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
-import { isDrumWave, KICK_PRESET, NOISE_PRESET, SAMPLER_PRESET } from '../audio/synth';
-import { C, font, mono } from '../constants/theme';
+import { presetById } from '../audio/presets';
+import { C, font } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
-import { DEFAULT_SYNTH, MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
-import type { SynthSettings, TrackFx } from '../types';
+import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, trackSynth } from '../lib/project';
 import { getState, setState, updateProject, useStore } from '../lib/store';
+import type { TrackFx } from '../types';
 import { confirmDestructive } from './confirm';
-import { Fader } from './Fader';
 import { Plus, Trash } from './icons';
-import { Btn, Chip, Section, Txt } from './kit';
+import { Btn, Section, Txt } from './kit';
+import { hz, Param, pct } from './Param';
 import { Sheet } from './Sheet';
 
 /** Rename, recolour or delete the selected track. Saves as you type; leaving the field empty restores the old name. */
 export function TrackPanel() {
   const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
-  const samples = useStore((st) => st.samples);
   const [draft, setDraft] = useState<string | null>(null);
   if (!track) {
     return (
@@ -28,28 +26,13 @@ export function TrackPanel() {
   }
   const trackId = track.id;
   const synth = trackSynth(track);
-  /** Synth knobs: a drag is one undo step, and changes are heard on the next notes. */
-  const setSynth = (patch: Partial<SynthSettings>) =>
-    updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), ...patch } })), { merge: true });
   const value = draft ?? track.name;
-  const isSampler = synth.wave === 'sample';
-  const isDrum = isDrumWave(synth.wave);
+  const preset = presetById(synth.preset);
+  const soundName = preset ? preset.name : synth.wave === 'sample' ? 'Sample-Instrument' : synth.wave === 'kick' ? 'Synth-Kick' : synth.wave === 'noise' ? 'Noise / Hat' : synth.preset === undefined && !track.synth ? 'Standard-Saw' : 'Eigener Sound';
   const fx = trackFx(track.fx);
   /** Effect knobs act on the running mix (no rescheduling); a drag is one undo step. */
   const setFx = (patch: TrackFx) =>
     updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, ...patch } })), { reschedule: false });
-  /** Switching instrument kind also swaps in settings that suit it (a kick wants no sustain, a hat a highpass). */
-  const pickWave = (wave: SynthSettings['wave']) => {
-    if (wave === synth.wave) return;
-    const sampleId = synth.sampleId;
-    if (wave === 'sample') setSynth({ ...SAMPLER_PRESET, sampleId: sampleId ?? samples[0]?.id });
-    else if (wave === 'kick') setSynth({ ...KICK_PRESET, sampleId });
-    else if (wave === 'noise') setSynth({ ...NOISE_PRESET, sampleId });
-    else if (isDrum) setSynth({ ...DEFAULT_SYNTH, wave, sampleId });
-    else setSynth({ wave });
-    if (wave === 'kick' || wave === 'noise') void engine.previewNote({ ...synth, ...(wave === 'kick' ? KICK_PRESET : NOISE_PRESET) }, 60);
-  };
-
   const change = (text: string) => {
     setDraft(text);
     // The name updates live (it is what the headers and the mixer show); empty only while typing.
@@ -146,69 +129,12 @@ export function TrackPanel() {
         </View>
       </Section>
 
-      <Section title="Instrument">
-        <View style={s.swatches}>
-          {WAVES.map((w) => (
-            <Chip key={w.wave} variant={synth.wave === w.wave ? 'on' : 'ghost'} onPress={() => pickWave(w.wave)}>
-              {w.label}
-            </Chip>
-          ))}
-        </View>
-        {isSampler && (
-          <>
-            <Txt style={[s.note, { marginTop: 12 }]}>
-              {samples.length
-                ? 'Das Sample klingt auf C3 im Original, jede andere Note spielt es höher oder tiefer. Ideal für Drums: eine Spur pro Sound (Kick, Clap, Hat), Noten auf C3.'
-                : 'Lade zuerst ein Sample in die Bibliothek (z. B. eine Kick oder einen Hat).'}
-            </Txt>
-            <ScrollView style={s.sampleList} nestedScrollEnabled>
-              {samples.map((x) => (
-                <Pressable
-                  key={x.id}
-                  accessibilityLabel={`Instrument-Sample ${x.name}`}
-                  accessibilityState={{ selected: synth.sampleId === x.id }}
-                  onPress={() => {
-                    setSynth({ sampleId: x.id });
-                    void engine.previewNote({ ...synth, sampleId: x.id }, 60);
-                  }}
-                  style={[s.sampleRow, synth.sampleId === x.id && s.sampleRowOn]}
-                >
-                  <Txt numberOfLines={1} style={[s.sampleName, synth.sampleId === x.id && { color: C.accent }]}>
-                    {x.name.replace(/\.[a-z0-9]+$/i, '')}
-                  </Txt>
-                </Pressable>
-              ))}
-            </ScrollView>
-            {synth.sampleId && !samples.some((x) => x.id === synth.sampleId) && <Txt style={[s.note, { color: C.danger }]}>Das gewählte Sample ist nicht mehr in der Bibliothek.</Txt>}
-            <View style={[s.swatches, { marginTop: 10 }]}>
-              <Chip variant={synth.oneShot ? 'on' : 'ghost'} onPress={() => setSynth({ oneShot: true })}>
-                Ganz abspielen
-              </Chip>
-              <Chip variant={synth.oneShot ? 'ghost' : 'on'} onPress={() => setSynth({ oneShot: false })}>
-                Notenlänge
-              </Chip>
-            </View>
-          </>
-        )}
-        {(synth.wave === 'kick' || synth.wave === 'noise') && (
-          <Txt style={[s.note, { marginTop: 12 }]}>
-            {synth.wave === 'kick'
-              ? 'Synthetische Kick: auf C3 sitzt der Bauch bei 50 Hz, höhere Noten stimmen sie höher. Länge über Decay, Härte über Drive bei den Effekten.'
-              : 'Rauschen durch einen Highpass: kurzer Decay = Hi-Hat, längerer Decay und tieferer Filter = Snare oder Riser.'}
-          </Txt>
-        )}
-        <Param label={synth.wave === 'noise' ? 'Highpass' : 'Filter'} value={Math.log10(synth.cutoff)} min={Math.log10(80)} max={Math.log10(16000)} text={hz(synth.cutoff)} onChange={(v) => setSynth({ cutoff: Math.round(10 ** v) })} />
-        <Param label="Resonanz" value={synth.resonance} min={0.5} max={15} text={synth.resonance.toFixed(1)} onChange={(v) => setSynth({ resonance: Math.round(v * 10) / 10 })} />
-        <Param label="Attack" value={synth.attack} min={0.001} max={1} text={sec(synth.attack)} onChange={(v) => setSynth({ attack: v })} />
-        <Param label="Decay" value={synth.decay} min={0.01} max={1.5} text={sec(synth.decay)} onChange={(v) => setSynth({ decay: v })} />
-        <Param label="Sustain" value={synth.sustain} min={0} max={1} text={`${Math.round(synth.sustain * 100)} %`} onChange={(v) => setSynth({ sustain: v })} />
-        <Param label="Release" value={synth.release} min={0.005} max={2} text={sec(synth.release)} onChange={(v) => setSynth({ release: v })} />
+      <Section title="Sound">
+        <Txt style={s.soundName}>{soundName}</Txt>
+        <Txt style={s.note}>Wähle ein Preset (Reese Bass, Supersaw, Pluck, Pad, Drums …) und forme den Klang mit Oszillatoren, Unison, Filter und LFO.</Txt>
         <View style={[s.buttons, { marginTop: 10 }]}>
-          <Btn small onPress={() => void engine.previewNote(synth, isDrum ? 60 : 48)}>
-            {isDrum ? 'Anhören (C3)' : 'Anhören (C2)'}
-          </Btn>
-          <Btn small onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: undefined })))}>
-            Zurücksetzen
+          <Btn kind="primary" onPress={() => setState({ panel: 'instrument' })}>
+            Sound wählen & bearbeiten
           </Btn>
         </View>
       </Section>
@@ -225,37 +151,10 @@ export function TrackPanel() {
   );
 }
 
-const WAVES: { wave: SynthSettings['wave']; label: string }[] = [
-  { wave: 'sawtooth', label: 'Saw' },
-  { wave: 'square', label: 'Square' },
-  { wave: 'triangle', label: 'Triangle' },
-  { wave: 'sine', label: 'Sine' },
-  { wave: 'sample', label: 'Sample' },
-  { wave: 'kick', label: 'Kick' },
-  { wave: 'noise', label: 'Noise / Hat' },
-];
-
-const pct = (v: number) => (v ? `${Math.round(v * 100)} %` : 'Aus');
 const panText = (v: number) => (!v ? 'Mitte' : `${Math.round(Math.abs(v) * 100)} ${v < 0 ? 'L' : 'R'}`);
 const filterText = (v: number) => (!v ? 'Aus' : v < 0 ? `LP ${hz(djFilter(v).lowpass)}` : `HP ${hz(djFilter(v).highpass)}`);
-const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace('.', ',')} kHz` : `${Math.round(v)} Hz`);
-const sec = (v: number) => (v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2).replace('.', ',')} s`);
-
-function Param({ label, value, min, max, text, onChange }: { label: string; value: number; min: number; max: number; text: string; onChange: (v: number) => void }) {
-  return (
-    <View style={s.param}>
-      <Txt style={s.paramLabel}>{label}</Txt>
-      <Fader value={value} min={min} max={max} onChange={onChange} />
-      <Txt style={s.paramValue}>{text}</Txt>
-    </View>
-  );
-}
-
 const s = StyleSheet.create({
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  param: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
-  paramLabel: { width: 74, fontSize: 13 },
-  paramValue: { ...mono(), width: 62, fontSize: 12, color: C.muted, textAlign: 'right' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   swatch: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: 'transparent' },
   swatchOn: { borderColor: '#fff' },
@@ -272,6 +171,7 @@ const s = StyleSheet.create({
     fontSize: 14,
     outlineWidth: 0,
   },
+  soundName: { ...font(600), fontSize: 14, marginBottom: 4 },
   note: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 4 },
   sampleList: { maxHeight: 176, marginTop: 8, borderWidth: 1, borderColor: C.line, borderRadius: 10 },
   sampleRow: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.line },

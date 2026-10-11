@@ -7,11 +7,11 @@ import type { OscWave } from '../../types';
 // The pictures of the synth: what an oscillator, the filter, the envelope and the LFO do, drawn live from the
 // current settings (the maths lives in audio/scopes.ts and is tested against the real filter).
 
+export const GRID = '#17171b';
 const BG = '#09090b';
-const GRID = '#17171b';
 
 /** Frame and background shared by all scopes. */
-function Frame({ width, height, children, id }: { width: number; height: number; children: React.ReactNode; id: string }) {
+export function Frame({ width, height, children, id }: { width: number; height: number; children: React.ReactNode; id: string }) {
   return (
     <View style={{ width, height, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: C.line, backgroundColor: BG }}>
       <Svg width={width} height={height}>
@@ -27,7 +27,7 @@ function Frame({ width, height, children, id }: { width: number; height: number;
   );
 }
 
-const line = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+export const line = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
 
 /** One oscillator: its wave, with faint copies for the unison voices (spread of phase, not of pitch: just a picture). */
 export function WaveScope({ wave, unison = 1, spread = 0, width, height = 64, color = C.accent }: { wave: OscWave; unison?: number; spread?: number; width: number; height?: number; color?: string }) {

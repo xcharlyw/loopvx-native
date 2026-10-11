@@ -102,6 +102,18 @@ export interface TrackFx {
   pump?: number;
 }
 
+/** Effects that can sit in a track's device chain (after the instrument or the audio clips). */
+export type DeviceType = 'eq' | 'comp' | 'sat' | 'echo' | 'reverb' | 'chorus' | 'filter' | 'limiter' | 'utility';
+
+export interface Device {
+  id: string;
+  type: DeviceType;
+  /** Off = bypassed (the signal passes untouched). */
+  on: boolean;
+  /** Values by parameter key; missing keys use the device's defaults (see `audio/devices.ts`). */
+  params: Record<string, number>;
+}
+
 export interface Clip {
   id: string;
   /** The audio clip's sample; '' for a MIDI clip. */
@@ -144,6 +156,8 @@ export interface Track {
   synth?: SynthSettings;
   /** Track effects; absent means none. */
   fx?: TrackFx;
+  /** Plugin slots after the instrument, in signal order (before the DJ filter, drive and fader). */
+  devices?: Device[];
   /** Session grid: one slot per scene. */
   slots: (SessionSlot | null)[];
 }

@@ -1,4 +1,5 @@
 import type { OscWave, SynthSettings } from '../types';
+import { bandResponse } from './devicemath';
 import { adsrPoints } from './synth';
 
 // The numbers behind the synth's displays: oscillator shapes, the filter's real frequency response and the
@@ -22,26 +23,7 @@ export type FilterKind = NonNullable<SynthSettings['filterType']>;
  * is a plain Q.
  */
 export function filterResponse(type: FilterKind, cutoff: number, resonance: number, freqs: number[], sampleRate = 48000): number[] {
-  const w0 = (2 * Math.PI * Math.min(cutoff, sampleRate / 2 - 1)) / sampleRate;
-  const cos = Math.cos(w0);
-  const q = type === 'bandpass' ? Math.max(0.0001, resonance) : Math.pow(10, resonance / 20);
-  const alpha = Math.sin(w0) / (2 * q);
-  let b0: number, b1: number, b2: number;
-  if (type === 'lowpass') [b0, b1, b2] = [(1 - cos) / 2, 1 - cos, (1 - cos) / 2];
-  else if (type === 'highpass') [b0, b1, b2] = [(1 + cos) / 2, -(1 + cos), (1 + cos) / 2];
-  else [b0, b1, b2] = [alpha, 0, -alpha];
-  const a0 = 1 + alpha;
-  const a1 = -2 * cos;
-  const a2 = 1 - alpha;
-  return freqs.map((f) => {
-    const w = (2 * Math.PI * f) / sampleRate;
-    // |B(e^jw)| / |A(e^jw)| with e^-jw = cos w - j sin w
-    const c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
-    const nr = b0 + b1 * c1 + b2 * c2, ni = -(b1 * s1 + b2 * s2);
-    const dr = a0 + a1 * c1 + a2 * c2, di = -(a1 * s1 + a2 * s2);
-    const mag = Math.hypot(nr, ni) / Math.max(1e-12, Math.hypot(dr, di));
-    return 20 * Math.log10(Math.max(1e-6, mag));
-  });
+  return bandResponse({ kind: type, freq: cutoff, q: resonance, gainDb: 0 }, freqs, sampleRate);
 }
 
 /** `n` frequencies from 20 Hz to 20 kHz, evenly spaced on a log axis (what the display plots). */

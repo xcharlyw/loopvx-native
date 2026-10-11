@@ -49,6 +49,7 @@ src/audio/          engine.ts (react-native-audio-api), mixgraph.ts (track strip
                     fader, reverb/delay sends; one per context, live and offline), fx.ts + synth.ts
                     (pure effect/instrument math; synth.ts `planVoice` is the recipe of one synth note),
                     presets.ts (sound library + applyPreset), tempo.ts (BPM detection),
+                    devices.ts + devicemath.ts + devicenodes.ts + devicebay.ts (device chain, see below),
                     timing.ts (pure tempo math), wav.ts, pageAudio.ts
 src/lib/            store.ts (state, undo, autosave), project.ts (pure project mutations), actions.ts,
                     midi.ts (.mid read/write), patterns.ts (seeded pattern generator, drums and bass),
@@ -122,6 +123,31 @@ take only MIDI clips and carry the instrument (`canHoldClip` guards cross-track 
 only picks audio tracks, `createMidiClipOnTrack` refuses audio tracks, Session slots of MIDI tracks are
 disabled). The type can only be changed on an empty track (`setTrackKind`, TrackPanel "Spurtyp"). The arrange
 header shows an AUDIO / MIDI badge; the add row has "+ Audio" and "+ MIDI".
+
+## Device chain (plugin slots)
+
+`Track.devices` is the chain after the instrument/clips and before the DJ filter, drive, pan and fader:
+`input -> devices -> hp -> lp -> drive -> pan -> pump -> fader`. Types: EQ, Compressor, Saturator, Echo, Reverb,
+Chorus, Filter (with LFO), Limiter, Utility. `devices.ts` is the registry (`DEVICE_DEFS`: key, range, default,
+unit, how a knob shows it; `deviceParams` clamps/snaps and fills defaults, so projects stay safe), `devicemath.ts`
+the pure maths (biquad responses incl. peaking/shelves = Chromium's `getFrequencyResponse` to 0.000 dB, compressor
+gain computer, saturator curves, echo times), `devicenodes.ts` the Web Audio graph of each device, `devicebay.ts`
+the per-track chain (`DeviceBay`: reuses nodes of unchanged devices by id so reverb tails survive adding another
+device; each slot has an on/bypass crossfade). The chain is changed through `addDevice`/`removeDevice`/
+`moveDevice`/`updateDevice` in `project.ts` with `updateProject(..., { reschedule: false })`; `syncMixer` applies
+it to the running graph. Live and offline render use the same `MixGraph`, so exports contain the effects.
+UI: `DevicePanel` (opened from TrackPanel "Geräte"): source slot (instrument for MIDI tracks, opens the Sound panel),
+a card per device with live scope (`synth/DeviceScopes.tsx`) and knobs, `+ Gerät hinzufügen` browser.
+Constraints learned the hard way:
+- react-native-audio-api has **no DynamicsCompressor and no channel splitter/merger**, and `channelCount` is read-only:
+  there is no true mono/width. The **compressor** is built from nodes: rectifier (WaveShaper |x|), a peak-hold loop
+  through a DelayNode (128 samples, decay per pass = release), attack lowpass, WaveShaper gain curve driving a GainNode's
+  `gain` param. Measured offline: gain reduction within 0.5 dB of the textbook computer, attack/release times near the
+  knob values, no distortion on 55 Hz bass. A slow 1 Hz biquad as release follower does NOT work (32-bit coefficients).
+- A WaveShaper's `curve` can be set **only once** in Chromium: a changed curve means a new node (`Kit.swappableShaper`).
+- Filters parked "off" must be neutral: a lowpass above Nyquist is flat (`LP_OFF`), a highpass at 5 Hz.
+- Not verified on a phone natively: feedback loops through DelayNodes (echo, compressor detector, chorus feedback) and
+  4x oversampling on shapers are standard Web Audio; if a native build misbehaves, look there first.
 
 ## Piano roll dragging
 

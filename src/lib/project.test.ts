@@ -1,4 +1,4 @@
-import { addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -263,5 +263,51 @@ describe('track kinds', () => {
     const target = trackForSample(p, sample, midiId)!;
     expect(trackKind(target)).toBe('audio');
     expect(target.category).toBe('synth'); // the audio "Synth / Lead" track, not the MIDI one
+  });
+});
+
+describe('device chain', () => {
+  it('adds devices in order, at an index, up to the limit', () => {
+    let p = createProject();
+    const id = p.tracks[0].id;
+    p = addDevice(p, id, 'eq');
+    p = addDevice(p, id, 'comp');
+    p = addDevice(p, id, 'sat', 1);
+    expect(p.tracks[0].devices!.map((d) => d.type)).toEqual(['eq', 'sat', 'comp']);
+    expect(new Set(p.tracks[0].devices!.map((d) => d.id)).size).toBe(3);
+    for (let i = 0; i < 20; i++) p = addDevice(p, id, 'echo');
+    expect(p.tracks[0].devices!.length).toBe(8);
+    expect(p.tracks[1].devices).toBeUndefined();
+  });
+
+  it('removes and reorders; an empty chain leaves no devices field', () => {
+    let p = createProject();
+    const id = p.tracks[0].id;
+    for (const t of ['eq', 'comp', 'sat'] as const) p = addDevice(p, id, t);
+    const [eq, comp, sat] = p.tracks[0].devices!;
+    p = moveDevice(p, id, sat.id, -2);
+    expect(p.tracks[0].devices!.map((d) => d.type)).toEqual(['sat', 'eq', 'comp']);
+    p = moveDevice(p, id, sat.id, -1);
+    expect(p.tracks[0].devices!.map((d) => d.type)).toEqual(['sat', 'eq', 'comp']);
+    p = moveDevice(p, id, comp.id, 1);
+    expect(p.tracks[0].devices!.map((d) => d.type)).toEqual(['sat', 'eq', 'comp']);
+    p = removeDevice(removeDevice(removeDevice(p, id, eq.id), id, comp.id), id, sat.id);
+    expect(p.tracks[0].devices).toBeUndefined();
+  });
+
+  it('switches devices off and clamps parameters', () => {
+    let p = createProject();
+    const id = p.tracks[0].id;
+    p = addDevice(p, id, 'comp');
+    const dev = p.tracks[0].devices![0];
+    p = updateDevice(p, id, dev.id, { on: false, params: { threshold: -200, ratio: 8 } });
+    const after = p.tracks[0].devices![0];
+    expect(after.on).toBe(false);
+    expect(after.params.threshold).toBe(-60);
+    expect(after.params.ratio).toBe(8);
+    expect(after.params.release).toBe(120);
+    p = updateDevice(p, id, dev.id, { params: { attack: 30 } });
+    expect(p.tracks[0].devices![0].params).toMatchObject({ ratio: 8, attack: 30 });
+    expect(p.tracks[0].devices![0].on).toBe(false);
   });
 });

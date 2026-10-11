@@ -1,5 +1,6 @@
 import { snapBars } from '../audio/timing';
-import type { Clip, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
+import { MAX_DEVICES, createDevice, deviceParams } from '../audio/devices';
+import type { Clip, Device, DeviceType, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
 
 export const uid = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -82,6 +83,50 @@ export function createProject(name = 'Neues Projekt', bpm = 155, key = 'E minor'
 
 export function mapTrack(project: Project, trackId: string, fn: (t: Track) => Track): Project {
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? fn(t) : t)) };
+}
+
+// ---------------------------------------------------------------- device chain
+
+const mapDevices = (project: Project, trackId: string, fn: (devices: Device[]) => Device[]): Project =>
+  mapTrack(project, trackId, (t) => {
+    const devices = fn(t.devices ?? []);
+    return { ...t, devices: devices.length ? devices : undefined };
+  });
+
+/** Adds an effect at `index` (default: the end of the chain). Refuses beyond MAX_DEVICES. */
+export function addDevice(project: Project, trackId: string, type: DeviceType, index?: number): Project {
+  return mapDevices(project, trackId, (list) => {
+    if (list.length >= MAX_DEVICES) return list;
+    const at = index === undefined ? list.length : Math.max(0, Math.min(list.length, index));
+    return [...list.slice(0, at), createDevice(type, uid()), ...list.slice(at)];
+  });
+}
+
+export const removeDevice = (project: Project, trackId: string, deviceId: string): Project =>
+  mapDevices(project, trackId, (list) => list.filter((d) => d.id !== deviceId));
+
+/** Moves a device by `delta` places in the chain (stays put at the ends). */
+export function moveDevice(project: Project, trackId: string, deviceId: string, delta: number): Project {
+  return mapDevices(project, trackId, (list) => {
+    const from = list.findIndex((d) => d.id === deviceId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= list.length) return list;
+    const next = [...list];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    return next;
+  });
+}
+
+/** Switches a device on or off, or changes parameters (values are clamped and snapped to the device's definition). */
+export function updateDevice(project: Project, trackId: string, deviceId: string, patch: { on?: boolean; params?: Record<string, number> }): Project {
+  return mapDevices(project, trackId, (list) =>
+    list.map((d) => {
+      if (d.id !== deviceId) return d;
+      const merged = { ...d, ...(patch.on !== undefined && { on: patch.on }) };
+      if (patch.params) merged.params = deviceParams({ type: d.type, params: { ...d.params, ...patch.params } });
+      return merged;
+    }),
+  );
 }
 
 export function findClip(project: Project, clipId: string): { track: Track; clip: Clip } | null {

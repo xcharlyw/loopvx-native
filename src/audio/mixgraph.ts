@@ -2,6 +2,7 @@ import type { AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode
 import { audibleGain } from '../lib/project';
 import type { Project, Track } from '../types';
 import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
+import { DeviceBay } from './devicebay';
 import { beatsInWindow, secondsPerBar } from './timing';
 
 /**
@@ -17,10 +18,11 @@ export function createLimiter(ctx: BaseAudioContext): { input: AudioNode; output
   return { input, output: shaper };
 }
 
-/** One track's strip: input -> highpass -> lowpass -> drive (dry + shaped) -> pan -> pump -> fader. */
+/** One track's strip: input -> devices -> highpass -> lowpass -> drive (dry + shaped) -> pan -> pump -> fader. */
 class TrackChain {
   readonly input: GainNode;
   readonly fader: GainNode;
+  private bay: DeviceBay;
   private hp: BiquadFilterNode;
   private lp: BiquadFilterNode;
   private dry: GainNode;
@@ -34,6 +36,8 @@ class TrackChain {
 
   constructor(ctx: BaseAudioContext, out: AudioNode) {
     this.input = ctx.createGain();
+    const afterDevices = ctx.createGain();
+    this.bay = new DeviceBay(ctx, this.input, afterDevices);
     this.hp = ctx.createBiquadFilter();
     this.hp.type = 'highpass';
     this.lp = ctx.createBiquadFilter();
@@ -53,7 +57,7 @@ class TrackChain {
     this.pump = ctx.createGain();
     this.fader = ctx.createGain();
 
-    this.input.connect(this.hp);
+    afterDevices.connect(this.hp);
     this.hp.connect(this.lp);
     this.lp.connect(this.dry);
     this.lp.connect(this.pre);
@@ -67,7 +71,8 @@ class TrackChain {
   }
 
   /** Move every parameter to the track's settings: glide while playing (`smooth`), jump when rendering. */
-  apply(ctx: BaseAudioContext, track: Track, gain: number, graph: MixGraph, smooth: boolean) {
+  apply(ctx: BaseAudioContext, track: Track, gain: number, graph: MixGraph, smooth: boolean, bpm: number) {
+    this.bay.sync(track.devices, bpm, smooth);
     const fx = trackFx(track.fx);
     const { lowpass, highpass } = djFilter(fx.filter);
     const drive = driveGains(fx.drive);
@@ -124,7 +129,7 @@ export class MixGraph {
   /** Volumes, mute/solo, effects and the delay time. Safe to call on every project change. */
   apply(project: Project, smooth = true) {
     const anySolo = project.tracks.some((t) => t.solo);
-    for (const t of project.tracks) this.chain(t).apply(this.ctx, t, audibleGain(t, anySolo), this, smooth);
+    for (const t of project.tracks) this.chain(t).apply(this.ctx, t, audibleGain(t, anySolo), this, smooth, project.bpm);
     if (this.delay) {
       const seconds = delaySeconds(project.bpm);
       if (smooth) this.delay.delayTime.setTargetAtTime(seconds, this.ctx.currentTime, 0.05);

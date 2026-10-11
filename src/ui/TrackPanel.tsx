@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { DEVICE_DEFS } from '../audio/devices';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
@@ -27,6 +28,7 @@ export function TrackPanel() {
   const trackId = track.id;
   const synth = trackSynth(track);
   const kind = trackKind(track);
+  const devices = track.devices ?? [];
   const pickKind = (k: 'audio' | 'midi') => {
     if (k === kind) return;
     if (track.clips.length) {
@@ -106,6 +108,19 @@ export function TrackPanel() {
             ? 'MIDI-Spur: Noten in der Piano Roll, gespielt von einem Instrument (Synth, Sampler oder Drum-Synth).'
             : 'Audio-Spur: Loops und Samples aus der Bibliothek. Für Noten und Synth lege eine MIDI-Spur an (der Spurtyp lässt sich nur bei leeren Spuren ändern).'}
         </Txt>
+      </Section>
+
+      <Section title="Geräte">
+        <Txt style={s.note}>
+          {devices.length
+            ? `${devices.map((d) => DEVICE_DEFS[d.type]?.label ?? d.type).join(' → ')}`
+            : 'Steckplätze für Effekte: EQ, Compressor, Saturator, Echo, Reverb, Chorus, Filter, Limiter, Utility.'}
+        </Txt>
+        <View style={s.buttons}>
+          <Btn kind={devices.length ? 'default' : 'primary'} accessibilityLabel="Geräte öffnen" onPress={() => setState({ panel: 'devices' })}>
+            {devices.length ? `Geräte (${devices.length})` : 'Geräte öffnen'}
+          </Btn>
+        </View>
       </Section>
 
       <Section title="Effekte">

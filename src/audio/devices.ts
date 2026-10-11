@@ -62,7 +62,7 @@ export const DEVICE_DEFS: Record<DeviceType, DeviceDef> = {
       P('p2Q', 'Mitte 2 Q', 0.3, 10, 1, 'ratio', { curve: 'log' }),
       P('hsF', 'Höhen Hz', 2000, 16000, 8000, 'hz', { curve: 'log' }),
       P('hsG', 'Höhen', -18, 18, 0, 'db'),
-      P('lp', 'High-Cut', 1000, 20000, 20000, 'hz', { curve: 'log' }),
+      P('lp', 'High-Cut', 100, 20000, 20000, 'hz', { curve: 'log' }),
     ],
   },
   comp: {

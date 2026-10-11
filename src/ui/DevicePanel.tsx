@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { echoSeconds } from '../audio/devicemath';
 import { DEVICE_DEFS, deviceSummary, GROUP_LABELS, GROUP_ORDER, MAX_DEVICES, deviceParams, formatParam, type ParamDef } from '../audio/devices';
+import { DEVICE_PRESETS, presetOf, presetParams } from '../audio/devicepresets';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
 import { addDevice, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
@@ -167,9 +168,17 @@ function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
 }
 
 function DeviceCard({ device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onRemove }: { device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
+  const [listOpen, setListOpen] = useState(false);
   const def = DEVICE_DEFS[device.type];
   if (!def) return null;
   const p = deviceParams(device);
+  const presets = DEVICE_PRESETS[device.type];
+  const current = presetOf(device);
+  const pick = (i: number) => {
+    const next = presets[(i + presets.length) % presets.length];
+    onChange({ params: presetParams(device.type, next) });
+  };
+  const at = current ? presets.indexOf(current) : -1;
   const set = (key: string, v: number) => onChange({ params: { [key]: v } });
   const dim = !device.on;
   const rows = LAYOUT[device.type] ?? [{ keys: def.params.map((x) => x.key) }];
@@ -221,7 +230,7 @@ function DeviceCard({ device, folded: isFolded, onToggle, index, count, bpm, wid
               <Txt style={s.cardTitle}>{def.label.toUpperCase()}</Txt>
               {isFolded && (
                 <Txt numberOfLines={1} style={s.summary}>
-                  {deviceSummary(device)}
+                  {current && current.id !== 'default' ? current.name : deviceSummary(device)}
                 </Txt>
               )}
             </View>
@@ -230,6 +239,36 @@ function DeviceCard({ device, folded: isFolded, onToggle, index, count, bpm, wid
         </View>
         {!isFolded && (
           <>
+            <View style={s.presetRow}>
+              <Pressable accessibilityLabel={`${def.label} vorheriges Preset`} onPress={() => pick(at < 0 ? presets.length - 1 : at - 1)} style={s.small}>
+                <Txt style={s.smallText}>◀</Txt>
+              </Pressable>
+              <Pressable accessibilityLabel={`${def.label} Presets`} onPress={() => setListOpen((v) => !v)} style={s.presetName}>
+                <Txt numberOfLines={1} style={[s.presetText, !current && { color: C.muted }]}>
+                  {current ? current.name : 'Eigene Einstellung'}
+                </Txt>
+              </Pressable>
+              <Pressable accessibilityLabel={`${def.label} nächstes Preset`} onPress={() => pick(at + 1)} style={s.small}>
+                <Txt style={s.smallText}>▶</Txt>
+              </Pressable>
+            </View>
+            {listOpen && (
+              <View style={s.presetList}>
+                {presets.map((preset, i) => (
+                  <Chip
+                    key={preset.id}
+                    variant={current?.id === preset.id ? 'on' : 'ghost'}
+                    onPress={() => {
+                      pick(i);
+                      setListOpen(false);
+                    }}
+                    textStyle={{ fontSize: 12 }}
+                  >
+                    {preset.name}
+                  </Chip>
+                ))}
+              </View>
+            )}
             <Scope device={device} p={p} bpm={bpm} width={width} />
             {rows.map((row, i) => (
               <View key={i}>
@@ -268,6 +307,10 @@ function Scope({ device, p, bpm, width }: { device: Device; p: Record<string, nu
 
 const s = StyleSheet.create({
   sub: { ...font(400), fontSize: 12, color: C.muted, marginBottom: 10 },
+  presetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  presetName: { flex: 1, height: 30, borderRadius: 8, borderWidth: 1, borderColor: C.line, backgroundColor: '#0c0c0e', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  presetText: { ...font(600), fontSize: 13, color: C.accent },
+  presetList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   foldRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
   card: { backgroundColor: '#111114', borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12, marginBottom: 10 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 36 },

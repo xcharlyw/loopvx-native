@@ -146,7 +146,9 @@ device; each slot has an on/bypass crossfade). The chain is changed through `add
 `moveDevice`/`updateDevice` in `project.ts` with `updateProject(..., { reschedule: false })`; `syncMixer` applies
 it to the running graph. Live and offline render use the same `MixGraph`, so exports contain the effects.
 UI: `DevicePanel` (opened from TrackPanel "Geräte"): source slot (instrument for MIDI tracks, opens the Sound panel),
-a card per device with live scope (`synth/DeviceScopes.tsx`) and knobs, `+ Gerät hinzufügen` browser. Cards fold (tap the
+a card per device with live scope (`synth/DeviceScopes.tsx`) and knobs, `+ Gerät hinzufügen` browser. Each card has a preset switcher (◀ name ▶ and a list; factory presets in
+`devicepresets.ts`, a preset lists only what differs from the defaults and replaces every parameter, `presetOf` recognises
+the current one). Cards fold (tap the
 title, "Alle einklappen"): a folded card shows `deviceSummary` in one line. The folded set is React state (a new Set per change)
 with a module copy so the panel reopens as left; never mutate a module-level Set, the React compiler would not rerender.
 Constraints learned the hard way:

@@ -89,6 +89,24 @@ tests/              server tests (anything in api/ is deployed as a function)
   copies are then synced into LOOPVX/Samples like any sample). Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
+## Splice
+
+Library → "Splice": search the Splice catalog (loops/one-shots, tempo filter = project BPM ±3) and load sounds into the library.
+Splice offers a remote MCP server (`https://mcp.splice.com/mcp`, Streamable HTTP, OAuth 2.1 + PKCE, dynamic client
+registration). The browser can't call it (CORS), so `api/splice.ts` (+ `api/_lib/splice.ts`) is a small MCP client: actions
+`start` (discovery, client registration, authorization URL), `token`/`refresh`, `search` (`describe_a_sound`), `download`
+(`download_asset`, returns the presigned link) and `fetch` (file bytes through the server when CORS blocks the storage
+host; hosts limited to splice.com/amazonaws.com/cloudfront.net). Only those two tools are allowed (nothing that
+creates stacks). The caller must be a signed-in LOOPVX user on `ALLOWED_EMAILS` like the other functions. The user's
+Splice tokens live on their device (`loopvx:splice`), the server stores nothing; no secret is involved (public OAuth
+client). Client: `src/lib/splice.ts` (PKCE, login redirect to `/splice-callback`, search, download), route
+`src/app/splice-callback.tsx` (clears `?code=` from the URL first so the Supabase client does not take it; `cleanUrls`
+in `vercel.json` serves `/splice-callback`), `spliceResults.ts` (parses Splice's Markdown answer; tested with a real one),
+UI `SpliceSearch.tsx`. The **first download of a sound costs the user a Splice credit**: always ask first (done in the UI).
+Web only for now. **Never verified against the real Splice server** (the sandbox could not reach mcp.splice.com; tests
+use a mock): if the login fails, look at the registration step (Splice may restrict redirect URIs) and at the text
+`download_asset` answers with (`extractDownloadUrl`).
+
 ## Tempo detection
 
 `src/audio/tempo.ts` (pure): onset curve, autocorrelation comb, candidates from whole-bar lengths plus

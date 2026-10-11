@@ -16,6 +16,8 @@ export interface Sample {
   key?: string;
   /** Length in seconds, filled after the first decode. */
   duration?: number;
+  /** Splice asset id when the sample was downloaded from Splice (its id is `splice:<uuid>`). */
+  spliceId?: string;
   /** Google Drive file id when the sample came from Drive. */
   driveId?: string;
   driveModified?: string;

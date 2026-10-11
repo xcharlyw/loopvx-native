@@ -9,6 +9,7 @@ import { errorText, getState, setSamples, setState, toast, upsertSample, useStor
 import { db } from '../storage/db';
 import type { Sample, SampleCategory } from '../types';
 import { DriveImport } from './DriveImport';
+import { SpliceSearch } from './SpliceSearch';
 import { useEngine } from './hooks';
 import { Check, Play, Plus, Stop, Upload } from './icons';
 import { Btn, Chip, IconBtn, Section, Txt } from './kit';
@@ -86,6 +87,10 @@ export function LibraryPanel() {
         <View style={{ marginTop: 10 }}>
           <DriveImport />
         </View>
+      </Section>
+
+      <Section title="Splice">
+        <SpliceSearch />
       </Section>
 
       <TextInput style={s.search} placeholder="Suchen …" placeholderTextColor={C.dim} value={query} onChangeText={setQuery} />

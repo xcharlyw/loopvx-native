@@ -687,7 +687,7 @@ export class AudioEngine {
         this.sessionClickedTo = until;
       }
       if (until > this.sessionPumpedTo) {
-        this.mix?.schedulePump(project, this.sessionOrigin + this.sessionPumpedTo * spb, this.sessionPumpedTo, until);
+        this.mix?.schedulePump(project, this.sessionOrigin + this.sessionPumpedTo * spb, this.sessionPumpedTo, until, false);
         this.sessionPumpedTo = until;
       }
     }

@@ -109,6 +109,21 @@ export interface TrackFx {
   pump?: number;
 }
 
+/** A track parameter that can follow a curve over the arrangement. */
+export type AutoParam = 'filter' | 'drive' | 'reverb' | 'delay' | 'pan' | 'volume';
+
+/** One point of an automation curve: `bar` is the position in bars, `value` is in the parameter's own range. */
+export interface AutoPoint {
+  bar: number;
+  value: number;
+}
+
+/** A curve of one parameter: linear between the points, held before the first and after the last. */
+export interface AutomationLane {
+  param: AutoParam;
+  points: AutoPoint[];
+}
+
 /** Effects that can sit in a track's device chain (after the instrument or the audio clips). */
 export type DeviceType = 'eq' | 'comp' | 'sat' | 'echo' | 'reverb' | 'chorus' | 'filter' | 'limiter' | 'utility' | 'splice';
 
@@ -165,6 +180,8 @@ export interface Track {
   fx?: TrackFx;
   /** Plugin slots after the instrument, in signal order (before the DJ filter, drive and fader). */
   devices?: Device[];
+  /** Parameter curves over the arrangement (filter sweeps, reverb throws, fades); at most one lane per parameter. */
+  automation?: AutomationLane[];
   /** Session grid: one slot per scene. */
   slots: (SessionSlot | null)[];
 }

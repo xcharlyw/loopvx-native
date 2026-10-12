@@ -208,6 +208,17 @@ drag with the distance scrolled so far, so the note stays under the finger even 
 offset is tracked in a ref (`onScroll` is ignored mid-drag). react-native-web logs the dev-only warning
 "ScrollView doesn't take rejection well" during drags; it is harmless (the responder refuses to hand over).
 
+## Automation
+
+`Track.automation` holds at most one curve (`AutomationLane`: `param` filter / drive / reverb / delay / pan / volume, `points` of `{bar, value}` in the parameter's own
+range, linear between points, held before the first and after the last). Pure maths in `lib/automation.ts` (`laneValue`, `sampleLane`, `withPoint`, `setLane`, shapes
+`ramp`/`throwAt`, tested). The engine drives it from `MixGraph.scheduleAutomation`, called from `schedulePump` (so with every window: live arrangement and offline render;
+session mode passes `automation=false`): the curve is sampled every 1/16 bar, a `setValueAtTime` first and `linearRampToValueAtTime` after. While a lane drives a
+parameter, `TrackChain.apply` leaves that parameter alone (`automated`), and `resetPump`/`resetAutomation` cancels the events and re-applies the track's own values.
+The filter lane goes through `djFilter`, so it keeps the DJ filter's curve. Measured offline: volume fade linear, a filter close halves the zero-crossing rate every
+couple of bars, a reverb lane stays dry until its point. UI `AutomationPanel` (TrackPanel "Automation"): parameter chips, a graph of 16/32/64/128 bars (no scrolling:
+the buttons move the window), tap = new point, drag = move (one undo step), buttons nudge/delete, shapes for the visible window. Not shown in the arrange view yet.
+
 ## 909 drum machine (issue #4)
 
 `wave: 'kit909'` is a whole drum kit as one instrument (`src/audio/drum909.ts`, pure): 12 pads on drum-rack/GM notes (kick C1 = 36, rim 37, snare 38,

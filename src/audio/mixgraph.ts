@@ -1,6 +1,7 @@
 import type { AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode, WaveShaperNode } from 'react-native-audio-api';
+import { sampleLane } from '../lib/automation';
 import { audibleGain } from '../lib/project';
-import type { Project, Track } from '../types';
+import type { AutoParam, Project, Track } from '../types';
 import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
 import { DeviceBay } from './devicebay';
 import { beatsInWindow, secondsPerBar } from './timing';
@@ -44,6 +45,9 @@ class TrackChain {
   readonly pump: GainNode;
   reverbSend: GainNode | null = null;
   delaySend: GainNode | null = null;
+  /** Parameters an automation lane drives right now: `apply` leaves them alone so a project edit cannot fight the curve. */
+  readonly automated = new Set<AutoParam>();
+  private lastApply: { ctx: BaseAudioContext; track: Track; gain: number; graph: MixGraph; bpm: number } | null = null;
 
   constructor(ctx: BaseAudioContext, out: AudioNode) {
     this.input = ctx.createGain();
@@ -83,29 +87,86 @@ class TrackChain {
 
   /** Move every parameter to the track's settings: glide while playing (`smooth`), jump when rendering. */
   apply(ctx: BaseAudioContext, track: Track, gain: number, graph: MixGraph, smooth: boolean, bpm: number) {
+    this.lastApply = { ctx, track, gain, graph, bpm };
     this.bay.sync(track.devices, bpm, smooth);
     const fx = trackFx(track.fx);
+    const auto = this.automated;
     const { lowpass, highpass } = djFilter(fx.filter);
     const drive = driveGains(fx.drive);
     const set = (param: { setTargetAtTime: (v: number, t: number, c: number) => unknown; setValueAtTime: (v: number, t: number) => unknown }, v: number) =>
       smooth ? param.setTargetAtTime(v, ctx.currentTime, 0.015) : param.setValueAtTime(v, 0);
     // Oversampling costs CPU: only while the distortion is on.
-    oversample(this.shaper, fx.drive > 0 ? '4x' : 'none');
-    set(this.lp.frequency, lowpass);
-    set(this.hp.frequency, highpass);
-    set(this.dry.gain, drive.dry);
-    set(this.pre.gain, drive.pre);
-    set(this.wet.gain, drive.wet);
-    set(this.pan.pan, Math.max(-1, Math.min(1, fx.pan)));
-    set(this.fader.gain, gain);
-    // Sends exist only once a track uses them, so projects without effects carry no reverb at all.
-    if (fx.reverb > 0 || this.reverbSend) {
-      this.reverbSend ??= graph.connectSend(this.fader, 'reverb');
-      set(this.reverbSend.gain, fx.reverb);
+    if (!auto.has('drive')) oversample(this.shaper, fx.drive > 0 ? '4x' : 'none');
+    if (!auto.has('filter')) {
+      set(this.lp.frequency, lowpass);
+      set(this.hp.frequency, highpass);
     }
-    if (fx.delay > 0 || this.delaySend) {
+    if (!auto.has('drive')) {
+      set(this.dry.gain, drive.dry);
+      set(this.pre.gain, drive.pre);
+      set(this.wet.gain, drive.wet);
+    }
+    if (!auto.has('pan')) set(this.pan.pan, Math.max(-1, Math.min(1, fx.pan)));
+    if (!auto.has('volume')) set(this.fader.gain, gain);
+    // Sends exist only once a track uses them, so projects without effects carry no reverb at all.
+    if (fx.reverb > 0 || this.reverbSend || auto.has('reverb')) {
+      this.reverbSend ??= graph.connectSend(this.fader, 'reverb');
+      if (!auto.has('reverb')) set(this.reverbSend.gain, fx.reverb);
+    }
+    if (fx.delay > 0 || this.delaySend || auto.has('delay')) {
       this.delaySend ??= graph.connectSend(this.fader, 'delay');
-      set(this.delaySend.gain, fx.delay);
+      if (!auto.has('delay')) set(this.delaySend.gain, fx.delay);
+    }
+  }
+
+  /** One automation event for `param` at context time `t`: a jump (`set`) or a linear ramp ending there. */
+  automate(param: AutoParam, value: number, t: number, kind: 'set' | 'ramp', gain: (v: number) => number, graph: MixGraph) {
+    this.automated.add(param);
+    const to = (p: { setValueAtTime: (v: number, t: number) => unknown; linearRampToValueAtTime: (v: number, t: number) => unknown }, v: number) =>
+      kind === 'set' ? p.setValueAtTime(v, t) : p.linearRampToValueAtTime(v, t);
+    switch (param) {
+      case 'filter': {
+        const f = djFilter(value);
+        to(this.lp.frequency, f.lowpass);
+        to(this.hp.frequency, f.highpass);
+        break;
+      }
+      case 'drive': {
+        const d = driveGains(value);
+        oversample(this.shaper, '4x');
+        to(this.dry.gain, d.dry);
+        to(this.pre.gain, d.pre);
+        to(this.wet.gain, d.wet);
+        break;
+      }
+      case 'pan':
+        to(this.pan.pan, Math.max(-1, Math.min(1, value)));
+        break;
+      case 'volume':
+        to(this.fader.gain, gain(value));
+        break;
+      case 'reverb':
+        this.reverbSend ??= graph.connectSend(this.fader, 'reverb');
+        to(this.reverbSend.gain, value);
+        break;
+      case 'delay':
+        this.delaySend ??= graph.connectSend(this.fader, 'delay');
+        to(this.delaySend.gain, value);
+        break;
+    }
+  }
+
+  /** Drop every automation event and go back to the track's own settings. */
+  resetAutomation() {
+    if (!this.automated.size) return;
+    const params: { cancelScheduledValues: (t: number) => unknown }[] = [this.lp.frequency, this.hp.frequency, this.dry.gain, this.pre.gain, this.wet.gain, this.pan.pan, this.fader.gain];
+    if (this.reverbSend) params.push(this.reverbSend.gain);
+    if (this.delaySend) params.push(this.delaySend.gain);
+    for (const p of params) p.cancelScheduledValues(0);
+    this.automated.clear();
+    if (this.lastApply) {
+      const { ctx, track, gain, graph, bpm } = this.lastApply;
+      this.apply(ctx, track, gain, graph, true, bpm);
     }
   }
 }
@@ -154,7 +215,8 @@ export class MixGraph {
    * Pump automation for the beats in [fromBar, toBar) of a window starting at context time `time`.
    * Beats already in the past (a late window) are skipped.
    */
-  schedulePump(project: Project, time: number, fromBar: number, toBar: number) {
+  schedulePump(project: Project, time: number, fromBar: number, toBar: number, automation = true) {
+    if (automation) this.scheduleAutomation(project, time, fromBar, toBar);
     const pumped = project.tracks.filter((t) => trackFx(t.fx).pump > 0);
     if (!pumped.length) return;
     const spb = secondsPerBar(project.bpm);
@@ -173,8 +235,26 @@ export class MixGraph {
     }
   }
 
-  /** Drop all pump automation (transport stopped or rescheduled). */
+  /**
+   * The automation lanes over [fromBar, toBar) of a window starting at context time `time`: the curve sampled every
+   * 1/16 bar, a jump to the first value and linear ramps after it. Samples already in the past just land immediately.
+   */
+  scheduleAutomation(project: Project, time: number, fromBar: number, toBar: number) {
+    const anySolo = project.tracks.some((t) => t.solo);
+    const spb = secondsPerBar(project.bpm);
+    for (const t of project.tracks) {
+      const chain = t.automation?.some((l) => l.points.length) ? this.chain(t) : null;
+      if (!chain) continue;
+      for (const lane of t.automation!) {
+        const samples = sampleLane(lane.points, fromBar, toBar);
+        samples.forEach((p, i) => chain.automate(lane.param, p.value, time + (p.bar - fromBar) * spb, i === 0 ? 'set' : 'ramp', (v) => audibleGain({ ...t, volume: v }, anySolo), this));
+      }
+    }
+  }
+
+  /** Drop all pump and automation events (transport stopped or rescheduled). */
   resetPump() {
+    for (const c of this.chains.values()) c.resetAutomation();
     const now = this.ctx.currentTime;
     for (const c of this.chains.values()) {
       c.pump.gain.cancelScheduledValues(0);

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { DEVICE_DEFS } from '../audio/devices';
+import { AUTO_PARAMS } from '../lib/automation';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
@@ -119,6 +120,19 @@ export function TrackPanel() {
         <View style={s.buttons}>
           <Btn kind={devices.length ? 'default' : 'primary'} accessibilityLabel="Geräte öffnen" onPress={() => setState({ panel: 'devices' })}>
             {devices.length ? `Geräte (${devices.length})` : 'Geräte öffnen'}
+          </Btn>
+        </View>
+      </Section>
+
+      <Section title="Automation">
+        <Txt style={s.note}>
+          {track.automation?.length
+            ? `Kurven für: ${track.automation.map((l) => AUTO_PARAMS[l.param].label).join(', ')}`
+            : 'Lass Filter, Drive, Hall, Echo, Lautstärke oder Pan über das Arrangement laufen: Filter-Sweeps, Hall-Würfe vor dem Drop, Ausblenden.'}
+        </Txt>
+        <View style={s.buttons}>
+          <Btn kind={track.automation?.length ? 'default' : 'primary'} accessibilityLabel="Automation öffnen" onPress={() => setState({ panel: 'automation' })}>
+            {track.automation?.length ? `Automation (${track.automation.length})` : 'Automation öffnen'}
           </Btn>
         </View>
       </Section>

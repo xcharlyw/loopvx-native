@@ -72,6 +72,18 @@ const remoteEntries = (files: DriveFile[], idKey: string): (RemoteEntry & { file
 // ---------------- the sync ----------------
 
 let applying = false; // our own database writes must not schedule another sync
+const deletedMidSync = new Set<string>(); // ids the user deleted while a sync was already running: it must not bring them back
+let ownDeletes = 0; // > 0 while the sync deletes something here because it was deleted elsewhere (not a deletion by the user)
+
+/** Runs a deletion the sync itself does; it must not be remembered as one the user made. */
+async function deleteLocally(del: () => Promise<void>) {
+  ownDeletes++;
+  try {
+    await del();
+  } finally {
+    ownDeletes--;
+  }
+}
 let running: Promise<void> | null = null;
 let again = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -93,7 +105,7 @@ async function syncProjects(dir: string, memory: StoredMemory): Promise<string[]
     synced.add(id);
   }
   const openId = getState().project.id;
-  for (const r of plan.download) {
+  for (const r of plan.download.filter((x) => !deletedMidSync.has(x.id))) {
     const project = JSON.parse(new TextDecoder().decode(await download(r.fileId))) as Project;
     await db.putProject(project);
     if (project.id === openId && project.updatedAt > getState().project.updatedAt) {
@@ -106,7 +118,7 @@ async function syncProjects(dir: string, memory: StoredMemory): Promise<string[]
     synced.delete(r.id);
   }
   for (const id of plan.deleteLocal) {
-    await db.deleteProject(id);
+    await deleteLocally(() => db.deleteProject(id));
     synced.delete(id);
   }
   const saved = (await db.getProjects()).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -145,7 +157,7 @@ async function syncSamples(dir: string, memory: StoredMemory): Promise<{ synced:
     }
   }
   const files = new Map(remote.map((r) => [r.id, r.file]));
-  for (const r of plan.download) {
+  for (const r of plan.download.filter((x) => !deletedMidSync.has(x.id))) {
     const meta = sampleFromFile(files.get(r.id)!);
     const existing = local.find((s) => s.id === r.id);
     try {
@@ -163,7 +175,7 @@ async function syncSamples(dir: string, memory: StoredMemory): Promise<{ synced:
   for (const id of plan.deleteLocal) {
     const sample = local.find((s) => s.id === id);
     if (sample) await deleteSample(sample);
-    await db.deleteSample(id);
+    await deleteLocally(() => db.deleteSample(id));
     synced.delete(id);
   }
   if (plan.download.length || plan.deleteLocal.length) setSamples(await db.getSamples());
@@ -178,6 +190,7 @@ async function runSync(manual: boolean) {
   const startedAt = Date.now();
   setState((st) => ({ sync: { ...st.sync, state: 'syncing', error: undefined, needsSignIn: false } }));
   applying = true;
+  deletedMidSync.clear();
   try {
     const memory = await loadMemory();
     const root = await folder('root', 'LOOPVX');
@@ -185,13 +198,14 @@ async function runSync(manual: boolean) {
     const projects = await syncProjects(projectsDir, memory);
     const samples = await syncSamples(samplesDir, memory);
     // Deletions made while this sync ran stay for the next one.
-    const latest = await loadMemory();
-    const pending = (kind: 'projects' | 'samples') => latest[kind].deleted.filter((id) => !memory[kind].deleted.includes(id));
-    await db.setKv(MEMORY_KEY, {
-      projects: { synced: projects, deleted: pending('projects') },
-      samples: { synced: samples.synced, deleted: pending('samples') },
-      lastSyncAt: startedAt,
-    } satisfies StoredMemory);
+    await updateMemory((latest) => {
+      const pending = (kind: 'projects' | 'samples') => latest[kind].deleted.filter((id) => !memory[kind].deleted.includes(id));
+      return {
+        projects: { synced: projects, deleted: pending('projects') },
+        samples: { synced: samples.synced, deleted: pending('samples') },
+        lastSyncAt: startedAt,
+      };
+    });
     setState({ sync: { state: 'idle', lastSyncAt: Date.now() } });
     if (samples.failed.length) toast(`Nicht synchronisiert: ${samples.failed.slice(0, 3).join(', ')}${samples.failed.length > 3 ? ' …' : ''}`, 'error');
   } catch (e) {
@@ -228,19 +242,24 @@ export function scheduleSync(delay = DEBOUNCE_MS) {
   timer = setTimeout(() => void syncNow(), delay);
 }
 
-// One at a time: deleting a whole folder fires an event per sample, and parallel read-modify-writes of the memory
-// would lose entries (a deleted sample would then come back from Drive at the next sync).
-let rememberQueue: Promise<void> = Promise.resolve();
+// Every change of the sync memory goes through this queue, one at a time: deleting a whole folder fires an event per
+// sample, and parallel read-modify-writes would lose entries (a deleted sample would then come back from Drive).
+let memoryQueue: Promise<void> = Promise.resolve();
 
-function rememberDeleted(kind: 'projects' | 'samples', id: string): Promise<void> {
-  rememberQueue = rememberQueue
+function updateMemory(change: (memory: StoredMemory) => StoredMemory | void): Promise<void> {
+  memoryQueue = memoryQueue
     .then(async () => {
       const memory = await loadMemory();
-      if (!memory[kind].deleted.includes(id)) memory[kind].deleted.push(id);
-      await db.setKv(MEMORY_KEY, memory);
+      await db.setKv(MEMORY_KEY, change(memory) ?? memory);
     })
-    .catch((e) => console.warn('could not remember a deletion', e));
-  return rememberQueue;
+    .catch((e) => console.warn('could not update the sync memory', e));
+  return memoryQueue;
+}
+
+function rememberDeleted(kind: 'projects' | 'samples', id: string): Promise<void> {
+  return updateMemory((memory) => {
+    if (!memory[kind].deleted.includes(id)) memory[kind].deleted.push(id);
+  });
 }
 
 /**
@@ -262,12 +281,14 @@ export function startSync() {
   if (started) return;
   started = true;
   onDbChange((change) => {
+    // A deletion by the user is remembered even while a sync runs (the sync's own deletions are not); it is sent to Drive by the next pass.
+    if (change.deleted && !ownDeletes && (running || applying)) deletedMidSync.add(change.id);
+    if (change.deleted && !ownDeletes) void rememberDeleted(change.kind === 'project' ? 'projects' : 'samples', change.id);
     // Writes during a sync are mostly its own; the user's edits in that window get one more pass.
     if (applying) {
       again = true;
       return;
     }
-    if (change.deleted) void rememberDeleted(change.kind === 'project' ? 'projects' : 'samples', change.id);
     if (running) again = true;
     else scheduleSync();
   });

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
-import { allFolders, childFolders, countIn, dissolveFolder, freeName, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
+import { allFolders, childFolders, countIn, dissolveFolder, flattenFolders, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
 import { getState, setFolders, toast, upsertSamples, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Txt } from './kit';
@@ -27,6 +27,18 @@ export function addFolder(parent: string, name: string): string | null {
 export function FolderBar({ path, setPath, selecting, onSelecting }: { path: string; setPath: (p: string) => void; selecting: boolean; onSelecting: (on: boolean) => void }) {
   const [naming, setNaming] = useState<string | null>(null);
   const parts = path ? path.split('/') : [];
+  const samples = useStore((st) => st.samples);
+  const extra = useStore((st) => st.folders);
+  const nested = hasNesting(samples, extra);
+  const flatten = async () => {
+    const ok = await confirmDestructive('Alle Ordnerpfade kürzen?', 'Jedes Sample behält nur den letzten Ordnernamen („Loops/Kicks“ wird „Kicks“). Ordner mit gleichem Namen werden zusammengelegt. Es wird nichts gelöscht.', 'Kürzen');
+    if (!ok) return;
+    const r = flattenFolders(samples, extra);
+    setFolders(r.extra);
+    await upsertSamples(r.changed);
+    setPath('');
+    toast(r.changed.length ? `${r.changed.length} Sample(s) in flache Ordner gelegt` : 'Die Ordner waren schon flach.');
+  };
   const create = () => {
     if (naming === null) return;
     const made = addFolder(path, naming);
@@ -51,6 +63,11 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
         <Btn small accessibilityLabel="Neuer Ordner" onPress={() => setNaming(naming === null ? freeName(allFolders(getState().samples, getState().folders), path) : null)}>
           + Neuer Ordner
         </Btn>
+        {nested && (
+          <Btn small accessibilityLabel="Alle Ordnerpfade kürzen" onPress={() => void flatten()}>
+            Pfade kürzen
+          </Btn>
+        )}
         <Btn small accessibilityLabel={selecting ? 'Auswahl beenden' : 'Samples auswählen'} onPress={() => onSelecting(!selecting)}>
           {selecting ? 'Fertig' : 'Auswählen'}
         </Btn>

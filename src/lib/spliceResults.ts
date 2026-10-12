@@ -72,7 +72,7 @@ export function sampleFromSplice(r: SpliceResult, ext: string, now = Date.now())
     id: spliceSampleId(r.uuid),
     name,
     spliceId: r.uuid,
-    folder: r.pack ? `Splice/${SAFE(r.pack)}` : 'Splice',
+    folder: r.pack ? SAFE(r.pack) || 'Splice' : 'Splice',
     bpm: r.type === 'oneshot' ? undefined : (r.bpm ?? parsed.bpm),
     key: niceKey(r.key) ?? parsed.key,
     duration: r.duration,

@@ -61,7 +61,7 @@ describe('sampleFromSplice', () => {
   it('builds a library entry with Splice tempo, key, pack folder and a category from the name', () => {
     const [kick] = parseSearchResults(ANSWER);
     const s = sampleFromSplice(kick, 'wav', 1000);
-    expect(s).toMatchObject({ id: spliceSampleId(kick.uuid), spliceId: kick.uuid, name: 'DS_HT_150_drum_kick_bomber_rumble_C#.wav', bpm: 150, key: 'C#', folder: 'Splice/Dropgun Samples', category: 'kick', duration: 3.2, addedAt: 1000 });
+    expect(s).toMatchObject({ id: spliceSampleId(kick.uuid), spliceId: kick.uuid, name: 'DS_HT_150_drum_kick_bomber_rumble_C#.wav', bpm: 150, key: 'C#', folder: 'Dropgun Samples', category: 'kick', duration: 3.2, addedAt: 1000 });
   });
 
   it('keeps one-shots tempo-less', () => {

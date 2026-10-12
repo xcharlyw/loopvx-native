@@ -1,5 +1,5 @@
 import type { Sample } from '../types';
-import { allFolders, childFolders, countIn, dissolveFolder, freeName, moveSamples, nameError, normPath, parentOf, prettyPath, renameFolder, samplesIn } from './folders';
+import { flattenFolders, hasNesting, allFolders, childFolders, countIn, dissolveFolder, freeName, moveSamples, nameError, normPath, parentOf, prettyPath, renameFolder, samplesIn } from './folders';
 
 const sample = (id: string, folder?: string): Sample => ({ id, name: `${id}.wav`, category: 'other', addedAt: 1, folder });
 const lib = [sample('a', 'Loops'), sample('b', 'Loops/Kicks'), sample('c', 'Loops/Kicks/Rumble'), sample('d', 'Splice/Pack'), sample('e'), sample('f', 'Loops')];
@@ -55,5 +55,20 @@ describe('changing folders', () => {
     expect(freeName(['Neuer Ordner', 'Neuer Ordner 2'], '')).toBe('Neuer Ordner 3');
     expect(freeName([], '')).toBe('Neuer Ordner');
     expect(freeName(['A/Neuer Ordner'], 'A')).toBe('Neuer Ordner 2');
+  });
+});
+
+describe('flattenFolders', () => {
+  it('keeps only the last part of every path and merges folders with the same name', () => {
+    const r = flattenFolders([...lib, sample('g', 'Other/Kicks')], ['Loops/Leer', 'Frei']);
+    expect(r.changed.map((s) => `${s.id}:${s.folder}`)).toEqual(['b:Kicks', 'c:Rumble', 'd:Pack', 'g:Kicks']);
+    expect(r.extra).toEqual(['Leer', 'Frei']);
+  });
+  it('leaves already flat libraries alone', () => {
+    const flat = [sample('a', 'Loops'), sample('b')];
+    expect(flattenFolders(flat, ['X']).changed).toEqual([]);
+    expect(hasNesting(flat, ['X'])).toBe(false);
+    expect(hasNesting(lib)).toBe(true);
+    expect(hasNesting([], ['A/B'])).toBe(true);
   });
 });

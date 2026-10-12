@@ -91,3 +91,15 @@ export function freeName(all: string[], parent: string, base = 'Neuer Ordner'): 
   if (!taken.has(base)) return base;
   for (let i = 2; ; i++) if (!taken.has(`${base} ${i}`)) return `${base} ${i}`;
 }
+
+/** True when some folder is inside another one. */
+export const hasNesting = (samples: Pick<Sample, 'folder'>[], extra: string[] = []) => allFolders(samples, extra).some((f) => f.includes(SEP));
+
+/**
+ * Flattens the tree: every sample keeps only the last part of its folder path ("Loops/Kicks" becomes "Kicks"), so
+ * folders of the same name merge. Returns the samples that change and the empty folders, flattened the same way.
+ */
+export function flattenFolders(samples: Sample[], extra: string[]): { changed: Sample[]; extra: string[] } {
+  const changed = samples.filter((s) => normPath(s.folder).includes(SEP)).map((s) => ({ ...s, folder: nameOf(normPath(s.folder)) }));
+  return { changed, extra: [...new Set(extra.map((e) => nameOf(normPath(e))).filter(Boolean))] };
+}

@@ -1,5 +1,5 @@
 import type { Clip } from '../types';
-import { contiguousRun, mergeMidiClips, runSpan } from './consolidate';
+import { consolidateGroups, contiguousRun, mergeMidiClips, runSpan } from './consolidate';
 
 const clip = (id: string, start: number, length: number, notes?: Clip['notes']): Clip => ({ id, sampleId: notes ? '' : 's', start, length, offset: 0, notes });
 
@@ -26,5 +26,20 @@ describe('mergeMidiClips', () => {
     expect(runSpan([a, b])).toEqual({ start: 4, length: 4 });
     expect(m).toMatchObject({ id: 'm', start: 4, length: 4, sampleId: '' });
     expect(m.notes!.map((n) => [n.pitch, n.start, n.length])).toEqual([[36, 0, 0.5], [38, 1.5, 0.5], [40, 2.25, 0.25]]);
+  });
+});
+
+describe('consolidateGroups', () => {
+  const tracks = [
+    { id: 't1', clips: [clip('a', 0, 4), clip('b', 4, 4), clip('c', 12, 4)] },
+    { id: 't2', clips: [clip('x', 0, 2), clip('y', 8, 2)] },
+  ];
+  it('takes the touching clips for a single selection', () => {
+    expect(consolidateGroups(tracks, ['a']).map((g) => [g.trackId, g.run.map((c) => c.id)])).toEqual([['t1', ['a', 'b']]]);
+  });
+  it('takes the range from the first to the last selected clip per track for several', () => {
+    const g = consolidateGroups(tracks, ['a', 'c', 'y']);
+    expect(g.map((x) => [x.trackId, x.run.map((c) => c.id)])).toEqual([['t1', ['a', 'b', 'c']], ['t2', ['y']]]); // b lies inside the range
+    expect(runSpan(g[0].run)).toEqual({ start: 0, length: 16 });
   });
 });

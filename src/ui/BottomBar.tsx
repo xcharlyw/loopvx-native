@@ -3,10 +3,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip } from '../lib/actions';
-import { redo, setState, undo, useStore } from '../lib/store';
+import { redo, selectedClipIds, setClipSelection, setState, undo, useStore } from '../lib/store';
 import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 import { confirmDestructive } from './confirm';
-import { Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
+import { Check, Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
 import { useSmall } from './hooks';
 import { IconBtn, PillGroup, Spacer, iconColor } from './kit';
 
@@ -14,6 +14,8 @@ export function BottomBar() {
   const view = useStore((s) => s.view);
   const zoom = useStore((s) => s.zoom);
   const selectedClipId = useStore((s) => s.selectedClipId);
+  const multiSelect = useStore((s) => s.multiSelect);
+  const selectedCount = useStore((s) => selectedClipIds(s).length);
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
   const hasSelectedTrack = useStore((s) => s.project.tracks.some((t) => t.id === s.selectedTrackId));
@@ -50,6 +52,21 @@ export function BottomBar() {
           <Redo size={16} />
         </IconBtn>
       </PillGroup>
+
+      {view === 'arrange' && (
+        <PillGroup>
+          <IconBtn
+            accessibilityLabel="Mehrfachauswahl"
+            accessibilityState={{ selected: multiSelect }}
+            onPress={() => {
+              setState({ multiSelect: !multiSelect });
+              if (multiSelect) setClipSelection(selectedClipId);
+            }}
+          >
+            <Check size={16} color={iconColor(multiSelect)} />
+          </IconBtn>
+        </PillGroup>
+      )}
 
       {view === 'arrange' && selectedClipId && (
         <PillGroup>

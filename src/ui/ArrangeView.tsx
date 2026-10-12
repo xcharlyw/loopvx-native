@@ -6,7 +6,7 @@ import { engine } from '../audio/engine';
 import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
 import { addClip, canHoldClip, createMidiTrack, createTrack, editClip, mapTrack, removeClip, trackKind, updateClip, type ClipEdit } from '../lib/project';
-import { getState, setState, updateProject, useStore } from '../lib/store';
+import { getState, selectedClipIds, setClipSelection, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
 import { AUTO_ORDER, AUTO_PARAMS, laneOf } from '../lib/automation';
 import type { AutoParam } from '../types';
@@ -73,6 +73,9 @@ export function ArrangeView() {
   const samples = useStore((st) => st.samples);
   const selectedTrackId = useStore((st) => st.selectedTrackId);
   const selectedClipId = useStore((st) => st.selectedClipId);
+  const selectionKey = useStore((st) => selectedClipIds(st).join(','));
+  const selection = useMemo(() => (selectionKey ? selectionKey.split(',') : []), [selectionKey]);
+  const multiSelect = useStore((st) => st.multiSelect);
   const armedSampleId = useStore((st) => st.armedSampleId);
   const small = useSmall();
   const { headerW, rowH } = layout(small);
@@ -153,12 +156,22 @@ export function ArrangeView() {
   };
 
   const onClipTap = (clip: Clip, track: Track, e: GestureResponderEvent) => {
+    // Multi-selection: Shift/Cmd/Ctrl-click, or the multi-select mode (touch): a tap adds or removes the clip.
+    const ne = e.nativeEvent as unknown as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
+    if (multiSelect || ne.shiftKey || ne.metaKey || ne.ctrlKey) {
+      const current = selectedClipIds(getState());
+      const next = current.includes(clip.id) ? current.filter((id) => id !== clip.id) : [...current, clip.id];
+      setClipSelection(next[0] ?? null, next.slice(1));
+      setState({ selectedTrackId: track.id });
+      return;
+    }
     // A second tap on a selected MIDI clip opens its notes.
-    if (clip.notes && selectedClipId === clip.id) {
+    if (clip.notes && selectedClipId === clip.id && selection.length === 1) {
       setState({ panel: 'piano' });
       return;
     }
-    setState({ selectedClipId: clip.id, selectedTrackId: track.id });
+    setClipSelection(clip.id);
+    setState({ selectedTrackId: track.id });
     // Like clicking into a clip in Ableton: the playhead jumps there, ready for Split.
     if (!engine.playing) setCursor(Math.max(0, snapBars(clip.start + tapX(e) / zoom, grid)));
   };
@@ -355,7 +368,7 @@ export function ArrangeView() {
                         height={rowH - 1 - 12}
                         projectBpm={project.bpm}
                         sampleBpm={sample?.bpm}
-                        selected={selectedClipId === clip.id}
+                        selected={selection.includes(clip.id)}
                         dragging={!!dragging}
                         liftY={dragging?.mode === 'move' ? trackDelta(index, dragging.dy) * rowH : 0}
                         onTap={(e) => onClipTap(clip, track, e)}

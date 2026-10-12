@@ -9,6 +9,7 @@ import { preparePageAudio } from '../audio/pageAudio';
 import { C } from '../constants/theme';
 import {
   consolidateSelectedClip,
+  selectAllClipsOfTrack,
   deleteSelectedClip,
   duplicateSelectedClip,
   nudgeSelectedClip,
@@ -124,6 +125,9 @@ function useShortcuts() {
       } else if (mod && e.key.toLowerCase() === 'e' && arrange) {
         e.preventDefault();
         splitSelectedClip();
+      } else if (mod && e.key.toLowerCase() === 'a' && arrange) {
+        e.preventDefault();
+        selectAllClipsOfTrack();
       } else if (mod && e.key.toLowerCase() === 'j' && arrange) {
         e.preventDefault();
         void consolidateSelectedClip();

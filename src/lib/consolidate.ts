@@ -31,3 +31,24 @@ export function mergeMidiClips(run: Clip[], id: string = uid()): Clip {
   notes.sort((a, b) => a.start - b.start || a.pitch - b.pitch);
   return { id, sampleId: '', start, length, offset: 0, notes };
 }
+
+/**
+ * What Consolidate acts on. One selected clip: it and the clips touching it. Several: per track, the selected clips of
+ * that track (the range from the first to the last one, with whatever lies in between; gaps become silence). Tracks without a selected clip are left alone.
+ */
+export function consolidateGroups(tracks: { id: string; clips: Clip[] }[], ids: string[]): { trackId: string; run: Clip[] }[] {
+  const wanted = new Set(ids);
+  const out: { trackId: string; run: Clip[] }[] = [];
+  for (const t of tracks) {
+    const picked = t.clips.filter((c) => wanted.has(c.id)).sort((a, b) => a.start - b.start);
+    if (!picked.length) continue;
+    if (ids.length === 1) {
+      out.push({ trackId: t.id, run: contiguousRun(t.clips, picked[0].id) });
+      continue;
+    }
+    // Like a time range in Ableton: whatever lies between the first and the last selected clip goes in too.
+    const { start, length } = runSpan(picked);
+    out.push({ trackId: t.id, run: t.clips.filter((c) => c.start < start + length - 1e-9 && c.start + c.length > start + 1e-9).sort((a, b) => a.start - b.start) });
+  }
+  return out;
+}

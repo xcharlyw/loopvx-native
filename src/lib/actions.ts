@@ -10,10 +10,10 @@ import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { readMidiFile, writeMidiFile } from './midi';
-import { contiguousRun, mergeMidiClips, runSpan } from './consolidate';
+import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
 import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
-import { errorText, getState, openProject, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
+import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
 export async function togglePlay() {
   const { project, view, cursor } = getState();
@@ -71,10 +71,10 @@ export async function placeSample(sample: Sample, target?: { trackId: string; ba
 }
 
 export function deleteSelectedClip() {
-  const id = getState().selectedClipId;
-  if (!id) return;
-  updateProject((p) => removeClip(p, id));
-  setState({ selectedClipId: null });
+  const ids = selectedClipIds();
+  if (!ids.length) return;
+  updateProject((p) => ids.reduce((acc, id) => removeClip(acc, id), p));
+  setClipSelection(null);
 }
 
 /** Remove the selected track (after asking) and select its neighbour. */
@@ -106,39 +106,54 @@ export function duplicateSelectedClip() {
  * new sample in the folder "Konsolidiert".
  */
 export async function consolidateSelectedClip() {
-  const { project, selectedClipId } = getState();
-  const found = selectedClipId ? findClip(project, selectedClipId) : null;
-  if (!found) {
+  const { project } = getState();
+  const ids = selectedClipIds();
+  if (!ids.length) {
     toast('Wähle einen Clip aus, dann Konsolidieren (Strg/Cmd + J).');
     return;
   }
-  const run = contiguousRun(found.track.clips, found.clip.id);
-  const trackId = found.track.id;
-  const ids = new Set(run.map((c) => c.id));
+  const groups = consolidateGroups(project.tracks, ids).filter((g) => {
+    const track = project.tracks.find((t) => t.id === g.trackId)!;
+    return !(track.clips.find((c) => c.id === g.run[0].id)?.notes && g.run.length < 2);
+  });
+  if (!groups.length) {
+    toast('Nichts zu konsolidieren: MIDI-Clips brauchen einen zweiten Clip (Mehrfachauswahl oder direkt daneben).');
+    return;
+  }
   try {
-    let merged: Clip;
-    if (found.clip.notes) {
-      if (run.length < 2) {
-        toast('Nichts zu konsolidieren: neben dem Clip liegt kein weiterer.');
-        return;
+    toast('Konsolidiere …');
+    const replaced = new Map<string, { remove: Set<string>; merged: Clip }>();
+    for (const { trackId, run } of groups) {
+      const track = project.tracks.find((t) => t.id === trackId)!;
+      let merged: Clip;
+      if (run[0].notes) {
+        merged = mergeMidiClips(run);
+      } else {
+        const { start, length } = runSpan(run);
+        const bare = { ...track, clips: run, fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
+        const data = await renderWav({ ...project, tracks: [bare] }, { from: start, to: start + length });
+        const sample: Sample = { id: `cons:${uid()}`, name: `${track.name} konsolidiert.wav`, category: track.category, bpm: project.bpm, folder: 'Konsolidiert', duration: (length * 240) / project.bpm, size: data.byteLength, addedAt: Date.now() };
+        const stored = await storeSampleAudio(sample, data.buffer as ArrayBuffer, 'wav');
+        setSamples([...getState().samples, stored]);
+        merged = { id: uid(), sampleId: stored.id, start, length, offset: 0 };
       }
-      merged = mergeMidiClips(run);
-    } else {
-      const { start, length } = runSpan(run);
-      toast('Clip wird konsolidiert …');
-      const bare = { ...found.track, clips: run, fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
-      const data = await renderWav({ ...project, tracks: [bare] }, { from: start, to: start + length });
-      const sample: Sample = { id: `cons:${uid()}`, name: `${found.track.name} konsolidiert.wav`, category: found.track.category, bpm: project.bpm, folder: 'Konsolidiert', duration: (length * 240) / project.bpm, size: data.byteLength, addedAt: Date.now() };
-      const stored = await storeSampleAudio(sample, data.buffer as ArrayBuffer, 'wav');
-      setSamples([...getState().samples, stored]);
-      merged = { id: uid(), sampleId: stored.id, start, length, offset: 0 };
+      replaced.set(trackId, { remove: new Set(run.map((c) => c.id)), merged });
     }
-    updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, clips: [...t.clips.filter((c) => !ids.has(c.id)), merged] })));
-    setState({ selectedClipId: merged.id });
-    toast(`${run.length} ${run.length === 1 ? 'Clip' : 'Clips'} konsolidiert`);
+    updateProject((p) => ({ ...p, tracks: p.tracks.map((t) => { const r = replaced.get(t.id); return r ? { ...t, clips: [...t.clips.filter((c) => !r.remove.has(c.id)), r.merged] } : t; }) }));
+    const first = [...replaced.values()][0].merged;
+    setClipSelection(first.id, [...replaced.values()].slice(1).map((r) => r.merged.id));
+    toast(`${groups.length === 1 ? '1 Clip' : `${groups.length} Clips`} konsolidiert`);
   } catch (e) {
     toast(errorText(e), 'error');
   }
+}
+
+/** Select every clip of the selected track (Ctrl/Cmd+A). */
+export function selectAllClipsOfTrack() {
+  const { project, selectedTrackId } = getState();
+  const track = project.tracks.find((t) => t.id === selectedTrackId);
+  if (!track?.clips.length) return;
+  setClipSelection(track.clips[0].id, track.clips.slice(1).map((c) => c.id));
 }
 
 /** Split the selected clip at the playhead (Ableton: Cmd+E). */

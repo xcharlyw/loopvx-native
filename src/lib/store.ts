@@ -32,6 +32,12 @@ export interface AppState {
   panel: Panel;
   selectedTrackId: string | null;
   selectedClipId: string | null;
+  /** More clips selected together with `selectedClipId` (multi-selection: Shift/Cmd/Ctrl-click, or the multi-select mode on touch). */
+  extraClipIds: string[];
+  /** The primary clip the extras were selected with: they count only while it is still the primary one. */
+  extraHead: string | null;
+  /** Taps on clips add to / remove from the selection instead of replacing it. */
+  multiSelect: boolean;
   /** Playhead when stopped (bars). */
   cursor: number;
   /** Timeline zoom: pixels per bar. */
@@ -55,6 +61,9 @@ let state: AppState = {
   panel: 'none',
   selectedTrackId: null,
   selectedClipId: null,
+  extraClipIds: [],
+  extraHead: null,
+  multiSelect: false,
   cursor: 0,
   zoom: 56,
   armedSampleId: null,
@@ -67,6 +76,18 @@ let state: AppState = {
 };
 
 const listeners = new Set<() => void>();
+
+/** Every selected clip id: the primary one plus the extras (none when nothing is selected). */
+export function selectedClipIds(s: Pick<AppState, 'selectedClipId' | 'extraClipIds' | 'extraHead'> = state): string[] {
+  if (!s.selectedClipId) return [];
+  const extras = s.extraHead === s.selectedClipId ? s.extraClipIds : [];
+  return [s.selectedClipId, ...extras.filter((id) => id !== s.selectedClipId)];
+}
+
+/** Select `primary` and, with it, `extras` (a multi-selection). */
+export function setClipSelection(primary: string | null, extras: string[] = []) {
+  setState({ selectedClipId: primary, extraClipIds: extras, extraHead: primary });
+}
 
 export function getState(): AppState {
   return state;

@@ -101,10 +101,12 @@ export function Chip({
   onPress,
   style,
   textStyle,
+  accessibilityLabel,
 }: {
   children: ReactNode;
   variant?: 'solid' | 'ghost' | 'on';
   onPress?: () => void;
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
 }) {
@@ -120,7 +122,7 @@ export function Chip({
   );
   const st = [s.chip, variant === 'ghost' && s.chipGhost, variant === 'on' && s.chipOn, style];
   return onPress ? (
-    <Pressable style={st} onPress={onPress}>
+    <Pressable accessibilityLabel={accessibilityLabel} style={st} onPress={onPress}>
       {body}
     </Pressable>
   ) : (

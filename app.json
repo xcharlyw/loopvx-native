@@ -8,7 +8,10 @@
     "scheme": "loopvxnative",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/icon.png",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "LOOPVX nimmt mit dem Mikrofon auf, wenn du in der Library auf „Aufnehmen“ tippst."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +20,10 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "static",

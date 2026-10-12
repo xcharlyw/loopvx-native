@@ -4,6 +4,7 @@ import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { autoDetectTempos, downloadSample, placeSample } from '../lib/actions';
 import { moveSamples, prettyPath, normPath, samplesIn } from '../lib/folders';
+import { SORT_LABELS, keysFit, sortSamples, type SortBy } from '../lib/libraryFilter';
 import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
 import { deleteSample, importSamplesFromDevice } from '../lib/samples';
 import { errorText, getState, removeSamples, setSamples, setState, toast, upsertSample, upsertSamples, useStore } from '../lib/store';
@@ -15,6 +16,7 @@ import { useEngine } from './hooks';
 import { Check, Play, Plus, Stop, Upload } from './icons';
 import { FolderBar, FolderPicker, FolderRows } from './LibraryFolders';
 import { confirmDestructive } from './confirm';
+import { RecordButton } from './RecordButton';
 import { Btn, Chip, IconBtn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
@@ -27,6 +29,8 @@ export function LibraryPanel() {
   const [filter, setFilter] = useState<SampleCategory | 'all'>('all');
   const [query, setQuery] = useState('');
   const [tempoMatch, setTempoMatch] = useState(false);
+  const [keyMatch, setKeyMatch] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy>('name');
   const [editing, setEditing] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const previewing = useEngine(() => engine.isPreviewing());
@@ -35,17 +39,20 @@ export function LibraryPanel() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [picking, setPicking] = useState(false);
   // Without a search or filter the library is browsed folder by folder; with one, all folders are searched at once.
-  const browsing = !query.trim() && filter === 'all' && !tempoMatch;
+  const browsing = !query.trim() && filter === 'all' && !tempoMatch && !keyMatch;
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (browsing) return samplesIn(samples, path).sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true, sensitivity: 'base' }));
-    return samples
-      .filter((x) => filter === 'all' || x.category === filter)
-      .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.folder ?? '').toLowerCase().includes(q))
-      .filter((x) => !tempoMatch || !x.bpm || Math.abs(x.bpm - project.bpm) <= 2)
-      .sort((a, b) => (a.folder ?? '').localeCompare(b.folder ?? '') || a.name.localeCompare(b.name));
-  }, [samples, filter, query, tempoMatch, project.bpm, browsing, path]);
+    if (browsing) return sortSamples(samplesIn(samples, path), sortBy);
+    return sortSamples(
+      samples
+        .filter((x) => filter === 'all' || x.category === filter)
+        .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.folder ?? '').toLowerCase().includes(q))
+        .filter((x) => !tempoMatch || !x.bpm || Math.abs(x.bpm - project.bpm) <= 2)
+        .filter((x) => !keyMatch || keysFit(x.key, project.key)),
+      sortBy,
+    );
+  }, [samples, filter, query, tempoMatch, keyMatch, sortBy, project.bpm, project.key, browsing, path]);
 
   const toggle = (id: string) =>
     setSelected((cur) => {
@@ -121,6 +128,7 @@ export function LibraryPanel() {
             <Upload size={14} />
             Vom Gerät hochladen
           </Btn>
+          <RecordButton />
         </View>
         <View style={{ marginTop: 10 }}>
           <DriveImport />
@@ -141,6 +149,17 @@ export function LibraryPanel() {
         <Chip variant={tempoMatch ? 'on' : 'ghost'} onPress={() => setTempoMatch(!tempoMatch)}>
           {`${project.bpm} BPM`}
         </Chip>
+        <Chip variant={keyMatch ? 'on' : 'ghost'} accessibilityLabel="Nur passende Tonarten" onPress={() => setKeyMatch(!keyMatch)}>
+          {`Passt zu ${project.key}`}
+        </Chip>
+      </ScrollView>
+      <ScrollView horizontal style={s.filtersScroll} contentContainerStyle={s.filters}>
+        <Txt style={s.note}>Sortieren:</Txt>
+        {(Object.keys(SORT_LABELS) as SortBy[]).map((k) => (
+          <Chip key={k} variant={sortBy === k ? 'on' : 'ghost'} accessibilityLabel={`Sortieren nach ${SORT_LABELS[k]}`} onPress={() => setSortBy(k)} textStyle={{ fontSize: 12 }}>
+            {SORT_LABELS[k]}
+          </Chip>
+        ))}
       </ScrollView>
 
       {browsing && <FolderBar path={path} setPath={setPath} selecting={selecting} onSelecting={(on) => (on ? setSelecting(true) : stopSelecting())} />}

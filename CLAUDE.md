@@ -86,7 +86,7 @@ tests/              server tests (anything in api/ is deployed as a function)
   `config.ts`); `api/drive-token.ts` returns the granted `scope`, `driveCanRead()` gates the **Drive import** (Library →
   `DriveImport`: browse folders, tick files or import a folder recursively; pure logic in `driveImport.ts`, run in
   `driveImportRun.ts`; samples get id `drive:<fileId>`, dedupe by `driveId`, the file name and the folder path give category/BPM/key, but the library folder is a **single name, the pack** (`libraryFolderOf`: the last Drive folder that is not a structure name like `loops`/`drum_loops`/`music_loops`, since packs look like `Pack / loops / drum_loops`; no tree). "Nach Pack ordnen" in the Library (`refolderDriveSamples`, reads parents from Drive) fixes samples imported with the older rule; the
-  copies are then synced into LOOPVX/Samples like any sample, **by a copy inside Drive** (`copyFile`, no upload from the phone; an upload if Drive refuses). A folder import first scans (`collectAudio` with `onFile`/`cancelled` hooks, up to 3000 files), shows a plan card (`summarizeImport`: new vs. existing, size, library folders) and only then downloads; both phases have "Abbrechen", importing again continues where it stopped because known Drive ids are skipped). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; not verified against a real Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
+  copies are then synced into LOOPVX/Samples like any sample, **by a copy inside Drive** (`copyFile`, no upload from the phone; an upload if Drive refuses). A folder import first scans (`collectAudio` with `onFile`/`cancelled` hooks, up to 3000 files), shows a plan card (`summarizeImport`: new vs. existing, size, library folders) and only then downloads; both phases have "Abbrechen", importing again continues where it stopped because known Drive ids are skipped). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; checked against the real metadata of Karl's Drive: "My Mac" is a folder he owns with no parent; the full listing of owned folders can be slow on a big Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
 ## Library folders
@@ -208,9 +208,19 @@ drag with the distance scrolled so far, so the note stays under the finger even 
 offset is tracked in a ref (`onScroll` is ignored mid-drag). react-native-web logs the dev-only warning
 "ScrollView doesn't take rejection well" during drags; it is harmless (the responder refuses to hand over).
 
+## Recording and Library ordering
+
+`RecordButton` (Library, top) records the microphone into the library: folder "Aufnahmen", name `takeName()`, always stored as 16-bit **mono WAV**
+(`recordingTypes.ts`, `recordingMath.ts`). Web (`recording.web.ts`): `MediaRecorder` with raw settings (no echo cancelling/gain), decoded and
+re-encoded to WAV so the take plays in any browser and syncs to Drive; level meter via an AnalyserNode on its own context. Native (`recording.ts`):
+react-native-audio-api `AudioRecorder` `onAudioReady` blocks, session category `playAndRecord` while recording and `playback` after; mic permission
+strings are in `app.json` (`NSMicrophoneUsageDescription`, `RECORD_AUDIO`). **The native path has never run on a device.** "Auf Spur legen"
+puts the last take on a track. `libraryFilter.ts` (pure, tested): sort chips (Name / BPM / Tonart / Neu, unknown tempo/key last) and the
+"Passt zu <key>" filter (`keysFit`: same key, relative key, fifth neighbours; a sample without a key always passes). Folders are not draggable on
+purpose: a drag inside the scrolling sheet fights the scroll on a phone, so moving is "Auswählen" + "Verschieben …" or the folder ⋯ menu.
+
 ## Not done yet
 
-Audio recording,
 App Store build (EAS; never tested on a real device natively; the effect graph and sample instrument
 use WaveShaper/Convolver/StereoPanner, which react-native-audio-api implements natively but nobody
 has heard on a phone yet).

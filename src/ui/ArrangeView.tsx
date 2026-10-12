@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { C, RULER_H, font, layout, mono } from '../constants/theme';
@@ -8,6 +8,9 @@ import { placeSample, setCursor } from '../lib/actions';
 import { addClip, canHoldClip, createMidiTrack, createTrack, editClip, mapTrack, removeClip, trackKind, updateClip, type ClipEdit } from '../lib/project';
 import { getState, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
+import { AUTO_ORDER, AUTO_PARAMS, laneOf } from '../lib/automation';
+import type { AutoParam } from '../types';
+import { AutomationCurve } from './AutomationCurve';
 import { Fader } from './Fader';
 import { usePlayhead, useSmall } from './hooks';
 import { Plus } from './icons';
@@ -17,6 +20,8 @@ import { useDrag, web, type DragPhase } from './drag';
 import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
+/** Height of an open automation lane under a track (Ableton-style: the curve sits right below the clips). */
+const LANE_H = 76;
 const BOTTOM_PAD = 170;
 export const MIN_ZOOM = 8;
 export const MAX_ZOOM = 240;
@@ -109,7 +114,18 @@ export function ArrangeView() {
   const sampleById = useMemo(() => new Map(samples.map((x) => [x.id, x])), [samples]);
   const isEmpty = project.tracks.every((t) => t.clips.length === 0);
   const anySolo = project.tracks.some((t) => t.solo);
-  const bodyH = Math.max(viewportH, project.tracks.length * rowH + ADD_ROW_H + BOTTOM_PAD);
+  // Open automation lanes: which parameter's curve shows under which track.
+  const [lanes, setLanes] = useState<Record<string, AutoParam>>({});
+  const openLanes = project.tracks.filter((t) => lanes[t.id]).length;
+  const bodyH = Math.max(viewportH, project.tracks.length * rowH + openLanes * LANE_H + ADD_ROW_H + BOTTOM_PAD);
+  const toggleLane = (t: Track) =>
+    setLanes((m) => {
+      const next = { ...m };
+      if (next[t.id]) delete next[t.id];
+      else next[t.id] = t.automation?.[0]?.param ?? 'filter';
+      return next;
+    });
+  const cycleLane = (t: Track) => setLanes((m) => ({ ...m, [t.id]: AUTO_ORDER[(AUTO_ORDER.indexOf(m[t.id] ?? 'filter') + 1) % AUTO_ORDER.length] }));
 
   const grid = zoom >= 32 ? 0.25 : 1;
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -226,9 +242,10 @@ export function ArrangeView() {
           <View style={{ width: headerW }}>
             {project.tracks.map((track) => {
               const selected = selectedTrackId === track.id;
+              const laneParam = lanes[track.id];
               return (
+                <Fragment key={track.id}>
                 <Pressable
-                  key={track.id}
                   style={[s.trackHeader, { height: rowH }, small && s.trackHeaderSm, selected && s.trackHeaderSelected]}
                   onPress={() => setState({ selectedTrackId: track.id })}
                   onLongPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'track' })}
@@ -257,6 +274,14 @@ export function ArrangeView() {
                     >
                       <Txt style={[s.fxText, !!track.devices?.length && { color: C.accentInk }]}>{track.devices?.length ? `FX${track.devices.length}` : 'FX'}</Txt>
                     </Pressable>
+                    <Pressable
+                      accessibilityLabel={`Automation von ${track.name}`}
+                      accessibilityState={{ selected: !!laneParam }}
+                      onPress={() => toggleLane(track)}
+                      style={[s.fxBtn, (!!laneParam || !!track.automation?.length) && s.fxBtnOn]}
+                    >
+                      <Txt style={[s.fxText, (!!laneParam || !!track.automation?.length) && { color: C.accentInk }]}>A</Txt>
+                    </Pressable>
                     {!small && (
                       <Fader
                         value={track.volume}
@@ -266,6 +291,13 @@ export function ArrangeView() {
                     )}
                   </View>
                 </Pressable>
+                {laneParam && (
+                  <Pressable accessibilityLabel={`Parameter der Automation von ${track.name}`} onPress={() => cycleLane(track)} style={[s.laneHeader, { height: LANE_H }]}>
+                    <Txt style={s.laneParam}>{`${AUTO_PARAMS[laneParam].label} ▾`}</Txt>
+                    <Txt style={s.laneHint}>{laneOf(track, laneParam).length ? `${laneOf(track, laneParam).length} Punkte` : 'tippen: Parameter'}</Txt>
+                  </Pressable>
+                )}
+                </Fragment>
               );
             })}
             <View style={[s.trackHeader, { height: ADD_ROW_H, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
@@ -299,8 +331,8 @@ export function ArrangeView() {
             <View style={{ width, height: bodyH }}>
               <Grid zoom={zoom} totalBars={totalBars} height={bodyH} />
               {project.tracks.map((track, index) => (
+                <Fragment key={track.id}>
                 <Pressable
-                  key={track.id}
                   style={[
                     s.lane,
                     { width, height: rowH },
@@ -332,6 +364,8 @@ export function ArrangeView() {
                     );
                   })}
                 </Pressable>
+                {lanes[track.id] && <LaneRow track={track} param={lanes[track.id]} zoom={zoom} width={width} totalBars={totalBars} />}
+                </Fragment>
               ))}
               {isEmpty && (
                 <View pointerEvents="none" style={[s.emptyHint, { left: 0.4 * (headerW + width) - 140, top: 0.45 * (bodyH + RULER_H) - RULER_H - 42 }]}>
@@ -352,6 +386,16 @@ export function ArrangeView() {
 
 
 /** A MIDI clip's notes in miniature, scaled to the pitch range they use (at least an octave). */
+/** The automation lane under a track: the whole arrangement at the arrangement's zoom, so a point sits right under the bar it belongs to. */
+function LaneRow({ track, param, zoom, width, totalBars }: { track: Track; param: AutoParam; zoom: number; width: number; totalBars: number }) {
+  const [sel, setSel] = useState<number | null>(null);
+  return (
+    <View style={[s.lane, { width, height: LANE_H }]}>
+      <AutomationCurve track={track} param={param} start={0} span={totalBars} width={width} height={LANE_H - 1} selected={sel} onSelect={setSel} grid={zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8} labels={false} />
+    </View>
+  );
+}
+
 function MidiPreview({ notes, width, height, zoom }: { notes: Note[]; width: number; height: number; zoom: number }) {
   if (!notes.length || width <= 0 || height <= 0) return null;
   const lo = Math.min(...notes.map((n) => n.pitch));
@@ -485,14 +529,17 @@ const s = StyleSheet.create({
   trackTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, overflow: 'hidden' },
   dot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   trackName: { ...font(600), fontSize: 13, flexShrink: 1 },
-  fxBtn: { minWidth: 24, height: 24, paddingHorizontal: 3, borderRadius: 7, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  fxBtn: { minWidth: 22, height: 24, paddingHorizontal: 2, borderRadius: 7, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
   fxBtnOn: { backgroundColor: C.accent, borderColor: C.accent },
   fxText: { ...mono(), fontSize: 9, color: C.muted },
   /** MIDI tracks get a square dot, audio tracks a round one. */
   dotMidi: { borderRadius: 2 },
-  trackControls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  trackControls: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   addTrack: { flexDirection: 'row', alignItems: 'center', gap: 2, height: ADD_ROW_H },
   addTrackText: { color: C.dim, fontSize: 11 },
+  laneHeader: { paddingHorizontal: 10, justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: C.lineSoft, backgroundColor: 'rgba(198,255,61,0.04)' },
+  laneParam: { ...font(600), fontSize: 12, color: C.accent },
+  laneHint: { ...font(400), fontSize: 10, color: C.muted, marginTop: 2 },
   lane: { borderBottomWidth: 1, borderBottomColor: C.lineSoft },
   laneSelected: { backgroundColor: 'rgba(255,255,255,0.015)' },
   clip: {

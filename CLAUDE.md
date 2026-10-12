@@ -217,7 +217,7 @@ session mode passes `automation=false`): the curve is sampled every 1/16 bar, a 
 parameter, `TrackChain.apply` leaves that parameter alone (`automated`), and `resetPump`/`resetAutomation` cancels the events and re-applies the track's own values.
 The filter lane goes through `djFilter`, so it keeps the DJ filter's curve. Measured offline: volume fade linear, a filter close halves the zero-crossing rate every
 couple of bars, a reverb lane stays dry until its point. UI `AutomationPanel` (TrackPanel "Automation"): parameter chips, a graph of 16/32/64/128 bars (no scrolling:
-the buttons move the window), tap = new point, drag = move (one undo step), buttons nudge/delete, shapes for the visible window. Not shown in the arrange view yet.
+the buttons move the window), tap = new point, drag = move (one undo step), buttons nudge/delete, shapes for the visible window. Same curve component (`AutomationCurve`) is used in the arrange view: the "A" button of a track header opens a lane under the track (`LaneRow`, `LANE_H`, all bars at the arrangement's zoom; tap the lane header to cycle the parameter), like Ableton.
 The `volume` lane is a multiplier of the track's fader (0..1), so the mixer fader keeps working under a fade.
 
 ## Arranger

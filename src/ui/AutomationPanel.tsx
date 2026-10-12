@@ -1,21 +1,18 @@
-import { useRef, useState } from 'react';
-import { StyleSheet, View, type GestureResponderEvent } from 'react-native';
-import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { projectEndBars } from '../audio/timing';
 import { C, font, mono } from '../constants/theme';
 import { AUTO_GRID, AUTO_ORDER, AUTO_PARAMS, laneOf, ramp, setLane, throwAt, withPoint, withoutPoint } from '../lib/automation';
 import { formatBarPosition } from '../audio/timing';
 import { mapTrack } from '../lib/project';
-import { discardLastHistory, recordHistory, updateProject, useStore } from '../lib/store';
+import { updateProject, useStore } from '../lib/store';
 import type { AutoParam, AutoPoint } from '../types';
-import { web } from './drag';
+import { AutomationCurve } from './AutomationCurve';
 import { Btn, Chip, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
 const SPANS = [16, 32, 64, 128];
 const HEIGHT = 160;
-const PAD = 10;
-const HIT = 18; // px: a touch this close to a point grabs it
 
 /**
  * The automation of one track: pick a parameter, then draw its curve over the arrangement. A tap on an empty spot adds
@@ -30,8 +27,6 @@ export function AutomationPanel() {
   const [start, setStart] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
   const [width, setWidth] = useState(320);
-  const drag = useRef<{ index: number; moved: boolean } | null>(null);
-
   if (!track) {
     return (
       <Sheet title="Automation">
@@ -42,67 +37,8 @@ export function AutomationPanel() {
   const trackId = track.id;
   const def = AUTO_PARAMS[param];
   const points = laneOf(track, param);
-  const barAt = (x: number) => start + (Math.max(0, Math.min(width, x)) / width) * span;
-  const xOf = (bar: number) => ((bar - start) / span) * width;
-  const yOf = (v: number) => PAD + (1 - (v - def.min) / (def.max - def.min)) * (HEIGHT - 2 * PAD);
-  const valueAt = (y: number) => def.min + (1 - (Math.max(PAD, Math.min(HEIGHT - PAD, y)) - PAD) / (HEIGHT - 2 * PAD)) * (def.max - def.min);
-  const snapBar = (bar: number) => Math.max(0, Math.round(bar * 4) / 4);
-
   const write = (next: AutoPoint[], opts: { reschedule?: boolean; record?: boolean } = {}) => updateProject((p) => mapTrack(p, trackId, (t) => setLane(t, param, next)), opts);
-
-  const nearest = (x: number, y: number): number => {
-    let best = -1;
-    let dist = HIT;
-    points.forEach((p, i) => {
-      const d = Math.hypot(xOf(p.bar) - x, yOf(p.value) - y);
-      if (d < dist) {
-        dist = d;
-        best = i;
-      }
-    });
-    return best;
-  };
   const indexOfBar = (list: AutoPoint[], bar: number) => list.findIndex((p) => Math.abs(p.bar - bar) < AUTO_GRID / 2);
-
-  const grant = (e: GestureResponderEvent) => {
-    const { locationX: x, locationY: y } = e.nativeEvent;
-    const hit = nearest(x, y);
-    if (hit >= 0) {
-      recordHistory();
-      drag.current = { index: hit, moved: false };
-      setSel(hit);
-      return;
-    }
-    // An empty spot: a new point, which is also the one dragged until the finger lifts.
-    recordHistory();
-    const bar = snapBar(barAt(x));
-    const next = withPoint(param, points, bar, valueAt(y));
-    drag.current = { index: indexOfBar(next, bar), moved: true };
-    setSel(drag.current.index);
-    write(next, { reschedule: false, record: false });
-  };
-  const move = (e: GestureResponderEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    const { locationX: x, locationY: y } = e.nativeEvent;
-    const bar = snapBar(barAt(x));
-    // The point keeps its place in the order: it cannot be dragged past its neighbours.
-    const lo = d.index > 0 ? points[d.index - 1].bar + AUTO_GRID : 0;
-    const hi = d.index < points.length - 1 ? points[d.index + 1].bar - AUTO_GRID : Infinity;
-    const at = Math.max(lo, Math.min(hi, bar));
-    const rest = withoutPoint(points, d.index);
-    const next = withPoint(param, rest, at, valueAt(y));
-    d.moved = true;
-    write(next, { reschedule: false, record: false });
-    setSel(indexOfBar(next, at));
-  };
-  const release = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (!d) return;
-    if (!d.moved) discardLastHistory(); // a plain tap on a point: selected, nothing changed
-    updateProject((p) => p, { record: false }); // hear it: reschedule the playing audio once
-  };
 
   const nudge = (patch: { bar?: number; value?: number }) => {
     if (sel === null || !points[sel]) return;
@@ -131,14 +67,6 @@ export function AutomationPanel() {
     write([...keep, ...made].sort((p, q) => p.bar - q.bar));
   };
 
-  const path = points
-    .map((p, i) => `${i ? 'L' : 'M'} ${xOf(p.bar)} ${yOf(p.value)}`)
-    .join(' ');
-  // The curve is held before the first and after the last point.
-  const heldFrom = points.length ? `M 0 ${yOf(points[0].value)} L ${xOf(points[0].bar)} ${yOf(points[0].value)}` : '';
-  const last = points[points.length - 1];
-  const heldTo = last ? `M ${xOf(last.bar)} ${yOf(last.value)} L ${width} ${yOf(last.value)}` : '';
-  const gridStep = span <= 16 ? 1 : span <= 32 ? 2 : span <= 64 ? 4 : 8;
   const sp = sel !== null ? points[sel] : undefined;
 
   return (
@@ -175,47 +103,8 @@ export function AutomationPanel() {
         <Txt style={s.range}>{`Takt ${Math.floor(start) + 1}–${Math.ceil(to)}`}</Txt>
       </View>
 
-      <View
-        accessibilityLabel="Automation-Kurve"
-        onLayout={(e) => setWidth(Math.max(120, e.nativeEvent.layout.width))}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}
-        onResponderTerminationRequest={() => false}
-        onResponderGrant={grant}
-        onResponderMove={move}
-        onResponderRelease={release}
-        onResponderTerminate={release}
-        style={[s.graph, web({ userSelect: 'none', touchAction: 'none' })]}
-      >
-        <Svg width={width} height={HEIGHT} pointerEvents="none">
-          <Rect x={0} y={0} width={width} height={HEIGHT} fill="#111114" />
-          {Array.from({ length: Math.floor(span / gridStep) + 1 }, (_, i) => {
-            const bar = Math.ceil(start / gridStep) * gridStep + i * gridStep;
-            return xOf(bar) >= 0 && xOf(bar) <= width ? (
-              <Line key={bar} x1={xOf(bar)} y1={0} x2={xOf(bar)} y2={HEIGHT} stroke="#1f1f24" strokeWidth={1} />
-            ) : null;
-          })}
-          {Array.from({ length: Math.floor(span / gridStep) + 1 }, (_, i) => {
-            const bar = Math.ceil(start / gridStep) * gridStep + i * gridStep;
-            return xOf(bar) >= 0 && xOf(bar) < width - 14 ? (
-              <SvgText key={`t${bar}`} x={xOf(bar) + 3} y={HEIGHT - 4} fill={C.dim} fontSize={8} fontFamily={mono().fontFamily}>
-                {bar + 1}
-              </SvgText>
-            ) : null;
-          })}
-          <Line x1={0} y1={yOf(def.rest)} x2={width} y2={yOf(def.rest)} stroke="#2c2c33" strokeDasharray="4 4" strokeWidth={1} />
-          {!points.length && (
-            <SvgText x={width / 2} y={HEIGHT / 2} fill={C.dim} fontSize={11} textAnchor="middle">
-              Tippe hier, um den ersten Punkt zu setzen
-            </SvgText>
-          )}
-          {heldFrom !== '' && <Path d={heldFrom} stroke={C.accent} strokeOpacity={0.45} strokeWidth={2} strokeDasharray="3 3" fill="none" />}
-          {heldTo !== '' && <Path d={heldTo} stroke={C.accent} strokeOpacity={0.45} strokeWidth={2} strokeDasharray="3 3" fill="none" />}
-          {path !== '' && <Path d={path} stroke={C.accent} strokeWidth={2.2} fill="none" strokeLinejoin="round" />}
-          {points.map((p, i) =>
-            xOf(p.bar) >= -6 && xOf(p.bar) <= width + 6 ? <Circle key={i} cx={xOf(p.bar)} cy={yOf(p.value)} r={sel === i ? 7 : 5} fill={sel === i ? C.accent : C.bg} stroke={C.accent} strokeWidth={2} /> : null,
-          )}
-        </Svg>
+      <View onLayout={(e) => setWidth(Math.max(120, e.nativeEvent.layout.width))} style={s.graph}>
+        <AutomationCurve track={track} param={param} start={start} span={span} width={width} height={HEIGHT} selected={sel} onSelect={setSel} grid={span <= 16 ? 1 : span <= 32 ? 2 : span <= 64 ? 4 : 8} />
       </View>
       <Txt style={s.legend}>{`${def.format(def.max)} oben · ${def.format(def.min)} unten · gestrichelt: ohne Automation${param === 'volume' ? ' · relativ zum Fader der Spur' : ''}`}</Txt>
 

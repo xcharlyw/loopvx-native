@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Linking, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { SpliceAuthError, connectSplice, disconnectSplice, downloadFromSplice, searchPackNamed, searchSplice, spliceAvailable, spliceConnected } from '../lib/splice';
 import { placeSample } from '../lib/actions';
@@ -135,6 +135,7 @@ export function SpliceSearch({ track }: { track?: Track } = {}) {
         </Btn>
       </View>
       {error && <Txt style={[s.note, { color: C.danger }]}>{error}</Txt>}
+      {results && results.length > 0 && <Txt style={s.note}>Vorhören: „Hören ↗“ öffnet den Sound auf Splice (kostenlos). Hier in der App hörst du ihn erst nach dem Laden.</Txt>}
       {results && results.length === 0 && <Txt style={s.note}>Nichts gefunden. Versuche andere Wörter (englisch klappt am besten) oder schalte den BPM-Filter aus.</Txt>}
       {results?.map((r) => {
         const have = samples.some((x) => x.id === spliceSampleId(r.uuid));
@@ -153,6 +154,11 @@ export function SpliceSearch({ track }: { track?: Track } = {}) {
                 </Txt>
               )}
             </View>
+            {r.link && (
+              <Btn small accessibilityLabel={`${r.name} auf Splice vorhören`} onPress={() => void Linking.openURL(r.link!)}>
+                Hören ↗
+              </Btn>
+            )}
             <Btn small disabled={(have && !track) || busy !== null} accessibilityLabel={`${r.name} laden`} onPress={() => void load(r)}>
               {busy === r.uuid ? 'Lädt …' : track ? (midi ? 'Als Sampler' : 'Auf Spur') : have ? 'In Library' : 'Laden'}
             </Btn>

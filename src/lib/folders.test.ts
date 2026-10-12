@@ -1,5 +1,5 @@
 import type { Sample } from '../types';
-import { flattenFolders, hasNesting, allFolders, childFolders, countIn, dissolveFolder, freeName, moveSamples, nameError, normPath, parentOf, prettyPath, renameFolder, samplesIn } from './folders';
+import { canMoveFolder, flattenFolders, moveFolder, hasNesting, allFolders, childFolders, countIn, dissolveFolder, freeName, moveSamples, nameError, normPath, parentOf, prettyPath, renameFolder, samplesIn } from './folders';
 
 const sample = (id: string, folder?: string): Sample => ({ id, name: `${id}.wav`, category: 'other', addedAt: 1, folder });
 const lib = [sample('a', 'Loops'), sample('b', 'Loops/Kicks'), sample('c', 'Loops/Kicks/Rumble'), sample('d', 'Splice/Pack'), sample('e'), sample('f', 'Loops')];
@@ -70,5 +70,34 @@ describe('flattenFolders', () => {
     expect(hasNesting(flat, ['X'])).toBe(false);
     expect(hasNesting(lib)).toBe(true);
     expect(hasNesting([], ['A/B'])).toBe(true);
+  });
+});
+
+describe('moveFolder', () => {
+  it('moves a folder with everything below it into another folder', () => {
+    const r = moveFolder(lib, ['Loops/Kicks/Leer'], 'Loops/Kicks', 'Splice')!;
+    expect(r.to).toBe('Splice/Kicks');
+    expect(r.changed.map((s) => `${s.id}:${s.folder}`)).toEqual(['b:Splice/Kicks', 'c:Splice/Kicks/Rumble']);
+    expect(r.extra).toEqual(['Splice/Kicks/Leer']);
+  });
+  it('moves a nested folder up to the top level', () => {
+    const r = moveFolder(lib, [], 'Loops/Kicks', '')!;
+    expect(r.to).toBe('Kicks');
+    expect(r.changed.map((s) => `${s.id}:${s.folder}`)).toEqual(['b:Kicks', 'c:Kicks/Rumble']);
+  });
+  it('merges into a folder of the same name', () => {
+    const more = [...lib, sample('h', 'Splice/Kicks')];
+    const r = moveFolder(more, [], 'Loops/Kicks', 'Splice')!;
+    expect(r.to).toBe('Splice/Kicks');
+    expect(allFolders([...more.filter((s) => !r.changed.some((c) => c.id === s.id)), ...r.changed])).toContain('Splice/Kicks/Rumble');
+  });
+  it('refuses to move a folder into itself, into its own sub-folder or to where it already is', () => {
+    expect(canMoveFolder('Loops', 'Loops')).toBe(false);
+    expect(canMoveFolder('Loops', 'Loops/Kicks')).toBe(false);
+    expect(canMoveFolder('Loops/Kicks', 'Loops')).toBe(false);
+    expect(canMoveFolder('Loops', '')).toBe(false);
+    expect(canMoveFolder('Loops', 'Splice')).toBe(true);
+    expect(canMoveFolder('Loops2', 'Loops')).toBe(true); // similar names are not parents
+    expect(moveFolder(lib, [], 'Loops', 'Loops/Kicks')).toBeNull();
   });
 });

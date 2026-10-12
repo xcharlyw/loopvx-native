@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
-import { allFolders, childFolders, countIn, dissolveFolder, flattenFolders, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
+import { allFolders, canMoveFolder, childFolders, countIn, dissolveFolder, flattenFolders, moveFolder, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
 import { getState, setFolders, toast, upsertSamples, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Txt } from './kit';
@@ -90,6 +90,7 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
   const extra = useStore((st) => st.folders);
   const [menu, setMenu] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
   const folders = childFolders(allFolders(samples, extra), path);
 
   const rename = async () => {
@@ -105,6 +106,16 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
     setRenaming(null);
     setMenu(null);
   };
+  const move = async (folder: string, target: string) => {
+    const r = moveFolder(samples, extra, folder, target);
+    setMoving(null);
+    setMenu(null);
+    if (!r) return;
+    setFolders(r.extra);
+    await upsertSamples(r.changed);
+    if (path === folder || path.startsWith(folder + '/')) setPath(r.to + path.slice(folder.length));
+    toast(`„${nameOf(folder)}“ nach „${target ? prettyPath(target) : 'Hauptebene'}“ verschoben`);
+  };
   const dissolve = async (folder: string) => {
     const { total } = countIn(samples, folder);
     const ok = await confirmDestructive(`Ordner „${nameOf(folder)}“ auflösen?`, total ? `Die ${total} Sample(s) darin rücken eine Ebene nach oben. Es wird nichts gelöscht.` : 'Der leere Ordner wird entfernt.', 'Auflösen');
@@ -118,6 +129,7 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
 
   return (
     <>
+      {moving && <FolderPicker title={`Ordner „${nameOf(moving)}“ verschieben nach …`} exclude={moving} onPick={(target) => void move(moving, target)} onClose={() => setMoving(null)} />}
       {folders.map((f) => {
         const { total } = countIn(samples, f);
         return (
@@ -150,6 +162,9 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
                 <Chip onPress={() => setRenaming({ path: f, value: nameOf(f) })} textStyle={{ fontSize: 12 }}>
                   Umbenennen
                 </Chip>
+                <Chip onPress={() => setMoving(f)} textStyle={{ fontSize: 12 }}>
+                  Verschieben
+                </Chip>
                 <Chip onPress={() => void dissolve(f)} textStyle={{ fontSize: 12 }}>
                   Auflösen
                 </Chip>
@@ -163,11 +178,12 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
 }
 
 /** "Move to ...": every folder as a choice, the top level, or a new folder made on the spot. */
-export function FolderPicker({ count, onPick, onClose }: { count: number; onPick: (folder: string) => void; onClose: () => void }) {
+export function FolderPicker({ count, title, exclude, onPick, onClose }: { count?: number; title?: string; exclude?: string; onPick: (folder: string) => void; onClose: () => void }) {
   const samples = useStore((st) => st.samples);
   const extra = useStore((st) => st.folders);
   const [naming, setNaming] = useState<string | null>(null);
-  const all = allFolders(samples, extra);
+  // For a folder being moved: not itself, not its own sub-folders, not where it already is.
+  const all = allFolders(samples, extra).filter((f) => !exclude || canMoveFolder(exclude, f));
   const create = () => {
     if (naming === null) return;
     const made = addFolder('', naming);
@@ -176,16 +192,18 @@ export function FolderPicker({ count, onPick, onClose }: { count: number; onPick
   return (
     <View style={s.picker}>
       <View style={s.crumbs}>
-        <Txt style={s.pickerTitle}>{`${count} Sample(s) verschieben nach …`}</Txt>
+        <Txt style={s.pickerTitle}>{title ?? `${count ?? 0} Sample(s) verschieben nach …`}</Txt>
         <View style={{ flex: 1 }} />
         <Btn small onPress={onClose}>
           Abbrechen
         </Btn>
       </View>
       <View style={s.crumbs}>
-        <Chip onPress={() => onPick('')} textStyle={{ fontSize: 12 }}>
-          Hauptebene
-        </Chip>
+        {(!exclude || canMoveFolder(exclude, '')) && (
+          <Chip onPress={() => onPick('')} textStyle={{ fontSize: 12 }}>
+            Hauptebene
+          </Chip>
+        )}
         {all.map((f) => (
           <Chip key={f} onPress={() => onPick(f)} textStyle={{ fontSize: 12 }}>
             {prettyPath(f)}

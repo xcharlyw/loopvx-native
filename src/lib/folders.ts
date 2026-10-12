@@ -103,3 +103,18 @@ export function flattenFolders(samples: Sample[], extra: string[]): { changed: S
   const changed = samples.filter((s) => normPath(s.folder).includes(SEP)).map((s) => ({ ...s, folder: nameOf(normPath(s.folder)) }));
   return { changed, extra: [...new Set(extra.map((e) => nameOf(normPath(e))).filter(Boolean))] };
 }
+
+/** Whether `target` is a place `folder` may be moved to: not itself, not inside itself, not where it already is. */
+export function canMoveFolder(folder: string, target: string): boolean {
+  return target !== folder && !inside(target, folder) && parentOf(folder) !== target;
+}
+
+/**
+ * Moves a whole folder (with everything below it) into `target` ('' = top level), like dragging a folder in Drive.
+ * An existing folder of the same name there takes it in (merge). Returns what changes, or null when the move is not allowed.
+ */
+export function moveFolder(samples: Sample[], extra: string[], folder: string, target: string): { changed: Sample[]; extra: string[]; to: string } | null {
+  if (!canMoveFolder(folder, target)) return null;
+  const to = join(target, nameOf(folder));
+  return { ...renameFolder(samples, extra, folder, to), to };
+}

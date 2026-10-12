@@ -95,7 +95,7 @@ tests/              server tests (anything in api/ is deployed as a function)
 empty ones the user made live in `state.folders` (kv `folders`). Pure logic in `lib/folders.ts` (tree, counts, rename/merge,
 dissolve = contents move up, move samples; tested), bulk writes through `db.putSamples`/`upsertSamples` (one storage write,
 `updatedAt` touched so Drive sync carries the new `folder`). UI `LibraryFolders.tsx` + `LibraryPanel`: without search/filter
-the Library is browsed folder by folder (breadcrumb, "+ Neuer Ordner", folder rows with ⋯ = rename / auflösen), "Auswählen"
+the Library is browsed folder by folder (breadcrumb, "+ Neuer Ordner", folder rows with ⋯ = rename / **verschieben** (a whole folder into another folder or back to the top level, `moveFolder`: never into itself or its own sub-folders, same names merge) / auflösen), "Auswählen"
 ticks samples and "Verschieben …" opens the folder picker (also "In Ordner" in a sample's editor); with a search or filter all
 folders are searched at once. Folders are meant to be flat (last sub-folder only): "Pfade kürzen" (`flattenFolders`, shown while any folder is nested) flattens an old tree. Empty folders are local (not synced to Drive).
 

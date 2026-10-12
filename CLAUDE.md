@@ -208,6 +208,16 @@ drag with the distance scrolled so far, so the note stays under the finger even 
 offset is tracked in a ref (`onScroll` is ignored mid-drag). react-native-web logs the dev-only warning
 "ScrollView doesn't take rejection well" during drags; it is harmless (the responder refuses to hand over).
 
+## 909 drum machine (issue #4)
+
+`wave: 'kit909'` is a whole drum kit as one instrument (`src/audio/drum909.ts`, pure): 12 pads on drum-rack/GM notes (kick C1 = 36, rim 37, snare 38,
+clap 39, toms 41/45/48, closed hat 42, open hat 46, crash 49, ride 51, cowbell 56), each a recipe of parts (`osc` with a pitch drop, filtered `noise`, `metal` =
+six squares through a highpass) with an exponential decay (`planHit`; `tune` in cents and `kitDecay` scale the whole kit). `startKitVoice` in `engine.ts` builds
+it live and offline; a closed hat cuts the open hat before it (`scheduleNotes`, `chokes`). A note without a pad is silent, so a drum `.mid` plays as it is.
+Levels were balanced by offline renders (peaks 0.3-0.7). UI: the "909" tile in `InstrumentPanel` (pad grid `synth/Pads.tsx`, responder grant like the keyboard,
+Tune/Decay/Gain), preset `kit-909`, piano roll rows labelled with pad names, grooves `kit-techno`/`kit-rolling`/`kit-minimal` (`KIT_STYLES`, 2-bar phrases, fill in the
+last beat). **Never heard on a phone**; the sounds are synthesized approximations of a 909, not samples.
+
 ## Recording and Library ordering
 
 `RecordButton` (Library, top) records the microphone into the library: folder "Aufnahmen", name `takeName()`, always stored as 16-bit **mono WAV**

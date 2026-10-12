@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { engine } from '../audio/engine';
 import { applyInstrument, applyPreset, PRESET_CATEGORIES, PRESETS, presetById, type PresetCategory } from '../audio/presets';
-import { KICK_PRESET, NOISE_PRESET, SAMPLER_PRESET } from '../audio/synth';
+import { KICK_PRESET, KIT909_PRESET, NOISE_PRESET, SAMPLER_PRESET } from '../audio/synth';
 import { trackFx } from '../audio/fx';
 import { C, font, mono } from '../constants/theme';
 import { noteName } from '../lib/midi';
@@ -13,24 +13,27 @@ import { Btn, Chip, Txt } from './kit';
 import { Sheet } from './Sheet';
 import { Knob, KnobRow } from './synth/Knob';
 import { Keys } from './synth/Keys';
+import { Pads } from './synth/Pads';
 import { SamplePeaks } from './synth/SamplePeaks';
 import { EnvScope, FilterEnvMini, FilterScope, LfoScope, WaveGlyph, WaveScope } from './synth/Scopes';
 import { Card, Tabs } from './synth/Tabs';
 
-type Kind = 'synth' | 'sample' | 'kick' | 'noise';
-const kindOf = (wave: SynthSettings['wave']): Kind => (wave === 'sample' ? 'sample' : wave === 'kick' ? 'kick' : wave === 'noise' ? 'noise' : 'synth');
+type Kind = 'synth' | 'sample' | 'kick' | 'noise' | 'kit';
+const kindOf = (wave: SynthSettings['wave']): Kind => (wave === 'sample' ? 'sample' : wave === 'kick' ? 'kick' : wave === 'noise' ? 'noise' : wave === 'kit909' ? 'kit' : 'synth');
 const KINDS: { kind: Kind; title: string; sub: string }[] = [
   { kind: 'synth', title: 'Synth', sub: 'Oszillatoren' },
   { kind: 'sample', title: 'Sampler', sub: 'Dein Sample' },
   { kind: 'kick', title: 'Kick', sub: 'Synthetisch' },
   { kind: 'noise', title: 'Noise', sub: 'Hat · Snare' },
+  { kind: 'kit', title: '909', sub: 'Drum-Kit' },
 ];
-type Tab = 'osc' | 'sample' | 'filter' | 'env' | 'lfo' | 'fx';
+type Tab = 'osc' | 'sample' | 'filter' | 'env' | 'lfo' | 'fx' | 'kit';
 const TABS: Record<Kind, { id: Tab; label: string }[]> = {
   synth: [{ id: 'osc', label: 'OSC' }, { id: 'filter', label: 'FILTER' }, { id: 'env', label: 'ENV' }, { id: 'lfo', label: 'LFO' }, { id: 'fx', label: 'FX' }],
   sample: [{ id: 'sample', label: 'SAMPLE' }, { id: 'filter', label: 'FILTER' }, { id: 'env', label: 'ENV' }, { id: 'fx', label: 'FX' }],
   kick: [{ id: 'env', label: 'ENV' }, { id: 'fx', label: 'FX' }],
   noise: [{ id: 'filter', label: 'FILTER' }, { id: 'env', label: 'ENV' }, { id: 'fx', label: 'FX' }],
+  kit: [{ id: 'kit', label: 'PADS' }, { id: 'fx', label: 'FX' }],
 };
 const WAVES: OscWave[] = ['sawtooth', 'square', 'triangle', 'sine'];
 const WAVE_NAMES: Record<OscWave, string> = { sawtooth: 'Saw', square: 'Square', triangle: 'Triangle', sine: 'Sine' };
@@ -84,7 +87,7 @@ export function InstrumentPanel() {
   const setB = (patch: Partial<NonNullable<SynthSettings['oscB']>>) => set({ oscB: { ...(synth.oscB ?? { wave: 'sawtooth' as OscWave, octave: 0, detune: 0, level: 0.7 }), ...patch } });
   const setFx = (patch: TrackFx) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, ...patch } })), { reschedule: false });
   const hear = (sy: SynthSettings, pitch: number) => void engine.previewNote(sy, pitch);
-  const auditionPitch = kind === 'synth' ? current?.note ?? 48 : 60;
+  const auditionPitch = kind === 'synth' ? current?.note ?? 48 : kind === 'kit' ? 36 : 60;
 
   const pickPreset = (id: string) => {
     const preset = presetById(id);
@@ -107,9 +110,10 @@ export function InstrumentPanel() {
       k === 'synth' ? { ...DEFAULT_SYNTH, sampleId }
       : k === 'sample' ? ({ ...DEFAULT_SYNTH, ...SAMPLER_PRESET, sampleId: sampleId ?? samples[0]?.id } as SynthSettings)
       : k === 'kick' ? ({ ...DEFAULT_SYNTH, ...KICK_PRESET, sampleId } as SynthSettings)
+      : k === 'kit' ? ({ ...DEFAULT_SYNTH, ...KIT909_PRESET, sampleId } as SynthSettings)
       : ({ ...DEFAULT_SYNTH, ...NOISE_PRESET, sampleId } as SynthSettings);
     updateProject((p) => mapTrack(p, trackId, (t) => applyInstrument(t, next)));
-    hear(next, 60);
+    hear(next, k === 'kit' ? 36 : 60);
     setKeysLow(48);
   };
   const b = synth.oscB;
@@ -304,6 +308,19 @@ export function InstrumentPanel() {
           </Card>
         )}
 
+        {/* ---------------- 909 KIT ---------------- */}
+        {kind === 'kit' && tab === 'kit' && (
+          <Card title="909 PADS">
+            <Pads color={C.accent} onHit={(p) => hear(synth, p)} />
+            <Txt style={[s.note, { marginTop: 8 }]}>Jedes Pad liegt auf einer Drum-Rack-Note (Kick C1, Snare D1, Clap D#1, Hi-Hat F#1 und A#1 …). Eine Hi-Hat zu schneidet die offene ab, wie am echten Gerät.</Txt>
+            <KnobRow>
+              <Knob label="Tune" value={synth.tune ?? 0} min={-600} max={600} step={10} reset={0} format={CT} onChange={(v) => set({ tune: Math.round(v) })} />
+              <Knob label="Decay" value={synth.kitDecay ?? 1} min={0.4} max={2.5} curve="log" reset={1} format={(v) => `${v.toFixed(2).replace('.', ',')}×`} onChange={(v) => set({ kitDecay: Math.round(v * 100) / 100 })} />
+              <Knob label="Gain" value={synth.gainDb ?? 0} min={-24} max={6} step={0.5} reset={0} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')} dB`} onChange={(v) => set({ gainDb: v })} />
+            </KnobRow>
+          </Card>
+        )}
+
         {/* ---------------- ENVELOPE (all) ---------------- */}
         {tab === 'env' && (
           <Card title="AMP-HÜLLKURVE">
@@ -335,9 +352,11 @@ export function InstrumentPanel() {
           </Card>
         )}
 
-        <Card title="TASTATUR">
-          <Keys low={keysLow} onLow={setKeysLow} color={C.accent} onKey={(p) => hear(synth, p)} />
-        </Card>
+        {kind !== 'kit' && (
+          <Card title="TASTATUR">
+            <Keys low={keysLow} onLow={setKeysLow} color={C.accent} onKey={(p) => hear(synth, p)} />
+          </Card>
+        )}
 
         <View style={s.chips}>
           <Btn kind="primary" onPress={() => hear(synth, auditionPitch)}>

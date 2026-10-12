@@ -47,9 +47,12 @@ export interface Note {
 export interface SynthSettings {
   /**
    * An oscillator; 'sample': the library sample `sampleId` played chromatically; 'kick': a synthesized
-   * kick (sine with a pitch drop); 'noise': white noise through a highpass (hats, snares, risers).
+   * kick (sine with a pitch drop); 'noise': white noise through a highpass (hats, snares, risers);
+   * 'kit909': a 909-style drum machine, one sound per note (kick C1, snare D1, clap D#1, hats F#1/A#1 ...).
    */
-  wave: OscWave | 'sample' | 'kick' | 'noise';
+  wave: OscWave | 'sample' | 'kick' | 'noise' | 'kit909';
+  /** wave 'kit909': multiplies every drum decay (1 = as the machine, `tune` shifts the pitch in cents). */
+  kitDecay?: number;
   /** wave 'sample': which sample; it sounds at its original pitch on C3 (60). */
   sampleId?: string;
   /** wave 'sample': every note plays the whole sample, whatever its length (drums). */

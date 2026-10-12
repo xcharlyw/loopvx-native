@@ -68,3 +68,25 @@ describe('drum patterns', () => {
     expect(generatePattern('hat', { root: 0, bars: 1, seed: 1 }).map((n) => n.start)).toEqual([0.125, 0.375, 0.625, 0.875]);
   });
 });
+
+describe('909 kit grooves', () => {
+  const kitPitches = new Set([36, 37, 38, 39, 41, 42, 45, 46, 48, 49, 51, 56]);
+  for (const style of ['kit-techno', 'kit-rolling', 'kit-minimal'] as const) {
+    it(`${style}: every note is a pad, four kicks a bar, nothing past the clip`, () => {
+      for (let seed = 1; seed <= 20; seed++) {
+        const notes = generatePattern(style, { root: 4, bars: 4, seed });
+        expect(notes.length).toBeGreaterThan(20);
+        expect(notes.every((n) => kitPitches.has(n.pitch))).toBe(true);
+        expect(notes.every((n) => n.start >= 0 && n.start + n.length <= 4 + 1e-9)).toBe(true);
+        const kicks = notes.filter((n) => n.pitch === 36).map((n) => n.start);
+        expect(kicks).toEqual(Array.from({ length: 16 }, (_, i) => i / 4));
+      }
+    });
+  }
+  it('is deterministic for a seed and varies between seeds', () => {
+    const a = generatePattern('kit-techno', { root: 0, bars: 4, seed: 5 });
+    expect(generatePattern('kit-techno', { root: 0, bars: 4, seed: 5 })).toEqual(a);
+    const distinct = new Set(Array.from({ length: 12 }, (_, s) => JSON.stringify(generatePattern('kit-techno', { root: 0, bars: 4, seed: s + 1 }))));
+    expect(distinct.size).toBeGreaterThan(3);
+  });
+});

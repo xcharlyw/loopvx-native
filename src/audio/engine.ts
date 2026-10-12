@@ -14,6 +14,7 @@ import { Platform } from 'react-native';
 import type { Clip, OscWave, Project, Sample, SynthSettings, Track } from '../types';
 import { arrangementSampleIds, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
+import { DECAY_FLOOR, padAt, planHit } from './drum909';
 import { createLimiter, MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
 import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, planVoice, voicePeak } from './synth';
@@ -199,6 +200,90 @@ function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
 }
 
 /**
+ * One hit of the 909 kit: the pad's parts (oscillators with a pitch drop, filtered noise, "metal" squares) each with an
+ * exponential decay, summed into one gain. Stopping the voice (a closed hat cutting an open one, or the transport
+ * stopping) fades it out in 10 ms instead of clicking. A note without a pad stays silent (null).
+ */
+function startKitVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, level: number, when: number, dest: AudioNode): Voice | null {
+  const plan = planHit(pitch, { tune: synth.tune, decay: synth.kitDecay });
+  if (!plan) return null;
+  const out = ctx.createGain();
+  out.gain.value = level;
+  out.connect(dest);
+  const sources: (AudioBufferSourceNode | OscillatorNode)[] = [];
+  const decayEnv = (peak: number, start: number, decay: number): GainNode => {
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, start);
+    g.gain.linearRampToValueAtTime(peak, start + 0.001);
+    g.gain.exponentialRampToValueAtTime(peak * DECAY_FLOOR, start + 0.001 + decay);
+    g.connect(out);
+    return g;
+  };
+  plan.parts.forEach((part, i) => {
+    const start = when + (part.kind === 'metal' ? 0 : part.delay ?? 0);
+    const end = start + part.decay + 0.03;
+    const env = decayEnv(part.gain, start, part.decay);
+    if (part.kind === 'osc') {
+      const o = ctx.createOscillator();
+      o.type = part.type;
+      o.frequency.setValueAtTime(part.from, start);
+      if (part.to !== part.from) o.frequency.exponentialRampToValueAtTime(part.to, start + part.sweep);
+      o.connect(env);
+      o.start(start);
+      o.stop(end);
+      sources.push(o);
+    } else if (part.kind === 'noise') {
+      const n = ctx.createBufferSource({ pitchCorrection: false });
+      n.buffer = noiseBuffer(ctx);
+      n.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = part.filter;
+      f.frequency.value = part.freq;
+      f.Q.value = part.q;
+      n.connect(f);
+      f.connect(env);
+      n.start(start, (i * 0.137) % 0.9); // each burst reads another stretch of the noise
+      n.stop(end);
+      sources.push(n);
+    } else {
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = part.hp;
+      let tail: AudioNode = hp;
+      if (part.bp) {
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = part.bp;
+        bp.Q.value = 0.8;
+        hp.connect(bp);
+        tail = bp;
+      }
+      tail.connect(env);
+      const mix = ctx.createGain();
+      mix.gain.value = 1 / part.ratios.length;
+      mix.connect(hp);
+      for (const r of part.ratios) {
+        const o = ctx.createOscillator();
+        o.type = 'square';
+        o.frequency.value = part.base * r;
+        o.connect(mix);
+        o.start(start);
+        o.stop(end);
+        sources.push(o);
+      }
+    }
+  });
+  const fade = {
+    stop(at?: number) {
+      const t = Math.max(at ?? ctx.currentTime, ctx.currentTime);
+      out.gain.setValueAtTime(level, t);
+      out.gain.linearRampToValueAtTime(0, t + 0.01);
+    },
+  };
+  return new SynthVoice([fade, ...sources.map((s) => ({ stop: (at?: number) => s.stop(at === undefined ? undefined : at + 0.02) }))], sources[0]);
+}
+
+/**
  * One instrument note: oscillator synth, synthesized kick, noise or the instrument's sample (re-pitched)
  * -> filter -> ADSR gain -> destination. A sample instrument without its sample stays silent (null).
  */
@@ -214,6 +299,7 @@ function startSynthVoice(
   bpm: number,
 ): Voice | null {
   if (isOscWave(synth.wave)) return startOscVoice(ctx, synth, pitch, level, when, hold, bpm, dest);
+  if (synth.wave === 'kit909') return startKitVoice(ctx, synth, pitch, level, when, dest);
   let osc: AudioBufferSourceNode | OscillatorNode;
   if (synth.wave === 'sample') {
     const buffer = synth.sampleId ? buffers.get(synth.sampleId) : undefined;
@@ -271,14 +357,22 @@ function scheduleNotes(
 ): Voice[] {
   const voices: Voice[] = [];
   const clipEnd = clip.start + clip.length;
-  for (const note of clip.notes ?? []) {
+  const kit = synth.wave === 'kit909';
+  let openHat: { voice: Voice; at: number } | undefined; // a closed hat cuts the open hat before it
+  for (const note of kit ? [...(clip.notes ?? [])].sort((a, b) => a.start - b.start) : clip.notes ?? []) {
     const start = clip.start + note.start;
     const end = Math.min(start + note.length, clipEnd, toBar);
     const begin = Math.max(start, fromBar);
     if (begin >= end - 1e-9 || start >= clipEnd) continue;
     const level = voicePeak(synth, note.velocity) * clipGainAt(clip, begin - clip.start);
-    const voice = startSynthVoice(ctx, synth, note.pitch, level, time + (begin - fromBar) * spb, (end - begin) * spb, dest, buffers, 240 / spb);
+    const at = time + (begin - fromBar) * spb;
+    const voice = startSynthVoice(ctx, synth, note.pitch, level, at, (end - begin) * spb, dest, buffers, 240 / spb);
     if (voice) voices.push(voice);
+    if (kit && voice) {
+      const hit = padAt(note.pitch)?.id;
+      if (hit === 'hatClosed' && openHat && openHat.at < at) openHat.voice.stop(at);
+      if (hit === 'hatOpen') openHat = { voice, at };
+    }
   }
   return voices;
 }

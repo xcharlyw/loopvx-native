@@ -4,11 +4,12 @@ import Svg, { Line, Rect } from 'react-native-svg';
 import { engine } from '../audio/engine';
 import { formatBarPosition } from '../audio/timing';
 import { applyPreset, presetById, SUGGESTED_PRESET } from '../audio/presets';
+import { padAt } from '../audio/drum909';
 import { isDrumWave } from '../audio/synth';
 import { C, mono } from '../constants/theme';
 import { exportMidiClip, togglePlay } from '../lib/actions';
 import { noteName } from '../lib/midi';
-import { DRUM_STYLES, generatePattern, isDrumStyle, KEY_NAMES, PATTERN_GROUPS, usesScale, type PatternStyle } from '../lib/patterns';
+import { DRUM_STYLES, generatePattern, isDrumStyle, isKitStyle, KEY_NAMES, KIT_STYLES, PATTERN_GROUPS, usesScale, type PatternStyle } from '../lib/patterns';
 import { progressionLabel, SCALES, scaleOf, type ScaleName } from '../lib/melody';
 import { addNote, duplicateNote, findClip, findNote, mapTrack, noteIndexAt, parseKey, projectHarmony, quantizeNotes, trackSynth, transposeNotes, updateClip, updateNote } from '../lib/project';
 import { discardLastHistory, recordHistory, setState, updateProject, useStore } from '../lib/store';
@@ -42,7 +43,8 @@ const lengthText = (bars: number) => LENGTHS.find((l) => Math.abs(l.bars - bars)
  * grid starts just under the lowest note when the whole clip fits in two octaves (a trance lead spanning
  * 57..80 shows completely), else at the octave of the lowest note.
  */
-function initialLow(notes: Note[], sampler = false): number {
+function initialLow(notes: Note[], sampler = false, kit = false): number {
+  if (kit) return 36; // the 909's pads sit on C1..G#2: one view shows them all
   if (!notes.length) return sampler ? 48 : 36;
   const lowest = Math.min(...notes.map((n) => n.pitch));
   const highest = Math.max(...notes.map((n) => n.pitch));
@@ -54,6 +56,7 @@ function initialLow(notes: Note[], sampler = false): number {
 // The generator's last style, kept while the app runs. Key, scale and chord progression belong to the project.
 let lastStyle: PatternStyle = 'rumble';
 let lastDrum: PatternStyle = 'kick';
+let lastKit: PatternStyle = 'kit-techno';
 
 /**
  * Step piano roll, two octaves at a time. Tap an empty cell to add a note (and hear it), tap a note to
@@ -63,7 +66,7 @@ export function PianoRollPanel() {
   const project = useStore((st) => st.project);
   const selectedClipId = useStore((st) => st.selectedClipId);
   const found = selectedClipId ? findClip(project, selectedClipId) : null;
-  const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? [], !!found?.track.synth && isDrumWave(found.track.synth.wave)));
+  const [low, setLow] = useState(() => initialLow(found?.clip.notes ?? [], !!found?.track.synth && isDrumWave(found.track.synth.wave), found?.track.synth?.wave === 'kit909'));
   const [noteLen, setNoteLen] = useState(1 / 16);
   const [dragging, setDragging] = useState(false);
   /** What the drag handlers need at the moment of the gesture (they are created once, the state moves on). */
@@ -175,10 +178,13 @@ export function PianoRollPanel() {
   };
   const moveDrag = useDrag('start', true, (dx, dy, phase, at) => drag('move', dx, dy, phase, at));
   const resizeDrag = useDrag('start', true, (dx, _dy, phase, at) => drag('resize', dx, 0, phase, at));
+  const kit = found?.track.synth?.wave === 'kit909'; // the 909: grooves over its pads
   const sampler = !!found?.track.synth && isDrumWave(found.track.synth.wave); // drum styles, C3 centred
-  const [picked, setStyle] = useState(sampler ? lastDrum : lastStyle);
-  // The instrument may change while the roll is open: drum styles only for sample instruments.
-  const style = sampler === isDrumStyle(picked) ? picked : sampler ? lastDrum : lastStyle;
+  const mode = kit ? 'kit' : sampler ? 'drum' : 'synth';
+  const [picked, setStyle] = useState(kit ? lastKit : sampler ? lastDrum : lastStyle);
+  // The instrument may change while the roll is open: kit grooves only for the kit, drum styles only for sample instruments.
+  const kindOfStyle = (st: PatternStyle) => (isKitStyle(st) ? 'kit' : isDrumStyle(st) ? 'drum' : 'synth');
+  const style = kindOfStyle(picked) === mode ? picked : mode === 'kit' ? lastKit : mode === 'drum' ? lastDrum : lastStyle;
   const projectKey = useStore((st) => st.project.key);
   const projectScale = useStore((st) => st.project.scale);
   const projectProgression = useStore((st) => st.project.progression);
@@ -256,17 +262,18 @@ export function PianoRollPanel() {
   };
 
   const generate = () => {
-    if (isDrumStyle(style)) lastDrum = style;
+    if (isKitStyle(style)) lastKit = style;
+    else if (isDrumStyle(style)) lastDrum = style;
     else lastStyle = style;
     const next = generatePattern(style, { root, bars: clip.length, seed: Math.floor(Math.random() * 2 ** 31), scale, progression });
     updateProject((p) => updateClip(p, clip.id, { notes: next }));
-    setLow(initialLow(next, sampler));
+    setLow(initialLow(next, sampler, kit));
     setSel(null);
   };
   const shiftKey = (by: number) => setHarmony({ key: `${KEY_NAMES[(root + by + 12) % 12]} ${parseKey(projectKey).mode}` });
   /** The preset that suits the chosen style, unless the track plays a sample or already has it. */
   const suggestion = presetById(SUGGESTED_PRESET[style]);
-  const offerSuggestion = !!suggestion && track.synth?.wave !== 'sample' && track.synth?.preset !== suggestion.id && !(sampler && !isDrumStyle(style));
+  const offerSuggestion = !!suggestion && track.synth?.wave !== 'sample' && track.synth?.preset !== suggestion.id && !(sampler && !isDrumStyle(style)) && !kit;
   const loadSuggestion = () => {
     if (!suggestion) return;
     updateProject((p) => mapTrack(p, track.id, (t) => applyPreset(t, suggestion)));
@@ -311,7 +318,7 @@ export function PianoRollPanel() {
             const black = BLACK.has(pitch % 12);
             return (
               <View key={row} style={[s.key, black && s.keyBlack]}>
-                {pitch % 12 === 0 && <Txt style={s.keyText}>{noteName(pitch)}</Txt>}
+                {kit ? padAt(pitch) && <Txt style={s.keyText}>{padAt(pitch)!.short}</Txt> : pitch % 12 === 0 && <Txt style={s.keyText}>{noteName(pitch)}</Txt>}
               </View>
             );
           })}
@@ -453,9 +460,9 @@ export function PianoRollPanel() {
       </Section>
 
       <Section title="Pattern-Generator" style={{ marginTop: 14 }}>
-        {sampler ? (
+        {sampler || kit ? (
           <View style={s.toolbar}>
-            {DRUM_STYLES.map((p) => (
+            {(kit ? KIT_STYLES : DRUM_STYLES).map((p) => (
               <Chip key={p.id} variant={style === p.id ? 'on' : 'ghost'} onPress={() => setStyle(p.id)}>
                 {p.label}
               </Chip>
@@ -496,7 +503,7 @@ export function PianoRollPanel() {
           </View>
         )}
         <View style={[s.toolbar, { marginTop: 12 }]}>
-          {!isDrumStyle(style) && (
+          {!isDrumStyle(style) && !isKitStyle(style) && (
             <>
               <Btn small onPress={() => shiftKey(-1)} accessibilityLabel="Tonart tiefer">
                 ◀

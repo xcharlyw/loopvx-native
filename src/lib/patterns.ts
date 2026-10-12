@@ -4,7 +4,7 @@ import { arpLine, hypnoticLine, padChords, progArp, raveStabs, reeseLine, trance
 // Pattern generator for MIDI clips: hard techno building blocks in a minor key.
 // Pure and seeded, so "Würfeln" gives a new variation and tests stay deterministic.
 
-export type PatternStyle = 'rumble' | 'offbeat' | 'reese' | 'acid' | 'arp' | 'prog' | 'trance' | 'hypnotic' | 'pad' | 'stabs' | 'rave' | 'kick' | 'hat' | 'clap' | 'hats16';
+export type PatternStyle = 'rumble' | 'offbeat' | 'reese' | 'acid' | 'arp' | 'prog' | 'trance' | 'hypnotic' | 'pad' | 'stabs' | 'rave' | 'kick' | 'hat' | 'clap' | 'hats16' | 'kit-techno' | 'kit-rolling' | 'kit-minimal';
 
 /** For synth tracks, grouped the way the generator sheet shows them. */
 export const PATTERN_GROUPS: { label: string; styles: { id: PatternStyle; label: string }[] }[] = [
@@ -51,6 +51,15 @@ export const DRUM_STYLES: { id: PatternStyle; label: string }[] = [
 ];
 
 export const isDrumStyle = (style: PatternStyle) => DRUM_STYLES.some((d) => d.id === style);
+
+/** For the 909 kit: whole grooves, every drum on its own pad (notes from C1, see drum909.ts). */
+export const KIT_STYLES: { id: PatternStyle; label: string }[] = [
+  { id: 'kit-techno', label: 'Hard Techno' },
+  { id: 'kit-rolling', label: 'Rolling' },
+  { id: 'kit-minimal', label: 'Minimal' },
+];
+
+export const isKitStyle = (style: PatternStyle) => KIT_STYLES.some((d) => d.id === style);
 
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -160,7 +169,57 @@ function hats16(_root: number, rand: () => number): Note[] {
   return notes;
 }
 
-const PHRASE_BARS: Partial<Record<PatternStyle, number>> = { rumble: 2, offbeat: 2, acid: 2, stabs: 1, kick: 2, hat: 2, clap: 2, hats16: 2 };
+// Pad notes of the 909 kit.
+const K = { kick: 36, rim: 37, snare: 38, clap: 39, tomL: 41, hatC: 42, tomM: 45, hatO: 46, tomH: 48, crash: 49, bell: 56 };
+
+/** Last beat of a phrase: a snare roll that gets louder, or a tom run down, or nothing. */
+function fill(rand: () => number): Note[] {
+  const r = rand();
+  if (r < 0.35) return Array.from({ length: 4 }, (_, i) => note(K.snare, 28 + i, 1, 0.55 + i * 0.15));
+  if (r < 0.65) return [note(K.tomH, 28, 1, 0.9), note(K.tomH, 29, 1, 0.75), note(K.tomM, 30, 1, 0.9), note(K.tomL, 31, 1, 1)];
+  return [];
+}
+
+/** Four on the floor, clap on 2 & 4, open hat on every off-beat, ghost 16th hats, a fill every second bar. */
+function kitTechno(_root: number, rand: () => number): Note[] {
+  const notes: Note[] = [];
+  for (let beat = 0; beat < 8; beat++) notes.push(note(K.kick, beat * 4, 1, 1), note(K.hatO, beat * 4 + 2, 1, 0.75));
+  for (let i = 0; i < 4; i++) notes.push(note(K.clap, i * 8 + 4, 1, 0.9));
+  for (let i = 1; i < 32; i += 2) if (rand() < 0.55) notes.push(note(K.hatC, i, 1, 0.3 + rand() * 0.2));
+  if (rand() < 0.5) notes.push(note(K.rim, 23, 1, 0.5));
+  if (rand() < 0.3) notes.push(note(K.crash, 0, 1, 0.7));
+  const f = fill(rand);
+  // The fill replaces everything but the kick in the last beat.
+  const inFill = (n: Note) => f.length > 0 && n.start >= 28 * STEP - 1e-9 && n.pitch !== K.kick;
+  return [...notes.filter((n) => !inFill(n)), ...f];
+}
+
+/** Four on the floor with a rolling 16th hat line, accents on the off-beat and a syncopated rim. */
+function kitRolling(_root: number, rand: () => number): Note[] {
+  const notes: Note[] = [];
+  for (let beat = 0; beat < 8; beat++) notes.push(note(K.kick, beat * 4, 1, 1));
+  for (let i = 0; i < 32; i++) {
+    if (i % 4 === 2) notes.push(note(K.hatO, i, 1, 0.8));
+    else if (i % 4 !== 0 || rand() < 0.4) notes.push(note(K.hatC, i, 1, i % 2 ? 0.35 : 0.55));
+  }
+  for (const i of [4, 12, 20, 28]) notes.push(note(K.clap, i, 1, 0.85));
+  for (const i of [7, 15, 23]) if (rand() < 0.6) notes.push(note(K.rim, i, 1, 0.55));
+  if (rand() < 0.4) notes.push(note(K.bell, 30, 1, 0.45));
+  return notes;
+}
+
+/** Sparse: kick, clap, 8th hats and a ghost snare now and then. */
+function kitMinimal(_root: number, rand: () => number): Note[] {
+  const notes: Note[] = [];
+  for (let beat = 0; beat < 8; beat++) notes.push(note(K.kick, beat * 4, 1, 1));
+  for (let i = 0; i < 4; i++) notes.push(note(K.clap, i * 8 + 4, 1, 0.85));
+  for (let i = 0; i < 16; i++) notes.push(note(K.hatC, i * 2, 1, i % 2 ? 0.4 : 0.55));
+  for (const i of [11, 27]) if (rand() < 0.7) notes.push(note(K.snare, i, 1, 0.3));
+  if (rand() < 0.4) notes.push(note(K.bell, 22, 1, 0.4));
+  return notes;
+}
+
+const PHRASE_BARS: Partial<Record<PatternStyle, number>> = { rumble: 2, offbeat: 2, acid: 2, stabs: 1, kick: 2, hat: 2, clap: 2, hats16: 2, 'kit-techno': 2, 'kit-rolling': 2, 'kit-minimal': 2 };
 
 /**
  * A pattern of `style` on `root` (0 = C … 11 = B), filling `bars` bars. The melodic styles follow `scale`
@@ -172,6 +231,6 @@ export function generatePattern(style: PatternStyle, opts: { root: number; bars:
   const bars = Math.max(STEP, opts.bars);
   const melodic = MELODIC[style];
   if (melodic) return melodic({ root, scale: opts.scale ?? 'minor', bars, rand, progression: opts.progression });
-  const make = { rumble, offbeat, acid, stabs, kick, hat, clap, hats16 }[style as 'rumble'];
+  const make = { rumble, offbeat, acid, stabs, kick, hat, clap, hats16, 'kit-techno': kitTechno, 'kit-rolling': kitRolling, 'kit-minimal': kitMinimal }[style as 'rumble'];
   return repeat(make(root, rand), PHRASE_BARS[style] ?? 1, bars);
 }

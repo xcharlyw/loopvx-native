@@ -1,6 +1,6 @@
 import { DEFAULT_SYNTH } from '../lib/project';
 import type { SynthSettings, Track, TrackFx } from '../types';
-import { KICK_PRESET, NOISE_PRESET } from './synth';
+import { KICK_PRESET, KIT909_PRESET, NOISE_PRESET } from './synth';
 
 // The sound library of the oscillator synth, drum voices included: what the sound browser lists.
 // A preset sets the whole instrument (so nothing of the previous sound lingers) and the "sound" effects
@@ -200,6 +200,7 @@ export const PRESETS: SoundPreset[] = [
   { id: 'kick-rumble', name: 'Kick Rumble', category: 'Drums', hint: 'Lange Kick mit tiefem Ausklang', note: MID, synth: synth({ ...KICK_PRESET, decay: 0.7 }), fx: { drive: 0.3 } },
   { id: 'hat-closed', name: 'Hat zu', category: 'Drums', hint: 'Geschlossene Hi-Hat', note: MID, synth: synth({ ...NOISE_PRESET, cutoff: 8000, decay: 0.05 }) },
   { id: 'hat-open', name: 'Hat offen', category: 'Drums', hint: 'Offene Hi-Hat', note: MID, synth: synth({ ...NOISE_PRESET, cutoff: 6500, decay: 0.28, release: 0.1 }) },
+  { id: 'kit-909', name: '909 Drum Machine', category: 'Drums', hint: 'Ganzes Kit auf Drum-Rack-Noten ab C1: Kick, Snare, Clap, Hats, Toms', note: 36, synth: synth({ ...KIT909_PRESET }), fx: { drive: 0.15 } },
   { id: 'clap', name: 'Clap / Snare', category: 'Drums', hint: 'Rauschiger Clap', note: MID, synth: synth({ ...NOISE_PRESET, cutoff: 1800, resonance: 1.2, decay: 0.17 }), fx: { reverb: 0.2 } },
 ];
 
@@ -234,4 +235,7 @@ export const SUGGESTED_PRESET: Record<string, string> = {
   hat: 'hat-open',
   clap: 'clap',
   hats16: 'hat-closed',
+  'kit-techno': 'kit-909',
+  'kit-rolling': 'kit-909',
+  'kit-minimal': 'kit-909',
 };

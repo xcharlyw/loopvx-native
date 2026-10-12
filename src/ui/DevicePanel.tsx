@@ -156,7 +156,7 @@ function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
   const synth = trackSynth(track);
   const preset = presetById(synth.preset);
   const name = preset ? preset.name : synth.wave === 'sample' ? 'Sampler' : synth.wave === 'kick' ? 'Synth-Kick' : synth.wave === 'noise' ? 'Noise / Hat' : track.synth ? 'Eigener Sound' : 'Standard-Synth';
-  const type = synth.wave === 'sample' ? 'Sampler' : synth.wave === 'kick' || synth.wave === 'noise' ? 'Drum-Synth' : 'Synth';
+  const type = synth.wave === 'sample' ? 'Sampler' : synth.wave === 'kick' || synth.wave === 'noise' ? 'Drum-Synth' : synth.wave === 'kit909' ? '909 Kit' : 'Synth';
   return (
     <Pressable accessibilityLabel="Instrument öffnen" onPress={() => setState({ panel: 'instrument' })} style={[s.source, { borderColor: C.accent }]}>
       <View style={{ flex: 1 }}>

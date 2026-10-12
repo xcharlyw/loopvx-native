@@ -85,12 +85,16 @@ export const KICK_PRESET: Partial<SynthSettings> = { wave: 'kick', cutoff: 16000
 /** Noise through a highpass: a closed hat by default; longer decay and lower cutoff give a snare or a riser. */
 export const NOISE_PRESET: Partial<SynthSettings> = { wave: 'noise', cutoff: 7500, resonance: 1, attack: 0.001, decay: 0.06, sustain: 0, release: 0.03 };
 
+/** The 909 drum machine: pads on the drum-rack notes from C1, every sound with its own recipe (see drum909.ts). */
+export const KIT909_PRESET: Partial<SynthSettings> = { wave: 'kit909', cutoff: 16000, resonance: 0.7, attack: 0.001, decay: 0.45, sustain: 0, release: 0.04, kitDecay: 1 };
+export const isKitWave = (wave: SynthSettings['wave']) => wave === 'kit909';
+
 /** Instruments for drum programming: every hit sits on C3 and plays out, whatever the note length. */
 export const isDrumWave = (wave: SynthSettings['wave']) => wave === 'sample' || wave === 'kick' || wave === 'noise';
 
 /** Peak level of one voice: synth notes leave headroom for chords, drums and samples come in hot. */
 export function voicePeak(synth: Pick<SynthSettings, 'wave' | 'gainDb'>, velocity: number): number {
-  const peak = synth.wave === 'sample' || synth.wave === 'kick' ? 0.9 : synth.wave === 'noise' ? 0.45 : 0.25;
+  const peak = synth.wave === 'kit909' ? 0.7 : synth.wave === 'sample' || synth.wave === 'kick' ? 0.9 : synth.wave === 'noise' ? 0.45 : 0.25;
   return peak * velocity * Math.pow(10, (synth.gainDb ?? 0) / 20);
 }
 

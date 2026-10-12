@@ -26,7 +26,11 @@ export function PromptBar() {
 
   if (!open) {
     return (
-      <View style={s.fab}>
+      <View style={[s.fab, { flexDirection: 'row', gap: 8 }]}>
+        <Btn accessibilityLabel="Arrangement-Generator" onPress={() => setState({ panel: 'arranger' })}>
+          <Sparkle size={16} />
+          Arrangement
+        </Btn>
         <Btn kind="primary" onPress={() => setOpen(true)}>
           <Sparkle size={16} color={C.accentInk} />
           AI Vocals

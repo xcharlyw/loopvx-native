@@ -247,7 +247,7 @@ export class MixGraph {
       if (!chain) continue;
       for (const lane of t.automation!) {
         const samples = sampleLane(lane.points, fromBar, toBar);
-        samples.forEach((p, i) => chain.automate(lane.param, p.value, time + (p.bar - fromBar) * spb, i === 0 ? 'set' : 'ramp', (v) => audibleGain({ ...t, volume: v }, anySolo), this));
+        samples.forEach((p, i) => chain.automate(lane.param, p.value, time + (p.bar - fromBar) * spb, i === 0 ? 'set' : 'ramp', (v) => audibleGain({ ...t, volume: t.volume * v }, anySolo), this));
       }
     }
   }

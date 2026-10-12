@@ -21,7 +21,8 @@ export const AUTO_PARAMS: Record<AutoParam, ParamDef> = {
   reverb: { label: 'Hall', min: 0, max: 1, rest: 0, format: pct },
   delay: { label: 'Echo', min: 0, max: 1, rest: 0, format: pct },
   pan: { label: 'Pan', min: -1, max: 1, rest: 0, format: (v) => (Math.abs(v) < 0.02 ? 'Mitte' : v < 0 ? `L ${Math.round(-v * 100)}` : `R ${Math.round(v * 100)}`) },
-  volume: { label: 'Lautstärke', min: 0, max: 1.5, rest: 0.8, format: (v) => `${Math.round(v * 100)} %` },
+  /** A multiplier of the track's fader (1 = as the fader stands), so the mixer fader keeps working under a fade. */
+  volume: { label: 'Lautstärke', min: 0, max: 1, rest: 1, format: (v) => `${Math.round(v * 100)} %` },
 };
 export const AUTO_ORDER: AutoParam[] = ['filter', 'drive', 'reverb', 'delay', 'volume', 'pan'];
 

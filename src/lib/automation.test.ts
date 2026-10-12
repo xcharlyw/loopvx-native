@@ -56,7 +56,7 @@ describe('editing', () => {
 
 describe('shapes', () => {
   it('ramps and clamps to the parameter range', () => {
-    expect(ramp('volume', 0, 4, 1.5, -2)).toEqual([{ bar: 0, value: 1.5 }, { bar: 4, value: 0 }]);
+    expect(ramp('volume', 0, 4, 1.5, -2)).toEqual([{ bar: 0, value: 1 }, { bar: 4, value: 0 }]);
   });
   it('throws up before a bar and drops back on it', () => {
     const t = throwAt('reverb', 16, 4, 0.8, 0);

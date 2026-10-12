@@ -218,6 +218,18 @@ parameter, `TrackChain.apply` leaves that parameter alone (`automated`), and `re
 The filter lane goes through `djFilter`, so it keeps the DJ filter's curve. Measured offline: volume fade linear, a filter close halves the zero-crossing rate every
 couple of bars, a reverb lane stays dry until its point. UI `AutomationPanel` (TrackPanel "Automation"): parameter chips, a graph of 16/32/64/128 bars (no scrolling:
 the buttons move the window), tap = new point, drag = move (one undo step), buttons nudge/delete, shapes for the visible window. Not shown in the arrange view yet.
+The `volume` lane is a multiplier of the track's fader (0..1), so the mixer fader keeps working under a fade.
+
+## Arranger
+
+`lib/arranger.ts` (pure, tested) lays out a whole track on the project: `sectionsFor(64|128)` = intro, build-up, drop, break, build-up 2, drop 2, outro; `roleOf(track)` reads
+drums (kit909) / bass / lead / pad (MIDI, from the preset category or the name) and kickLoop / topLoop / synthLoop / vocal (audio, from the category); `SPANS` says in which
+fraction of which section a role plays; MIDI roles get `generatePattern` clips (project key, scale and progression, so everything fits; the drums a snare roll in the last
+bar of a build and a crash on each drop; no 909 kick when a kick loop carries it), audio roles the best library sample (`candidates`: category, ±8 BPM, `keysFit`, nearest
+tempo first, one of the best three picked by the seed) looped over the whole span. `automationFor` adds filter openings, a reverb throw before each drop, drive build-ups on the
+bass and a fade-out; bass/lead/pad get a pump when they have none. Missing roles are added as MIDI tracks (909 Drums, Rumble Bass, Lead, Pad with tuned faders). It **replaces** the
+clips (undoable). Rule based with seeded randomness: not an LLM; an LLM could later choose the template/parameters (needs a server-side key). UI `ArrangerPanel` (FAB
+"Arrangement" next to "AI Vocals"). Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
 
 ## 909 drum machine (issue #4)
 

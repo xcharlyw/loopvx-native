@@ -127,7 +127,7 @@ export function AutomationPanel() {
     const a = Math.floor(start);
     const b = Math.ceil(to);
     const keep = points.filter((p) => p.bar < a || p.bar > b);
-    const made = kind === 'up' ? ramp(param, a, b, def.min, def.max === 1.5 ? 1 : def.max) : kind === 'down' ? ramp(param, a, b, def.max === 1.5 ? 1 : def.max, def.min) : throwAt(param, b, Math.min(8, b - a), def.max === 1.5 ? 1 : def.max, def.rest);
+    const made = kind === 'up' ? ramp(param, a, b, def.min, def.max) : kind === 'down' ? ramp(param, a, b, def.max, def.min) : throwAt(param, b, Math.min(8, b - a), def.max, def.rest);
     write([...keep, ...made].sort((p, q) => p.bar - q.bar));
   };
 
@@ -217,7 +217,7 @@ export function AutomationPanel() {
           )}
         </Svg>
       </View>
-      <Txt style={s.legend}>{`${def.format(def.max)} oben · ${def.format(def.min)} unten · gestrichelt: ohne Automation`}</Txt>
+      <Txt style={s.legend}>{`${def.format(def.max)} oben · ${def.format(def.min)} unten · gestrichelt: ohne Automation${param === 'volume' ? ' · relativ zum Fader der Spur' : ''}`}</Txt>
 
       <Section title="Punkt" style={{ marginTop: 12 }}>
         {sp ? (

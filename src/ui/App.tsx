@@ -24,6 +24,7 @@ import { ExportPanel } from './ExportPanel';
 import { Txt } from './kit';
 import { LibraryPanel } from './LibraryPanel';
 import { MixerPanel } from './MixerPanel';
+import { ArrangerPanel } from './ArrangerPanel';
 import { AutomationPanel } from './AutomationPanel';
 import { DevicePanel } from './DevicePanel';
 import { InstrumentPanel } from './InstrumentPanel';
@@ -65,6 +66,7 @@ function Shell() {
             {panel === 'instrument' && <InstrumentPanel />}
             {panel === 'devices' && <DevicePanel />}
             {panel === 'automation' && <AutomationPanel />}
+            {panel === 'arranger' && <ArrangerPanel />}
           </View>
         </View>
       </Modal>

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { autoDetectTempos } from '../lib/actions';
 import { browseChildren, driveCanRead, driveLinked, searchByName, type DriveFile } from '../lib/drive';
-import { COMPUTERS_ID, VIRTUAL_ROOTS, browserEntries, collectAudio, isVirtualId, sizeText } from '../lib/driveImport';
+import { COMPUTERS_ID, VIRTUAL_ROOTS, browserEntries, collectAudio, isVirtualId, sizeText, summarizeImport, type ImportSummary } from '../lib/driveImport';
 import { importDriveItems } from '../lib/driveImportRun';
-import { errorText, toast } from '../lib/store';
+import { errorText, getState, toast } from '../lib/store';
 import { signIn } from '../lib/supabase';
 import { Check } from './icons';
 import { Btn, Chip, Txt } from './kit';
@@ -33,6 +33,10 @@ export function DriveImport() {
   const [query, setQuery] = useState('');
   const [searched, setSearched] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; name: string } | null>(null);
+  // A scanned folder waits here for a "Importieren" before anything is downloaded.
+  const [plan, setPlan] = useState<{ name: string; items: { file: DriveFile; folder: string }[]; truncated: boolean; summary: ImportSummary } | null>(null);
+  const [scanning, setScanning] = useState<number | null>(null);
+  const stopRef = useRef(false);
   const here = stack[stack.length - 1];
 
   useEffect(() => {
@@ -77,7 +81,7 @@ export function DriveImport() {
   const folders = stack.length === 1 && !searched ? [...VIRTUAL_ROOTS, ...listed.folders] : listed.folders;
   const audio = listed.audio;
   const pickedCount = Object.keys(picked).length;
-  const importing = progress !== null;
+  const importing = progress !== null || scanning !== null;
 
   const run = async (items: { file: DriveFile; folder: string }[], truncated = false) => {
     if (!items.length) {
@@ -86,13 +90,15 @@ export function DriveImport() {
     }
     setProgress({ done: 0, total: items.length, name: '' });
     try {
-      const result = await importDriveItems(items, (done, total, name) => setProgress({ done, total, name }));
+      stopRef.current = false;
+      const result = await importDriveItems(items, (done, total, name) => setProgress({ done, total, name }), () => stopRef.current);
       const parts = [`${result.added.length} Datei(en) importiert`];
+      if (result.stopped) parts.push('abgebrochen, ein erneuter Import macht dort weiter');
       if (result.skipped) parts.push(`${result.skipped} schon vorhanden`);
       if (result.failed.length) parts.push(`${result.failed.length} fehlgeschlagen`);
       const tops = [...new Set(result.added.map((x) => x.folder).filter(Boolean))];
       if (tops.length) parts.push(`Library-Ordner: ${tops.slice(0, 3).join(', ')}`);
-      if (truncated) parts.push('Limit erreicht, den Rest in einem zweiten Durchgang importieren');
+      if (truncated) parts.push('Limit erreicht, den Rest in einem zweiten Durchgang importieren (schon importierte Dateien werden übersprungen)');
       toast(parts.join(' · '), result.failed.length ? 'error' : 'info');
       const tempos = await autoDetectTempos(result.added);
       if (tempos) toast(`Tempo bei ${tempos} Loop(s) automatisch erkannt`);
@@ -106,15 +112,25 @@ export function DriveImport() {
 
   const importPicked = () => void run(Object.values(picked).map((file) => ({ file, folder: searched ? '' : stack.map((c) => c.name).slice(1).join('/') })));
   const importFolder = async (folder: Crumb, path: string) => {
-    setProgress({ done: 0, total: 0, name: `Suche in „${folder.name}“ …` });
+    stopRef.current = false;
+    setPlan(null);
+    setScanning(0);
     try {
-      const { items, truncated } = await collectAudio(browseChildren, folder.id, path);
-      setProgress(null);
-      await run(items, truncated);
+      const { items, truncated } = await collectAudio(browseChildren, folder.id, path, undefined, { onFile: setScanning, cancelled: () => stopRef.current });
+      if (stopRef.current) return;
+      if (!items.length) toast('Keine Audiodateien gefunden.');
+      else setPlan({ name: folder.name, items, truncated, summary: summarizeImport(items, getState().samples) });
     } catch (e) {
-      setProgress(null);
       toast(errorText(e), 'error');
+    } finally {
+      setScanning(null);
     }
+  };
+  const startPlan = () => {
+    if (!plan) return;
+    const { items, truncated } = plan;
+    setPlan(null);
+    void run(items, truncated);
   };
   const togglePick = (f: DriveFile) =>
     setPicked((p) => {
@@ -237,10 +253,53 @@ export function DriveImport() {
         </Pressable>
       ))}
 
-      {importing && (
-        <Txt style={s.note}>
-          {progress.total ? `Importiere ${Math.min(progress.done + 1, progress.total)} / ${progress.total}${progress.name ? ` · ${progress.name}` : ''}` : progress.name}
-        </Txt>
+      {scanning !== null && (
+        <View style={s.row}>
+          <Txt style={[s.note, { flex: 1 }]}>{`Suche Audiodateien … ${scanning} gefunden`}</Txt>
+          <Btn small accessibilityLabel="Suche abbrechen" onPress={() => (stopRef.current = true)}>
+            Abbrechen
+          </Btn>
+        </View>
+      )}
+      {plan && (
+        <View style={s.plan}>
+          <Txt style={s.planTitle}>{`„${plan.name}“: ${plan.summary.fresh} neue Datei(en)`}</Txt>
+          <Txt style={s.note}>
+            {[
+              plan.summary.existing ? `${plan.summary.existing} schon in der Library` : null,
+              plan.summary.bytes ? `${sizeText(String(plan.summary.bytes))} zu laden` : null,
+              plan.truncated ? 'Limit erreicht, der Rest folgt im zweiten Durchgang' : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Txt>
+          {plan.summary.packs.length > 0 && (
+            <Txt style={s.note}>
+              {`Library-Ordner: ${plan.summary.packs
+                .slice(0, 6)
+                .map((p) => `${p.name} (${p.count})`)
+                .join(', ')}${plan.summary.packs.length > 6 ? ` und ${plan.summary.packs.length - 6} weitere` : ''}`}
+            </Txt>
+          )}
+          <View style={s.row}>
+            <Btn kind="primary" small disabled={!plan.summary.fresh} accessibilityLabel="Import starten" onPress={startPlan}>
+              {plan.summary.fresh ? `${plan.summary.fresh} importieren` : 'Nichts Neues'}
+            </Btn>
+            <Btn small accessibilityLabel="Import verwerfen" onPress={() => setPlan(null)}>
+              Verwerfen
+            </Btn>
+          </View>
+        </View>
+      )}
+      {progress !== null && (
+        <View style={s.row}>
+          <Txt style={[s.note, { flex: 1 }]}>
+            {progress.total ? `Importiere ${Math.min(progress.done + 1, progress.total)} / ${progress.total}${progress.name ? ` · ${progress.name}` : ''}` : progress.name}
+          </Txt>
+          <Btn small accessibilityLabel="Import abbrechen" onPress={() => (stopRef.current = true)}>
+            Abbrechen
+          </Btn>
+        </View>
       )}
       <Btn kind="primary" disabled={!pickedCount || importing} accessibilityLabel="Auswahl importieren" onPress={importPicked}>
         {pickedCount ? `${pickedCount} Datei(en) importieren` : 'Dateien antippen zum Auswählen'}
@@ -252,6 +311,8 @@ export function DriveImport() {
 
 const s = StyleSheet.create({
   box: { gap: 10 },
+  plan: { gap: 6, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: C.accent },
+  planTitle: { ...font(600), fontSize: 13 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   note: { color: C.muted, fontSize: 12, lineHeight: 17 },
   path: { ...mono(), fontSize: 11, color: C.muted, flex: 1 },

@@ -1,7 +1,7 @@
 import { AppState, Platform } from 'react-native';
 import { db, onDbChange } from '../storage/db';
 import type { Project, Sample, SampleCategory } from '../types';
-import { createFile, childrenOf, download, DriveAuthError, driveLinked, folder, forgetDriveToken, trash, updateFile, type DriveFile } from './drive';
+import { copyFile, createFile, childrenOf, download, DriveAuthError, driveLinked, folder, forgetDriveToken, trash, updateFile, type DriveFile } from './drive';
 import { createProject } from './project';
 import { deleteSample, readSampleData, storeSampleAudio } from './samples';
 import { errorText, flushSave, getState, openProject, replaceOpenProject, setSamples, setState, toast } from './store';
@@ -146,9 +146,14 @@ async function syncSamples(dir: string, memory: StoredMemory): Promise<{ synced:
       if (fileId) {
         await updateFile(fileId, { appProperties: sampleProps(sample) }); // audio never changes, only metadata
       } else {
-        const data = new Uint8Array(await readSampleData(sample));
-        const mime = AUDIO_MIME[extOf(sample.name)] ?? 'application/octet-stream';
-        await createFile({ name: sample.name, parents: [dir], mimeType: mime, appProperties: sampleProps(sample) }, data, mime);
+        const meta = { name: sample.name, parents: [dir], appProperties: sampleProps(sample) };
+        // A sample imported from Drive is copied inside Drive (no upload from the phone); anything else, or a refused copy, is uploaded.
+        const copied = sample.driveId ? await copyFile(sample.driveId, meta).then(() => true, (e) => (e instanceof DriveAuthError ? Promise.reject(e) : false)) : false;
+        if (!copied) {
+          const data = new Uint8Array(await readSampleData(sample));
+          const mime = AUDIO_MIME[extOf(sample.name)] ?? 'application/octet-stream';
+          await createFile({ ...meta, mimeType: mime }, data, mime);
+        }
       }
       synced.add(id);
     } catch (e) {

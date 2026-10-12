@@ -1,4 +1,4 @@
-import { COMPUTERS_ID, isStructureFolder, libraryFolderOf, packFolderFrom, SHARED_ID, VIRTUAL_ROOTS, computerFolders, isVirtualId, browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
+import { COMPUTERS_ID, summarizeImport, isStructureFolder, libraryFolderOf, packFolderFrom, SHARED_ID, VIRTUAL_ROOTS, computerFolders, isVirtualId, browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
 
 const folder = (id: string, name: string): DriveEntry => ({ id, name, mimeType: 'application/vnd.google-apps.folder' });
 const file = (id: string, name: string, mimeType = 'audio/wav', size?: string): DriveEntry => ({ id, name, mimeType, size });
@@ -133,5 +133,37 @@ describe('pack folders', () => {
     expect(await packFolderFrom(get, 'x')).toBe('drum_loops');
     expect(await packFolderFrom(get, 'missing')).toBeUndefined();
     expect(await packFolderFrom(get, undefined)).toBeUndefined();
+  });
+});
+
+describe('summarizeImport', () => {
+  const items = [
+    { file: file('1', 'a.wav', 'audio/wav', '1000'), folder: 'Pack A/loops/drum_loops' },
+    { file: file('2', 'b.wav', 'audio/wav', '3000'), folder: 'Pack A/loops/drum_loops' },
+    { file: file('3', 'c.wav', 'audio/wav', '500'), folder: 'Pack B/loops' },
+    { file: file('4', 'd.wav'), folder: '' },
+  ];
+  it('counts new files, size and library folders, biggest first', () => {
+    const s = summarizeImport(items, [{ driveId: '4' }]);
+    expect(s).toMatchObject({ total: 4, fresh: 3, existing: 1, bytes: 4500 });
+    expect(s.packs).toEqual([{ name: 'Pack A', count: 2 }, { name: 'Pack B', count: 1 }]);
+  });
+  it('puts files from the top level on the Hauptebene', () => {
+    expect(summarizeImport([items[3]], []).packs).toEqual([{ name: 'Hauptebene', count: 1 }]);
+  });
+});
+
+describe('collectAudio hooks', () => {
+  it('reports the running count and ends early when cancelled', async () => {
+    const tree: Record<string, DriveEntry[]> = { root: [file('1', 'a.wav'), folder('f', 'Sub')], f: [file('2', 'b.wav')] };
+    const list = async (id: string) => tree[id] ?? [];
+    const seen: number[] = [];
+    const full = await collectAudio(list, 'root', 'P', undefined, { onFile: (n) => seen.push(n) });
+    expect(full.items).toHaveLength(2);
+    expect(seen).toEqual([1, 2]);
+    let stop = false;
+    const cut = await collectAudio(list, 'root', 'P', undefined, { onFile: () => (stop = true), cancelled: () => stop });
+    expect(cut.items).toHaveLength(1);
+    expect(cut.truncated).toBe(true);
   });
 });

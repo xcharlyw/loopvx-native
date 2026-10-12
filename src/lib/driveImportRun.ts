@@ -10,6 +10,8 @@ export interface ImportResult {
   added: Sample[];
   skipped: number;
   failed: string[];
+  /** The user stopped it; what was imported so far stays. */
+  stopped: boolean;
 }
 
 /**
@@ -17,11 +19,16 @@ export interface ImportResult {
  * Files already in the library (same Drive id) are skipped. The library list updates as it goes, so a long import
  * can be left running while the new loops already show up.
  */
-export async function importDriveItems(items: { file: DriveEntry; folder: string }[], onProgress: (done: number, total: number, name: string) => void): Promise<ImportResult> {
+export async function importDriveItems(items: { file: DriveEntry; folder: string }[], onProgress: (done: number, total: number, name: string) => void, shouldStop: () => boolean = () => false): Promise<ImportResult> {
   const fresh = notYetImported(items, getState().samples);
   const added: Sample[] = [];
   const failed: string[] = [];
+  let stopped = false;
   for (const [i, { file, folder }] of fresh.entries()) {
+    if (shouldStop()) {
+      stopped = true;
+      break;
+    }
     onProgress(i, fresh.length, file.name);
     try {
       const sample = sampleFromDriveFile(file, folder);
@@ -34,7 +41,7 @@ export async function importDriveItems(items: { file: DriveEntry; folder: string
     }
   }
   onProgress(fresh.length, fresh.length, '');
-  return { added, skipped: items.length - fresh.length, failed };
+  return { added, skipped: items.length - fresh.length, failed, stopped };
 }
 
 /**

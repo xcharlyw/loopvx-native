@@ -6,7 +6,7 @@ import { autoDetectTempos, downloadSample, placeSample } from '../lib/actions';
 import { moveSamples, prettyPath, normPath, samplesIn } from '../lib/folders';
 import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
 import { deleteSample, importSamplesFromDevice } from '../lib/samples';
-import { errorText, getState, setSamples, setState, toast, upsertSample, upsertSamples, useStore } from '../lib/store';
+import { errorText, getState, removeSamples, setSamples, setState, toast, upsertSample, upsertSamples, useStore } from '../lib/store';
 import { db } from '../storage/db';
 import type { Sample, SampleCategory } from '../types';
 import { DriveImport } from './DriveImport';
@@ -14,6 +14,7 @@ import { SpliceSearch } from './SpliceSearch';
 import { useEngine } from './hooks';
 import { Check, Play, Plus, Stop, Upload } from './icons';
 import { FolderBar, FolderPicker, FolderRows } from './LibraryFolders';
+import { confirmDestructive } from './confirm';
 import { Btn, Chip, IconBtn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
@@ -61,6 +62,16 @@ export function LibraryPanel() {
     const changed = moveSamples(samples, selected, folder);
     await upsertSamples(changed);
     toast(changed.length ? `${changed.length} Sample(s) nach „${folder ? prettyPath(folder) : 'Hauptebene'}“ verschoben` : 'Die Samples liegen dort schon.');
+    stopSelecting();
+  };
+
+  const removeSelected = async () => {
+    const doomed = samples.filter((x) => selected.has(x.id));
+    if (!doomed.length) return;
+    const ok = await confirmDestructive(`${doomed.length} Sample(s) löschen?`, 'Sie werden auch aus deinem Drive-Ordner LOOPVX entfernt (Papierkorb). Clips in Projekten, die diese Samples nutzen, werden stumm. Deine Originale in Drive bleiben unberührt.', 'Löschen');
+    if (!ok) return;
+    await removeSamples(doomed, deleteSample);
+    toast(`${doomed.length} Sample(s) gelöscht`);
     stopSelecting();
   };
 
@@ -144,6 +155,9 @@ export function LibraryPanel() {
           </Chip>
           <Btn small kind="primary" disabled={!selected.size} accessibilityLabel="Ausgewählte verschieben" onPress={() => setPicking(true)}>
             Verschieben …
+          </Btn>
+          <Btn small disabled={!selected.size} accessibilityLabel="Ausgewählte löschen" onPress={() => void removeSelected()}>
+            <Txt style={{ color: C.danger }}>Löschen</Txt>
           </Btn>
         </View>
       )}

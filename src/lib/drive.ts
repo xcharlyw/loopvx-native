@@ -162,6 +162,16 @@ export async function createFile(meta: DriveMeta, data?: Uint8Array, mimeType = 
   return (await res.json()) as DriveFile;
 }
 
+/** A copy made inside Drive: no bytes pass through this device. Needs read access to the original (drive.readonly). */
+export async function copyFile(fileId: string, meta: DriveMeta): Promise<DriveFile> {
+  const res = await call(`${API}/files/${encodeURIComponent(fileId)}/copy?fields=id,name,appProperties`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(meta),
+  });
+  return (await res.json()) as DriveFile;
+}
+
 /** Change metadata, and the content too when `data` is given. */
 export async function updateFile(fileId: string, meta: DriveMeta, data?: Uint8Array, mimeType = 'application/octet-stream'): Promise<void> {
   const id = encodeURIComponent(fileId);

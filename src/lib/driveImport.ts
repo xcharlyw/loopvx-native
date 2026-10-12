@@ -109,21 +109,27 @@ export interface CollectLimits {
   maxFiles: number;
 }
 
-export const DEFAULT_LIMITS: CollectLimits = { maxDepth: 6, maxFiles: 400 };
+export const DEFAULT_LIMITS: CollectLimits = { maxDepth: 8, maxFiles: 3000 };
 
 /**
  * Every audio file below a folder, with its relative folder path. `list` gives a folder's children. Stops at
- * `maxFiles` (and says so) so a pick of the whole Drive cannot run away.
+ * `maxFiles` (and says so) so a pick of the whole Drive cannot run away. `hooks.onFile` reports the running count,
+ * and when `hooks.cancelled()` turns true the walk ends early (the result is then partial and marked truncated).
  */
 export async function collectAudio(
   list: (folderId: string) => Promise<DriveEntry[]>,
   rootId: string,
   rootName: string,
   limits: CollectLimits = DEFAULT_LIMITS,
+  hooks: { onFile?: (count: number) => void; cancelled?: () => boolean } = {},
 ): Promise<{ items: { file: DriveEntry; folder: string }[]; truncated: boolean }> {
   const items: { file: DriveEntry; folder: string }[] = [];
   let truncated = false;
   const walk = async (id: string, path: string, depth: number) => {
+    if (hooks.cancelled?.()) {
+      truncated = true;
+      return;
+    }
     const { folders, audio } = browserEntries(await list(id));
     for (const file of audio) {
       if (items.length >= limits.maxFiles) {
@@ -132,6 +138,7 @@ export async function collectAudio(
       }
       items.push({ file, folder: path });
     }
+    hooks.onFile?.(items.length);
     if (depth >= limits.maxDepth) {
       if (folders.length) truncated = true;
       return;
@@ -146,6 +153,30 @@ export async function collectAudio(
   };
   await walk(rootId, rootName, 0);
   return { items, truncated };
+}
+
+export interface ImportSummary {
+  total: number;
+  fresh: number;
+  existing: number;
+  /** Bytes of the files that are not in the library yet. */
+  bytes: number;
+  /** Library folders the new files would land in, biggest first. */
+  packs: { name: string; count: number }[];
+}
+
+/** What an import would do, shown before it starts: how many files are new, how big, and into which library folders. */
+export function summarizeImport(items: { file: DriveEntry; folder: string }[], samples: Pick<Sample, 'driveId'>[]): ImportSummary {
+  const fresh = notYetImported(items, samples);
+  const counts = new Map<string, number>();
+  let bytes = 0;
+  for (const { file, folder } of fresh) {
+    const name = libraryFolderOf(folder) ?? 'Hauptebene';
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    bytes += Number(file.size) || 0;
+  }
+  const packs = [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return { total: items.length, fresh: fresh.length, existing: items.length - fresh.length, bytes, packs };
 }
 
 /** "12,3 MB" for a Drive size string. */

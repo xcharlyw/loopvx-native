@@ -10,7 +10,8 @@ import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { readMidiFile, writeMidiFile } from './midi';
-import { addClip, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
+import { contiguousRun, mergeMidiClips, runSpan } from './consolidate';
+import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
@@ -97,6 +98,47 @@ export function duplicateSelectedClip() {
   const copy = { ...found.clip, id: uid(), start: found.clip.start + found.clip.length };
   updateProject((p) => addClip(p, found.track.id, copy));
   setState({ selectedClipId: copy.id });
+}
+
+/**
+ * Consolidate (Ableton: Cmd/Ctrl+J): the selected clip and the clips of its track that touch it become one clip. MIDI clips
+ * merge their notes; audio clips are rendered (clip gain, fades, warping and looping included, track effects not) into a
+ * new sample in the folder "Konsolidiert".
+ */
+export async function consolidateSelectedClip() {
+  const { project, selectedClipId } = getState();
+  const found = selectedClipId ? findClip(project, selectedClipId) : null;
+  if (!found) {
+    toast('Wähle einen Clip aus, dann Konsolidieren (Strg/Cmd + J).');
+    return;
+  }
+  const run = contiguousRun(found.track.clips, found.clip.id);
+  const trackId = found.track.id;
+  const ids = new Set(run.map((c) => c.id));
+  try {
+    let merged: Clip;
+    if (found.clip.notes) {
+      if (run.length < 2) {
+        toast('Nichts zu konsolidieren: neben dem Clip liegt kein weiterer.');
+        return;
+      }
+      merged = mergeMidiClips(run);
+    } else {
+      const { start, length } = runSpan(run);
+      toast('Clip wird konsolidiert …');
+      const bare = { ...found.track, clips: run, fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
+      const data = await renderWav({ ...project, tracks: [bare] }, { from: start, to: start + length });
+      const sample: Sample = { id: `cons:${uid()}`, name: `${found.track.name} konsolidiert.wav`, category: found.track.category, bpm: project.bpm, folder: 'Konsolidiert', duration: (length * 240) / project.bpm, size: data.byteLength, addedAt: Date.now() };
+      const stored = await storeSampleAudio(sample, data.buffer as ArrayBuffer, 'wav');
+      setSamples([...getState().samples, stored]);
+      merged = { id: uid(), sampleId: stored.id, start, length, offset: 0 };
+    }
+    updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, clips: [...t.clips.filter((c) => !ids.has(c.id)), merged] })));
+    setState({ selectedClipId: merged.id });
+    toast(`${run.length} ${run.length === 1 ? 'Clip' : 'Clips'} konsolidiert`);
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
 }
 
 /** Split the selected clip at the playhead (Ableton: Cmd+E). */

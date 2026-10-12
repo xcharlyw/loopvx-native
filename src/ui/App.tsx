@@ -8,6 +8,7 @@ import { engine } from '../audio/engine';
 import { preparePageAudio } from '../audio/pageAudio';
 import { C } from '../constants/theme';
 import {
+  consolidateSelectedClip,
   deleteSelectedClip,
   duplicateSelectedClip,
   nudgeSelectedClip,
@@ -123,6 +124,9 @@ function useShortcuts() {
       } else if (mod && e.key.toLowerCase() === 'e' && arrange) {
         e.preventDefault();
         splitSelectedClip();
+      } else if (mod && e.key.toLowerCase() === 'j' && arrange) {
+        e.preventDefault();
+        void consolidateSelectedClip();
       } else if (mod && e.key.toLowerCase() === 'd' && arrange) {
         e.preventDefault();
         duplicateSelectedClip();

@@ -220,6 +220,13 @@ couple of bars, a reverb lane stays dry until its point. UI `AutomationPanel` (T
 the buttons move the window), tap = new point, drag = move (one undo step), buttons nudge/delete, shapes for the visible window. Same curve component (`AutomationCurve`) is used in the arrange view: the "A" button of a track header opens a lane under the track (`LaneRow`, `LANE_H`, all bars at the arrangement's zoom; tap the lane header to cycle the parameter), like Ableton.
 The `volume` lane is a multiplier of the track's fader (0..1), so the mixer fader keeps working under a fade.
 
+## Consolidate (Cmd/Ctrl+J)
+
+`consolidateSelectedClip` (`actions.ts`, pure parts in `lib/consolidate.ts`: `contiguousRun`, `mergeMidiClips`): the selected clip plus the clips of its track that touch it become one clip.
+MIDI: notes merged (each cut at its own clip's end). Audio: the run is rendered with `renderWav` on a bare copy of the track (no fx/devices/automation, volume 1; clip gain, fades and
+looping included) into a new sample `cons:<id>` (bpm = project bpm, folder "Konsolidiert") and one clip replaces the run. One undo step. Shortcut in `useShortcuts` (App.tsx) and a
+button in the clip sheet. There is no multi-selection yet, hence "touching clips" instead of Ableton's time selection.
+
 ## Arranger
 
 `lib/arranger.ts` (pure, tested) lays out a whole track on the project: `sectionsFor(64|128)` = intro, build-up, drop, break, build-up 2, drop 2, outro; `roleOf(track)` reads

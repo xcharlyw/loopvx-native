@@ -97,7 +97,7 @@ dissolve = contents move up, move samples; tested), bulk writes through `db.putS
 `updatedAt` touched so Drive sync carries the new `folder`). UI `LibraryFolders.tsx` + `LibraryPanel`: without search/filter
 the Library is browsed folder by folder (breadcrumb, "+ Neuer Ordner", folder rows with ⋯ = rename / **verschieben** (a whole folder into another folder or back to the top level, `moveFolder`: never into itself or its own sub-folders, same names merge) / auflösen), "Auswählen"
 ticks samples and "Verschieben …" opens the folder picker (also "In Ordner" in a sample's editor); with a search or filter all
-folders are searched at once. Folders are meant to be flat (last sub-folder only): "Pfade kürzen" (`flattenFolders`, shown while any folder is nested) flattens an old tree. Empty folders are local (not synced to Drive).
+folders are searched at once. Folders are meant to be flat (last sub-folder only): "Pfade kürzen" (`flattenFolders`, shown while any folder is nested) flattens an old tree. Empty folders are local (not synced to Drive). "Löschen" in the ⋯ menu deletes a folder with all sub-folders and samples (`samplesUnder` + `withoutFolder`, `removeSamples` in the store → `db.deleteSamples`; confirmed first; Drive copies are trashed by the sync, clips using them go silent; "Auflösen" is the keep-the-samples alternative). `rememberDeleted` in `sync.ts` is serialized because bulk deletes call it in parallel.
 
 ## Splice
 

@@ -235,6 +235,15 @@ export async function upsertSamples(changed: Sample[]): Promise<void> {
   setSamples([...state.samples.filter((s) => !ids.has(s.id)), ...next]);
 }
 
+/** Removes samples for good: their audio, their library entry and (via the sync) their copy in Drive. */
+export async function removeSamples(list: Sample[], deleteAudio: (s: Sample) => Promise<void>): Promise<void> {
+  if (!list.length) return;
+  for (const s of list) await deleteAudio(s).catch((e) => console.warn('could not delete audio', s.name, e));
+  await db.deleteSamples(list.map((s) => s.id));
+  const gone = new Set(list.map((s) => s.id));
+  setSamples(state.samples.filter((s) => !gone.has(s.id)));
+}
+
 /** The user's empty library folders. */
 export function setFolders(folders: string[]) {
   setState({ folders });

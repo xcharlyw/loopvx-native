@@ -118,3 +118,9 @@ export function moveFolder(samples: Sample[], extra: string[], folder: string, t
   const to = join(target, nameOf(folder));
   return { ...renameFolder(samples, extra, folder, to), to };
 }
+
+/** Every sample in a folder and all its sub-folders. */
+export const samplesUnder = (samples: Sample[], folder: string): Sample[] => samples.filter((s) => inside(normPath(s.folder), folder));
+
+/** The empty folders left after `folder` and everything below it is gone. */
+export const withoutFolder = (extra: string[], folder: string): string[] => extra.filter((e) => !inside(e, folder));

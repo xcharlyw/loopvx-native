@@ -1,5 +1,5 @@
 import type { Sample } from '../types';
-import { canMoveFolder, flattenFolders, moveFolder, hasNesting, allFolders, childFolders, countIn, dissolveFolder, freeName, moveSamples, nameError, normPath, parentOf, prettyPath, renameFolder, samplesIn } from './folders';
+import { samplesUnder, withoutFolder, canMoveFolder, flattenFolders, moveFolder, hasNesting, allFolders, childFolders, countIn, dissolveFolder, freeName, moveSamples, nameError, normPath, parentOf, prettyPath, renameFolder, samplesIn } from './folders';
 
 const sample = (id: string, folder?: string): Sample => ({ id, name: `${id}.wav`, category: 'other', addedAt: 1, folder });
 const lib = [sample('a', 'Loops'), sample('b', 'Loops/Kicks'), sample('c', 'Loops/Kicks/Rumble'), sample('d', 'Splice/Pack'), sample('e'), sample('f', 'Loops')];
@@ -99,5 +99,15 @@ describe('moveFolder', () => {
     expect(canMoveFolder('Loops', 'Splice')).toBe(true);
     expect(canMoveFolder('Loops2', 'Loops')).toBe(true); // similar names are not parents
     expect(moveFolder(lib, [], 'Loops', 'Loops/Kicks')).toBeNull();
+  });
+});
+
+describe('deleting a folder', () => {
+  it('finds everything under a folder, not look-alike names', () => {
+    expect(samplesUnder([...lib, sample('g', 'Loops2')], 'Loops').map((s) => s.id)).toEqual(['a', 'b', 'c', 'f']);
+    expect(samplesUnder(lib, 'Loops/Kicks').map((s) => s.id)).toEqual(['b', 'c']);
+  });
+  it('drops the empty folders inside it', () => {
+    expect(withoutFolder(['Loops/Leer', 'Loops', 'Loops2', 'Andere'], 'Loops')).toEqual(['Loops2', 'Andere']);
   });
 });

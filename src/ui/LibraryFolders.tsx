@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
-import { allFolders, canMoveFolder, childFolders, countIn, dissolveFolder, flattenFolders, moveFolder, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
-import { getState, setFolders, toast, upsertSamples, useStore } from '../lib/store';
+import { deleteSample } from '../lib/samples';
+import { allFolders, canMoveFolder, samplesUnder, withoutFolder, childFolders, countIn, dissolveFolder, flattenFolders, moveFolder, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
+import { getState, removeSamples, setFolders, toast, upsertSamples, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Txt } from './kit';
 
@@ -116,6 +117,22 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
     if (path === folder || path.startsWith(folder + '/')) setPath(r.to + path.slice(folder.length));
     toast(`„${nameOf(folder)}“ nach „${target ? prettyPath(target) : 'Hauptebene'}“ verschoben`);
   };
+  const remove = async (folder: string) => {
+    const doomed = samplesUnder(samples, folder);
+    const ok = await confirmDestructive(
+      `Ordner „${nameOf(folder)}“ löschen?`,
+      doomed.length
+        ? `Der Ordner mit allen Unterordnern und den ${doomed.length} Sample(s) darin wird gelöscht, auch aus deinem Drive-Ordner LOOPVX. Clips in Projekten, die diese Samples nutzen, werden stumm. Das lässt sich nicht rückgängig machen. (Zum Behalten der Samples: „Auflösen“.)`
+        : 'Der leere Ordner wird entfernt.',
+      'Löschen',
+    );
+    if (!ok) return;
+    setFolders(withoutFolder(extra, folder));
+    await removeSamples(doomed, deleteSample);
+    if (path === folder || path.startsWith(folder + '/')) setPath(parentOf(folder));
+    setMenu(null);
+    toast(doomed.length ? `Ordner „${nameOf(folder)}“ und ${doomed.length} Sample(s) gelöscht` : `Ordner „${nameOf(folder)}“ gelöscht`);
+  };
   const dissolve = async (folder: string) => {
     const { total } = countIn(samples, folder);
     const ok = await confirmDestructive(`Ordner „${nameOf(folder)}“ auflösen?`, total ? `Die ${total} Sample(s) darin rücken eine Ebene nach oben. Es wird nichts gelöscht.` : 'Der leere Ordner wird entfernt.', 'Auflösen');
@@ -167,6 +184,9 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
                 </Chip>
                 <Chip onPress={() => void dissolve(f)} textStyle={{ fontSize: 12 }}>
                   Auflösen
+                </Chip>
+                <Chip onPress={() => void remove(f)} textStyle={{ fontSize: 12, color: C.danger }}>
+                  Löschen
                 </Chip>
               </View>
             )}

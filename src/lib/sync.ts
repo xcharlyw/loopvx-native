@@ -228,10 +228,19 @@ export function scheduleSync(delay = DEBOUNCE_MS) {
   timer = setTimeout(() => void syncNow(), delay);
 }
 
-async function rememberDeleted(kind: 'projects' | 'samples', id: string) {
-  const memory = await loadMemory();
-  if (!memory[kind].deleted.includes(id)) memory[kind].deleted.push(id);
-  await db.setKv(MEMORY_KEY, memory);
+// One at a time: deleting a whole folder fires an event per sample, and parallel read-modify-writes of the memory
+// would lose entries (a deleted sample would then come back from Drive at the next sync).
+let rememberQueue: Promise<void> = Promise.resolve();
+
+function rememberDeleted(kind: 'projects' | 'samples', id: string): Promise<void> {
+  rememberQueue = rememberQueue
+    .then(async () => {
+      const memory = await loadMemory();
+      if (!memory[kind].deleted.includes(id)) memory[kind].deleted.push(id);
+      await db.setKv(MEMORY_KEY, memory);
+    })
+    .catch((e) => console.warn('could not remember a deletion', e));
+  return rememberQueue;
 }
 
 /**

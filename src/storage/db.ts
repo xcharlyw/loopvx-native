@@ -54,6 +54,15 @@ export const db = {
     emit({ kind: 'sample', id, deleted: true });
   },
 
+  /** Several samples at once: one read, one write, one event per sample (the sync remembers each deletion). */
+  async deleteSamples(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const gone = new Set(ids);
+    const samples = await db.getSamples();
+    await AsyncStorage.setItem(SAMPLES_KEY, JSON.stringify(samples.filter((s) => !gone.has(s.id))));
+    for (const id of ids) emit({ kind: 'sample', id, deleted: true });
+  },
+
   async deleteProject(id: string): Promise<void> {
     const projects = await db.getProjects();
     await AsyncStorage.setItem(PROJECTS_KEY, JSON.stringify(projects.filter((p) => p.id !== id)));

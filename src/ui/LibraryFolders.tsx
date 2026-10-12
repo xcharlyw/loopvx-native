@@ -1,0 +1,206 @@
+import { useState } from 'react';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { C, font, mono } from '../constants/theme';
+import { allFolders, childFolders, countIn, dissolveFolder, freeName, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
+import { getState, setFolders, toast, upsertSamples, useStore } from '../lib/store';
+import { confirmDestructive } from './confirm';
+import { Btn, Chip, Txt } from './kit';
+
+/** Make a folder (it exists empty until samples are put in); the one place that checks names and duplicates. Returns its path, or null with a toast. */
+export function addFolder(parent: string, name: string): string | null {
+  const err = nameError(name);
+  if (err) {
+    toast(err, 'error');
+    return null;
+  }
+  const path = join(parent, name.trim());
+  const { samples, folders } = getState();
+  if (allFolders(samples, folders).includes(path)) {
+    toast('Diesen Ordner gibt es schon.', 'error');
+    return null;
+  }
+  setFolders([...folders, path]);
+  return path;
+}
+
+/** Where you are: "Alle › Loops › Kicks", each part tappable, plus the buttons for new folder and selecting. */
+export function FolderBar({ path, setPath, selecting, onSelecting }: { path: string; setPath: (p: string) => void; selecting: boolean; onSelecting: (on: boolean) => void }) {
+  const [naming, setNaming] = useState<string | null>(null);
+  const parts = path ? path.split('/') : [];
+  const create = () => {
+    if (naming === null) return;
+    const made = addFolder(path, naming);
+    if (made) {
+      setNaming(null);
+      setPath(made);
+    }
+  };
+  return (
+    <View style={{ gap: 8, marginBottom: 6 }}>
+      <View style={s.crumbs}>
+        <Chip variant={path === '' ? 'on' : 'ghost'} onPress={() => setPath('')} textStyle={{ fontSize: 12 }}>
+          Hauptebene
+        </Chip>
+        {parts.map((p, i) => (
+          <Chip key={i} variant={i === parts.length - 1 ? 'on' : 'ghost'} onPress={() => setPath(parts.slice(0, i + 1).join('/'))} textStyle={{ fontSize: 12 }}>
+            {p}
+          </Chip>
+        ))}
+      </View>
+      <View style={s.crumbs}>
+        <Btn small accessibilityLabel="Neuer Ordner" onPress={() => setNaming(naming === null ? freeName(allFolders(getState().samples, getState().folders), path) : null)}>
+          + Neuer Ordner
+        </Btn>
+        <Btn small accessibilityLabel={selecting ? 'Auswahl beenden' : 'Samples auswählen'} onPress={() => onSelecting(!selecting)}>
+          {selecting ? 'Fertig' : 'Auswählen'}
+        </Btn>
+      </View>
+      {naming !== null && (
+        <View style={s.crumbs}>
+          <TextInput style={s.input} autoFocus value={naming} onChangeText={setNaming} onSubmitEditing={create} selectTextOnFocus placeholder="Ordnername" placeholderTextColor={C.dim} accessibilityLabel="Ordnername" />
+          <Btn small kind="primary" onPress={create}>
+            Anlegen
+          </Btn>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** The folders directly inside the current one, with their sample counts and a small menu (rename, take apart). */
+export function FolderRows({ path, setPath }: { path: string; setPath: (p: string) => void }) {
+  const samples = useStore((st) => st.samples);
+  const extra = useStore((st) => st.folders);
+  const [menu, setMenu] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
+  const folders = childFolders(allFolders(samples, extra), path);
+
+  const rename = async () => {
+    if (!renaming) return;
+    const err = nameError(renaming.value);
+    if (err) return toast(err, 'error');
+    const to = join(parentOf(renaming.path), renaming.value.trim());
+    if (to === renaming.path) return setRenaming(null);
+    const r = renameFolder(samples, extra, renaming.path, to);
+    setFolders(r.extra);
+    await upsertSamples(r.changed);
+    if (path === renaming.path || path.startsWith(renaming.path + '/')) setPath(to + path.slice(renaming.path.length));
+    setRenaming(null);
+    setMenu(null);
+  };
+  const dissolve = async (folder: string) => {
+    const { total } = countIn(samples, folder);
+    const ok = await confirmDestructive(`Ordner „${nameOf(folder)}“ auflösen?`, total ? `Die ${total} Sample(s) darin rücken eine Ebene nach oben. Es wird nichts gelöscht.` : 'Der leere Ordner wird entfernt.', 'Auflösen');
+    if (!ok) return;
+    const r = dissolveFolder(samples, extra, folder);
+    setFolders(r.extra);
+    await upsertSamples(r.changed);
+    if (path === folder || path.startsWith(folder + '/')) setPath(parentOf(folder));
+    setMenu(null);
+  };
+
+  return (
+    <>
+      {folders.map((f) => {
+        const { total } = countIn(samples, f);
+        return (
+          <View key={f} style={s.folder}>
+            <View style={s.folderMain}>
+              {renaming?.path === f ? (
+                <>
+                  <TextInput style={[s.input, { flex: 1 }]} autoFocus value={renaming.value} onChangeText={(value) => setRenaming({ path: f, value })} onSubmitEditing={() => void rename()} selectTextOnFocus accessibilityLabel="Neuer Name" />
+                  <Btn small kind="primary" onPress={() => void rename()}>
+                    OK
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <Pressable accessibilityLabel={`Ordner ${nameOf(f)} öffnen`} style={s.folderOpen} onPress={() => setPath(f)}>
+                    <Txt style={s.chevron}>▸</Txt>
+                    <Txt numberOfLines={1} style={s.folderName}>
+                      {nameOf(f)}
+                    </Txt>
+                    <Txt style={s.count}>{total}</Txt>
+                  </Pressable>
+                  <Pressable accessibilityLabel={`Ordner ${nameOf(f)} verwalten`} style={s.more} onPress={() => setMenu(menu === f ? null : f)}>
+                    <Txt style={s.moreText}>⋯</Txt>
+                  </Pressable>
+                </>
+              )}
+            </View>
+            {menu === f && !renaming && (
+              <View style={s.crumbs}>
+                <Chip onPress={() => setRenaming({ path: f, value: nameOf(f) })} textStyle={{ fontSize: 12 }}>
+                  Umbenennen
+                </Chip>
+                <Chip onPress={() => void dissolve(f)} textStyle={{ fontSize: 12 }}>
+                  Auflösen
+                </Chip>
+              </View>
+            )}
+          </View>
+        );
+      })}
+    </>
+  );
+}
+
+/** "Move to ...": every folder as a choice, the top level, or a new folder made on the spot. */
+export function FolderPicker({ count, onPick, onClose }: { count: number; onPick: (folder: string) => void; onClose: () => void }) {
+  const samples = useStore((st) => st.samples);
+  const extra = useStore((st) => st.folders);
+  const [naming, setNaming] = useState<string | null>(null);
+  const all = allFolders(samples, extra);
+  const create = () => {
+    if (naming === null) return;
+    const made = addFolder('', naming);
+    if (made) onPick(made);
+  };
+  return (
+    <View style={s.picker}>
+      <View style={s.crumbs}>
+        <Txt style={s.pickerTitle}>{`${count} Sample(s) verschieben nach …`}</Txt>
+        <View style={{ flex: 1 }} />
+        <Btn small onPress={onClose}>
+          Abbrechen
+        </Btn>
+      </View>
+      <View style={s.crumbs}>
+        <Chip onPress={() => onPick('')} textStyle={{ fontSize: 12 }}>
+          Hauptebene
+        </Chip>
+        {all.map((f) => (
+          <Chip key={f} onPress={() => onPick(f)} textStyle={{ fontSize: 12 }}>
+            {prettyPath(f)}
+          </Chip>
+        ))}
+        <Chip variant="on" onPress={() => setNaming(naming === null ? freeName(all, '') : null)} textStyle={{ fontSize: 12 }}>
+          + Neuer Ordner
+        </Chip>
+      </View>
+      {naming !== null && (
+        <View style={s.crumbs}>
+          <TextInput style={s.input} autoFocus value={naming} onChangeText={setNaming} onSubmitEditing={create} selectTextOnFocus accessibilityLabel="Name des neuen Ordners" />
+          <Btn small kind="primary" onPress={create}>
+            Anlegen und verschieben
+          </Btn>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  crumbs: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  input: { height: 34, minWidth: 160, flexGrow: 1, borderRadius: 8, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, paddingHorizontal: 10, color: C.text, ...font(400), fontSize: 14, outlineWidth: 0 },
+  folder: { borderBottomWidth: 1, borderBottomColor: C.lineSoft, paddingVertical: 4, gap: 6 },
+  folderMain: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  folderOpen: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40, minWidth: 0 },
+  chevron: { color: C.accent, fontSize: 14, width: 14 },
+  folderName: { ...font(600), fontSize: 14, flex: 1, minWidth: 0 },
+  count: { ...mono(), fontSize: 11, color: C.muted },
+  more: { width: 36, height: 36, borderRadius: 8, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  moreText: { fontSize: 16, color: C.text },
+  picker: { gap: 8, padding: 10, borderWidth: 1, borderColor: C.accent, borderRadius: 12, backgroundColor: '#111114', marginBottom: 8 },
+  pickerTitle: { ...font(700), fontSize: 13 },
+});

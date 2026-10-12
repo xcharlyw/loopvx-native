@@ -39,6 +39,15 @@ export const db = {
     emit({ kind: 'sample', id: sample.id });
   },
 
+  /** Several samples at once (one read, one write): moving a whole folder would otherwise rewrite the list per sample. */
+  async putSamples(batch: Sample[]): Promise<void> {
+    if (!batch.length) return;
+    const ids = new Set(batch.map((s) => s.id));
+    const samples = await db.getSamples();
+    await AsyncStorage.setItem(SAMPLES_KEY, JSON.stringify([...samples.filter((s) => !ids.has(s.id)), ...batch]));
+    for (const s of batch) emit({ kind: 'sample', id: s.id });
+  },
+
   async deleteSample(id: string): Promise<void> {
     const samples = await db.getSamples();
     await AsyncStorage.setItem(SAMPLES_KEY, JSON.stringify(samples.filter((s) => s.id !== id)));

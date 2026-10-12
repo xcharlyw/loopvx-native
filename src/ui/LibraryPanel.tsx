@@ -3,15 +3,17 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { autoDetectTempos, downloadSample, placeSample } from '../lib/actions';
+import { moveSamples, prettyPath, normPath, samplesIn } from '../lib/folders';
 import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
 import { deleteSample, importSamplesFromDevice } from '../lib/samples';
-import { errorText, getState, setSamples, setState, toast, upsertSample, useStore } from '../lib/store';
+import { errorText, getState, setSamples, setState, toast, upsertSample, upsertSamples, useStore } from '../lib/store';
 import { db } from '../storage/db';
 import type { Sample, SampleCategory } from '../types';
 import { DriveImport } from './DriveImport';
 import { SpliceSearch } from './SpliceSearch';
 import { useEngine } from './hooks';
 import { Check, Play, Plus, Stop, Upload } from './icons';
+import { FolderBar, FolderPicker, FolderRows } from './LibraryFolders';
 import { Btn, Chip, IconBtn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
@@ -27,15 +29,40 @@ export function LibraryPanel() {
   const [editing, setEditing] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const previewing = useEngine(() => engine.isPreviewing());
+  const [path, setPath] = useState('');
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [picking, setPicking] = useState(false);
+  // Without a search or filter the library is browsed folder by folder; with one, all folders are searched at once.
+  const browsing = !query.trim() && filter === 'all' && !tempoMatch;
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (browsing) return samplesIn(samples, path).sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true, sensitivity: 'base' }));
     return samples
       .filter((x) => filter === 'all' || x.category === filter)
       .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.folder ?? '').toLowerCase().includes(q))
       .filter((x) => !tempoMatch || !x.bpm || Math.abs(x.bpm - project.bpm) <= 2)
       .sort((a, b) => (a.folder ?? '').localeCompare(b.folder ?? '') || a.name.localeCompare(b.name));
-  }, [samples, filter, query, tempoMatch, project.bpm]);
+  }, [samples, filter, query, tempoMatch, project.bpm, browsing, path]);
+
+  const toggle = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const stopSelecting = () => {
+    setSelecting(false);
+    setSelected(new Set());
+    setPicking(false);
+  };
+  const moveTo = async (folder: string) => {
+    const changed = moveSamples(samples, selected, folder);
+    await upsertSamples(changed);
+    toast(changed.length ? `${changed.length} Sample(s) nach „${folder ? prettyPath(folder) : 'Hauptebene'}“ verschoben` : 'Die Samples liegen dort schon.');
+    stopSelecting();
+  };
 
   const upload = async () => {
     try {
@@ -105,36 +132,71 @@ export function LibraryPanel() {
         </Chip>
       </ScrollView>
 
-      {list.length === 0 && <Txt style={[s.muted, { marginVertical: 14 }]}>Keine Samples gefunden.</Txt>}
+      {browsing && <FolderBar path={path} setPath={setPath} selecting={selecting} onSelecting={(on) => (on ? setSelecting(true) : stopSelecting())} />}
+      {selecting && (
+        <View style={[s.row, { marginBottom: 8 }]}>
+          <Txt style={s.note}>{`${selected.size} ausgewählt`}</Txt>
+          <Chip onPress={() => setSelected(new Set(list.map((x) => x.id)))} textStyle={{ fontSize: 12 }}>
+            Alle hier
+          </Chip>
+          <Chip onPress={() => setSelected(new Set())} textStyle={{ fontSize: 12 }}>
+            Keine
+          </Chip>
+          <Btn small kind="primary" disabled={!selected.size} accessibilityLabel="Ausgewählte verschieben" onPress={() => setPicking(true)}>
+            Verschieben …
+          </Btn>
+        </View>
+      )}
+      {picking && <FolderPicker count={selected.size} onPick={(f) => void moveTo(f)} onClose={() => setPicking(false)} />}
+      {browsing && <FolderRows path={path} setPath={setPath} />}
+
+      {list.length === 0 && !browsing && <Txt style={[s.muted, { marginVertical: 14 }]}>Keine Samples gefunden.</Txt>}
+      {list.length === 0 && browsing && !samples.length && <Txt style={[s.muted, { marginVertical: 14 }]}>Noch keine Samples. Lade welche hoch oder importiere sie aus Drive oder Splice.</Txt>}
 
       {list.map((x) => (
         <View key={x.id} style={s.sample}>
           <View style={s.sampleMain}>
+            {selecting && (
+              <Pressable accessibilityLabel={`${x.name} auswählen`} accessibilityState={{ checked: selected.has(x.id) }} onPress={() => toggle(x.id)} style={[s.check, selected.has(x.id) && s.checkOn]}>
+                {selected.has(x.id) && <Check size={12} color={C.accentInk} />}
+              </Pressable>
+            )}
             <IconBtn onPress={() => void togglePreview(x)} accessibilityLabel="Vorhören">
               {previewing && previewId === x.id ? <Stop size={14} /> : <Play size={14} />}
             </IconBtn>
-            <Pressable style={s.sampleName} onPress={() => setEditing(editing === x.id ? null : x.id)}>
+            <Pressable style={s.sampleName} onPress={() => (selecting ? toggle(x.id) : setEditing(editing === x.id ? null : x.id))}>
               <Txt numberOfLines={1} style={{ fontSize: 13 }}>
                 {x.name.replace(/\.[a-z0-9]+$/i, '')}
               </Txt>
               <Txt numberOfLines={1} style={s.meta}>
                 <Txt style={[s.meta, { color: CATEGORY_COLORS[x.category] }]}>●</Txt> {x.bpm ? `${x.bpm} BPM` : 'One-Shot'}
                 {x.key ? ` · ${x.key}` : ''}
-                {x.folder ? ` · ${x.folder}` : ''}
+                {!browsing && x.folder ? ` · ${prettyPath(normPath(x.folder))}` : ''}
               </Txt>
             </Pressable>
             <Btn small onPress={() => add(x)} accessibilityLabel="Hinzufügen">
               <Plus size={14} />
             </Btn>
           </View>
-          {editing === x.id && <SampleEditor sample={x} onDone={() => setEditing(null)} />}
+          {editing === x.id && !selecting && (
+            <SampleEditor
+              sample={x}
+              onDone={() => setEditing(null)}
+              onMove={() => {
+                setEditing(null);
+                setSelecting(true);
+                setSelected(new Set([x.id]));
+                setPicking(true);
+              }}
+            />
+          )}
         </View>
       ))}
     </Sheet>
   );
 }
 
-function SampleEditor({ sample, onDone }: { sample: Sample; onDone: () => void }) {
+function SampleEditor({ sample, onDone, onMove }: { sample: Sample; onDone: () => void; onMove: () => void }) {
   const [bpm, setBpm] = useState(sample.bpm ? String(sample.bpm) : '');
   const [key, setKey] = useState(sample.key ?? '');
   const [category, setCategory] = useState<SampleCategory>(sample.category);
@@ -167,6 +229,9 @@ function SampleEditor({ sample, onDone }: { sample: Sample; onDone: () => void }
           {CATEGORY_LABELS[category]}
         </Txt>
       </Pressable>
+      <Btn small style={s.cell} accessibilityLabel="Sample in Ordner verschieben" onPress={onMove}>
+        In Ordner
+      </Btn>
       <Btn small kind="danger" style={s.cell} onPress={() => void remove()}>
         Entfernen
       </Btn>
@@ -219,4 +284,6 @@ const s = StyleSheet.create({
   fieldInput: { color: C.text, ...font(400), fontSize: 14, outlineWidth: 0 },
   fieldText: { fontSize: 14 },
   cell: { flexBasis: '31%', flexGrow: 1 },
+  check: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  checkOn: { backgroundColor: C.accent, borderColor: C.accent },
 });

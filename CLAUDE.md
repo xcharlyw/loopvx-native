@@ -89,6 +89,17 @@ tests/              server tests (anything in api/ is deployed as a function)
   copies are then synced into LOOPVX/Samples like any sample). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; not verified against a real Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
+## Library folders
+
+`Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (the relative path below the imported folder, so a
+folder import recreates its tree), Splice ("Splice/<pack>") and the user. Folders that hold samples exist by themselves;
+empty ones the user made live in `state.folders` (kv `folders`). Pure logic in `lib/folders.ts` (tree, counts, rename/merge,
+dissolve = contents move up, move samples; tested), bulk writes through `db.putSamples`/`upsertSamples` (one storage write,
+`updatedAt` touched so Drive sync carries the new `folder`). UI `LibraryFolders.tsx` + `LibraryPanel`: without search/filter
+the Library is browsed folder by folder (breadcrumb, "+ Neuer Ordner", folder rows with ⋯ = rename / auflösen), "Auswählen"
+ticks samples and "Verschieben …" opens the folder picker (also "In Ordner" in a sample's editor); with a search or filter all
+folders are searched at once. Empty folders are local (not synced to Drive).
+
 ## Splice
 
 Library → "Splice": search the Splice catalog (loops/one-shots, tempo filter = project BPM ±3) and load sounds into the library.

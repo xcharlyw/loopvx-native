@@ -26,6 +26,8 @@ export interface SyncStatus {
 export interface AppState {
   project: Project;
   samples: Sample[];
+  /** Empty library folders the user made (folders that hold samples need no entry). */
+  folders: string[];
   view: View;
   panel: Panel;
   selectedTrackId: string | null;
@@ -48,6 +50,7 @@ export interface AppState {
 let state: AppState = {
   project: createProject(),
   samples: [],
+  folders: [],
   view: 'arrange',
   panel: 'none',
   selectedTrackId: null,
@@ -222,6 +225,22 @@ export async function upsertSample(sample: Sample, opts: { touch?: boolean } = {
   setSamples([...others, next]);
 }
 
+/** Several samples changed at once (e.g. moved to another folder): one storage write, one state update. */
+export async function upsertSamples(changed: Sample[]): Promise<void> {
+  if (!changed.length) return;
+  const now = Date.now();
+  const next = changed.map((s) => ({ ...s, updatedAt: now }));
+  await db.putSamples(next);
+  const ids = new Set(next.map((s) => s.id));
+  setSamples([...state.samples.filter((s) => !ids.has(s.id)), ...next]);
+}
+
+/** The user's empty library folders. */
+export function setFolders(folders: string[]) {
+  setState({ folders });
+  void db.setKv('folders', folders);
+}
+
 engine.onDuration = (id, duration) => {
   const s = state.samples.find((x) => x.id === id);
   if (s) void upsertSample({ ...s, duration }, { touch: false });
@@ -254,12 +273,14 @@ export function errorText(e: unknown): string {
 export const START_BLANK = '__start-blank__';
 
 export async function boot() {
-  const [samples, projects, lastId, metronome] = await Promise.all([
+  const [samples, projects, lastId, metronome, folders] = await Promise.all([
     db.getSamples(),
     db.getProjects(),
     db.getKv<string>('lastProjectId'),
     db.getKv<boolean>('metronome'),
+    db.getKv<string[]>('folders'),
   ]);
+  if (Array.isArray(folders)) setState({ folders });
   if (metronome) setMetronome(true);
   setSamples(samples);
   // Damaged entries (never written by this app, but storage can be edited) are skipped, not fatal.

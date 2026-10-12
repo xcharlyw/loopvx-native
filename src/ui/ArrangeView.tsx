@@ -5,7 +5,8 @@ import { C, RULER_H, font, layout, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
 import { placeSample, setCursor } from '../lib/actions';
-import { addClip, canHoldClip, createMidiTrack, createTrack, editClip, mapTrack, removeClip, trackKind, updateClip, type ClipEdit } from '../lib/project';
+import { applyGroupEdit, groupEdit } from '../lib/clipgroup';
+import { createMidiTrack, createTrack, mapTrack, trackKind, type ClipEdit } from '../lib/project';
 import { getState, selectedClipIds, setClipSelection, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
 import { AUTO_ORDER, AUTO_PARAMS, laneOf } from '../lib/automation';
@@ -132,30 +133,32 @@ export function ArrangeView() {
 
   const grid = zoom >= 32 ? 0.25 : 1;
   const [drag, setDrag] = useState<Drag | null>(null);
+  // The release of a drag also arrives as a press: it must not shrink a multi-selection to the dragged clip.
+  const dragEndedAt = useRef(0);
   const trackDelta = (index: number, dy: number) =>
     Math.max(-index, Math.min(project.tracks.length - 1 - index, Math.round(dy / rowH)));
 
   const onClipDrag = (clip: Clip, index: number, mode: ClipEdit, dx: number, dy: number, phase: DragPhase) => {
     if (phase === 'move') {
-      setState({ selectedClipId: clip.id, selectedTrackId: project.tracks[index].id });
+      // Dragging a clip of the selection drags the whole selection; any other clip becomes the selection.
+      if (!selection.includes(clip.id)) setClipSelection(clip.id);
+      setState({ selectedTrackId: project.tracks[index].id });
       setDrag({ clipId: clip.id, mode, dx, dy });
       return;
     }
     setDrag(null);
+    dragEndedAt.current = Date.now();
     if (phase === 'cancel') return;
-    const edit = editClip(clip, mode, dx / zoom, grid);
-    const wanted = project.tracks[index + (mode === 'move' ? trackDelta(index, dy) : 0)];
-    // An audio clip cannot sit on a MIDI track and the other way round: the clip stays on its own track.
-    const target = wanted && canHoldClip(wanted, clip) ? wanted : project.tracks[index];
-    if (target && target.id !== project.tracks[index].id) {
-      updateProject((p) => addClip(removeClip(p, clip.id), target.id, { ...clip, ...edit }));
-      setState({ selectedTrackId: target.id });
-    } else {
-      updateProject((p) => updateClip(p, clip.id, edit));
-    }
+    // An audio clip cannot sit on a MIDI track and the other way round: the group changes tracks only if every clip fits.
+    const result = groupEdit(project, selection, clip.id, mode, dx / zoom, mode === 'move' ? trackDelta(index, dy) : 0, grid);
+    updateProject((p) => applyGroupEdit(p, result));
+    if (result.shift) setState({ selectedTrackId: project.tracks[index + result.shift].id });
   };
+  // While a drag runs, every clip of the group is shown where it would land.
+  const preview = drag ? groupEdit(project, selection, drag.clipId, drag.mode, drag.dx / zoom, drag.mode === 'move' ? trackDelta(project.tracks.findIndex((t) => t.clips.some((c) => c.id === drag.clipId)), drag.dy) : 0, grid) : null;
 
   const onClipTap = (clip: Clip, track: Track, e: GestureResponderEvent) => {
+    if (Date.now() - dragEndedAt.current < 350) return;
     // Multi-selection: Shift/Cmd/Ctrl-click, or the multi-select mode (touch): a tap adds or removes the clip.
     const ne = e.nativeEvent as unknown as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
     if (multiSelect || ne.shiftKey || ne.metaKey || ne.ctrlKey) {
@@ -350,14 +353,15 @@ export function ArrangeView() {
                     s.lane,
                     { width, height: rowH },
                     selectedTrackId === track.id && s.laneSelected,
-                    drag && track.clips.some((c) => c.id === drag.clipId) && { zIndex: 3 },
+                    preview && track.clips.some((c) => preview.clips.has(c.id)) && { zIndex: 3 },
                   ]}
                   onPress={(e) => onLaneTap(track, e)}
                 >
                   {track.clips.map((clip) => {
                     const sample = sampleById.get(clip.sampleId);
-                    const dragging = drag?.clipId === clip.id ? drag : null;
-                    const shown = dragging ? { ...clip, ...editClip(clip, dragging.mode, dragging.dx / zoom, grid) } : clip;
+                    const moved = preview?.clips.get(clip.id);
+                    const dragging = moved && drag ? drag : null;
+                    const shown = moved ?? clip;
                     return (
                       <ClipView
                         key={clip.id}
@@ -370,7 +374,7 @@ export function ArrangeView() {
                         sampleBpm={sample?.bpm}
                         selected={selection.includes(clip.id)}
                         dragging={!!dragging}
-                        liftY={dragging?.mode === 'move' ? trackDelta(index, dragging.dy) * rowH : 0}
+                        liftY={dragging?.mode === 'move' && preview ? preview.shift * rowH : 0}
                         onTap={(e) => onClipTap(clip, track, e)}
                         onDrag={(mode, dx, dy, phase) => onClipDrag(clip, index, mode, dx, dy, phase)}
                       />

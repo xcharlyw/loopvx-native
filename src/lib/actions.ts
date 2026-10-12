@@ -10,6 +10,7 @@ import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { readMidiFile, writeMidiFile } from './midi';
+import { applyGroupEdit, duplicateClips, groupEdit, splitClips } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
 import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
@@ -91,13 +92,14 @@ export async function deleteSelectedTrack(confirm: (title: string, message?: str
   setState({ selectedTrackId: rest[Math.min(index, rest.length - 1)]?.id ?? null, selectedClipId: null });
 }
 
+/** Copies of the selected clips right after them (Ableton: Cmd+D); the copies become the selection. */
 export function duplicateSelectedClip() {
-  const { project, selectedClipId } = getState();
-  const found = selectedClipId ? findClip(project, selectedClipId) : null;
-  if (!found) return;
-  const copy = { ...found.clip, id: uid(), start: found.clip.start + found.clip.length };
-  updateProject((p) => addClip(p, found.track.id, copy));
-  setState({ selectedClipId: copy.id });
+  const ids = selectedClipIds();
+  if (!ids.length) return;
+  const r = duplicateClips(getState().project, ids);
+  if (!r.ids.length) return;
+  updateProject(() => r.project);
+  setClipSelection(r.ids[0], r.ids.slice(1));
 }
 
 /**
@@ -158,25 +160,23 @@ export function selectAllClipsOfTrack() {
 
 /** Split the selected clip at the playhead (Ableton: Cmd+E). */
 export function splitSelectedClip() {
-  const { project, selectedClipId, cursor } = getState();
-  const found = selectedClipId ? findClip(project, selectedClipId) : null;
-  if (!found) return;
-  const rightId = uid();
-  const next = splitClip(project, found.clip.id, cursor, rightId);
-  if (next === project) {
+  const { project, cursor } = getState();
+  const ids = selectedClipIds();
+  if (!ids.length) return;
+  const r = splitClips(project, ids, cursor);
+  if (!r.ids.length) {
     toast('Tippe auf die Stelle im Clip, an der geschnitten werden soll, dann auf Teilen.');
     return;
   }
-  updateProject(() => next);
-  setState({ selectedClipId: rightId });
+  updateProject(() => r.project);
+  setClipSelection(r.ids[0], r.ids.slice(1));
 }
 
 /** Move the selected clip by `bars` (arrow keys: a beat, with Shift a bar). */
 export function nudgeSelectedClip(bars: number) {
   const { project, selectedClipId } = getState();
-  const found = selectedClipId ? findClip(project, selectedClipId) : null;
-  if (!found) return;
-  updateProject((p) => updateClip(p, found.clip.id, editClip(found.clip, 'move', bars, Math.abs(bars))));
+  if (!selectedClipId) return;
+  updateProject((p) => applyGroupEdit(p, groupEdit(project, selectedClipIds(), selectedClipId, 'move', bars, 0, Math.abs(bars))));
 }
 
 /**

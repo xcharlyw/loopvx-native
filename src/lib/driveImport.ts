@@ -60,8 +60,35 @@ export function notYetImported<T extends { file: DriveEntry }>(items: T[], sampl
 }
 
 /**
+ * Folder names that only describe the inside of a sample pack ("Pack / loops / drum_loops"), not the pack. Compared
+ * without case, spaces, dashes and underscores.
+ */
+const STRUCTURE_NAMES = new Set(['loops', 'drumloops', 'drumgrooves', 'musicloops', 'oneshots', 'oneshot', 'samples', 'audio', 'wav', 'wavs', 'stems', 'midi', 'fx', 'sounds']);
+export const isStructureFolder = (name: string) => STRUCTURE_NAMES.has(name.toLowerCase().replace(/[\s_-]+/g, ''));
+
+/** The library folder for a Drive folder path: the last folder that names a pack, skipping "loops", "drum_loops" ... (all of them: the last part). */
+export function libraryFolderOf(path: string): string | undefined {
+  const parts = path.split('/').filter(Boolean);
+  return [...parts].reverse().find((p) => !isStructureFolder(p)) ?? parts[parts.length - 1];
+}
+
+/** Walks up from a Drive folder (id) to the first folder that names a pack; `get` reads one folder's name and parent. Gives up after `maxUp` levels. */
+export async function packFolderFrom(get: (id: string) => Promise<{ name: string; parent?: string } | null>, folderId: string | undefined, maxUp = 8): Promise<string | undefined> {
+  let id = folderId;
+  let first: string | undefined;
+  for (let i = 0; id && i < maxUp; i++) {
+    const f = await get(id);
+    if (!f) break;
+    first ??= f.name;
+    if (!isStructureFolder(f.name)) return f.name;
+    id = f.parent;
+  }
+  return first;
+}
+
+/**
  * A library entry for a Drive file. `folder` is its path below the folder the user chose; the file name and that whole
- * path decide the category, but the library folder is only the last part: the Drive folder the file sits in.
+ * path decide the category, but the library folder is a single name: the pack the file belongs to (see `libraryFolderOf`).
  */
 export function sampleFromDriveFile(file: DriveEntry, folder: string, now = Date.now()): Sample {
   const size = Number(file.size);
@@ -69,7 +96,7 @@ export function sampleFromDriveFile(file: DriveEntry, folder: string, now = Date
     ...parseSampleName(file.name, folder),
     id: driveSampleId(file.id),
     name: file.name,
-    folder: folder.split('/').filter(Boolean).pop() || undefined,
+    folder: libraryFolderOf(folder),
     driveId: file.id,
     driveModified: file.modifiedTime,
     size: Number.isFinite(size) && size > 0 ? size : undefined,

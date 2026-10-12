@@ -4,6 +4,7 @@ import { C, font, mono } from '../constants/theme';
 import { deleteSample } from '../lib/samples';
 import { allFolders, canMoveFolder, samplesUnder, withoutFolder, childFolders, countIn, dissolveFolder, flattenFolders, moveFolder, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
 import { getState, removeSamples, setFolders, toast, upsertSamples, useStore } from '../lib/store';
+import { refolderDriveSamples } from '../lib/driveImportRun';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Txt } from './kit';
 
@@ -40,6 +41,20 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
     setPath('');
     toast(r.changed.length ? `${r.changed.length} Sample(s) in flache Ordner gelegt` : 'Die Ordner waren schon flach.');
   };
+  const [refoldering, setRefoldering] = useState<string | null>(null);
+  const refolder = async () => {
+    const ok = await confirmDestructive('Ordner nach Pack benennen?', 'Die Drive-Samples werden nach dem Pack-Ordner in Drive einsortiert („Pack / loops / drum_loops“ wird „Pack“). Dafür fragt LOOPVX Drive nach den Ordnernamen. Es wird nichts gelöscht.', 'Neu zuordnen');
+    if (!ok) return;
+    try {
+      const n = await refolderDriveSamples((done, total) => setRefoldering(`${done}/${total}`));
+      setPath('');
+      toast(n ? `${n} Sample(s) in Pack-Ordner gelegt` : 'Die Ordner passten schon.');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Das hat nicht geklappt.', 'error');
+    } finally {
+      setRefoldering(null);
+    }
+  };
   const create = () => {
     if (naming === null) return;
     const made = addFolder(path, naming);
@@ -67,6 +82,11 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
         {nested && (
           <Btn small accessibilityLabel="Alle Ordnerpfade kürzen" onPress={() => void flatten()}>
             Pfade kürzen
+          </Btn>
+        )}
+        {samples.some((x) => x.driveId) && (
+          <Btn small disabled={refoldering !== null} accessibilityLabel="Drive-Samples nach Pack ordnen" onPress={() => void refolder()}>
+            {refoldering ? `Ordne … ${refoldering}` : 'Nach Pack ordnen'}
           </Btn>
         )}
         <Btn small accessibilityLabel={selecting ? 'Auswahl beenden' : 'Samples auswählen'} onPress={() => onSelecting(!selecting)}>

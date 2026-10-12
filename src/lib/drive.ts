@@ -106,6 +106,17 @@ export async function browseChildren(id: string): Promise<DriveFile[]> {
   return childrenOf(id);
 }
 
+/** Name and (first) parent of one Drive file or folder; null when it cannot be read (no access, deleted). */
+export async function folderInfo(id: string): Promise<{ name: string; parent?: string } | null> {
+  try {
+    const json = (await (await call(`${API}/files/${encodeURIComponent(id)}?fields=name,parents`)).json()) as { name: string; parents?: string[] };
+    return { name: json.name, parent: json.parents?.[0] };
+  } catch (e) {
+    if (e instanceof DriveAuthError) throw e;
+    return null;
+  }
+}
+
 /** Audio and folders anywhere in Drive whose name contains `text` (needs the read scope). */
 export function searchByName(text: string): Promise<DriveFile[]> {
   return listFiles(`name contains '${escapeQ(text)}' and mimeType != 'application/vnd.google-apps.shortcut'`);

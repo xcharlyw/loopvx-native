@@ -1,7 +1,7 @@
-import { download } from './drive';
-import { notYetImported, sampleFromDriveFile, type DriveEntry } from './driveImport';
+import { download, folderInfo } from './drive';
+import { notYetImported, packFolderFrom, sampleFromDriveFile, type DriveEntry } from './driveImport';
 import { storeSampleAudio } from './samples';
-import { getState, setSamples } from './store';
+import { getState, setSamples, upsertSamples } from './store';
 import type { Sample } from '../types';
 
 const extOf = (name: string) => (/\.([a-z0-9]{2,5})$/i.exec(name)?.[1] ?? 'wav').toLowerCase();
@@ -35,4 +35,31 @@ export async function importDriveItems(items: { file: DriveEntry; folder: string
   }
   onProgress(fresh.length, fresh.length, '');
   return { added, skipped: items.length - fresh.length, failed };
+}
+
+/**
+ * Names the library folder of every Drive sample after its pack again (the rule changed: "drum_loops" of ten packs
+ * used to land in one folder). Reads each file's parent folder from Drive; folders are looked up once.
+ */
+export async function refolderDriveSamples(onProgress: (done: number, total: number) => void): Promise<number> {
+  const mine = getState().samples.filter((s) => s.driveId);
+  const folders = new Map<string, Promise<{ name: string; parent?: string } | null>>();
+  const getFolder = (id: string) => {
+    if (!folders.has(id)) folders.set(id, folderInfo(id));
+    return folders.get(id)!;
+  };
+  const changed: Sample[] = [];
+  let done = 0;
+  const queue = [...mine];
+  const worker = async () => {
+    for (let s = queue.shift(); s; s = queue.shift()) {
+      const file = await folderInfo(s.driveId!).catch(() => null);
+      const pack = file ? await packFolderFrom(getFolder, file.parent) : undefined;
+      if (pack && pack !== s.folder) changed.push({ ...s, folder: pack });
+      onProgress(++done, mine.length);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  await upsertSamples(changed);
+  return changed.length;
 }

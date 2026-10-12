@@ -1,4 +1,4 @@
-import { COMPUTERS_ID, SHARED_ID, VIRTUAL_ROOTS, computerFolders, isVirtualId, browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
+import { COMPUTERS_ID, isStructureFolder, libraryFolderOf, packFolderFrom, SHARED_ID, VIRTUAL_ROOTS, computerFolders, isVirtualId, browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
 
 const folder = (id: string, name: string): DriveEntry => ({ id, name, mimeType: 'application/vnd.google-apps.folder' });
 const file = (id: string, name: string, mimeType = 'audio/wav', size?: string): DriveEntry => ({ id, name, mimeType, size });
@@ -103,5 +103,35 @@ describe('places outside My Drive', () => {
       { ...file('a', 'x.wav'), parents: [] },
     ];
     expect(computerFolders(folders).map((f) => f.name)).toEqual(['My Mac', 'Windows PC']);
+  });
+});
+
+describe('pack folders', () => {
+  it('skips folders that only describe the inside of a pack', () => {
+    expect(['loops', 'drum_loops', 'Drum_Loops', 'music loops', 'One-Shots', 'drum_grooves'].every(isStructureFolder)).toBe(true);
+    expect(['Kicks', 'Bonus Kicks', 'ff_tt_130_kit_loop_full_crave_Gmin'].some(isStructureFolder)).toBe(false);
+  });
+  it('names the library folder after the pack, not the inner folder', () => {
+    expect(libraryFolderOf('Zenhiser Pummel - Hard Techno/loops/drum_loops')).toBe('Zenhiser Pummel - Hard Techno');
+    expect(libraryFolderOf('Four4 - 90s Techno & Trance/loops/music_loops/ff_tt_130_kit')).toBe('ff_tt_130_kit');
+    expect(libraryFolderOf('Pack/loops')).toBe('Pack');
+    expect(libraryFolderOf('loops')).toBe('loops');
+    expect(libraryFolderOf('')).toBeUndefined();
+    expect(sampleFromDriveFile(file('z', 'a.wav'), 'Pack/loops/drum_loops').folder).toBe('Pack');
+  });
+  it('finds the pack from a Drive folder id by walking up', async () => {
+    const tree: Record<string, { name: string; parent?: string }> = {
+      a: { name: 'drum_loops', parent: 'b' },
+      b: { name: 'loops', parent: 'c' },
+      c: { name: 'Zenhiser Pummel', parent: 'd' },
+      d: { name: 'Packs' },
+      x: { name: 'drum_loops' },
+    };
+    const get = async (id: string) => tree[id] ?? null;
+    expect(await packFolderFrom(get, 'a')).toBe('Zenhiser Pummel');
+    expect(await packFolderFrom(get, 'c')).toBe('Zenhiser Pummel');
+    expect(await packFolderFrom(get, 'x')).toBe('drum_loops');
+    expect(await packFolderFrom(get, 'missing')).toBeUndefined();
+    expect(await packFolderFrom(get, undefined)).toBeUndefined();
   });
 });

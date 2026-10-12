@@ -90,7 +90,7 @@ export function DriveImport() {
       const parts = [`${result.added.length} Datei(en) importiert`];
       if (result.skipped) parts.push(`${result.skipped} schon vorhanden`);
       if (result.failed.length) parts.push(`${result.failed.length} fehlgeschlagen`);
-      const tops = [...new Set(result.added.map((x) => x.folder?.split('/')[0]).filter(Boolean))];
+      const tops = [...new Set(result.added.map((x) => x.folder).filter(Boolean))];
       if (tops.length) parts.push(`Library-Ordner: ${tops.slice(0, 3).join(', ')}`);
       if (truncated) parts.push('Limit erreicht, den Rest in einem zweiten Durchgang importieren');
       toast(parts.join(' · '), result.failed.length ? 'error' : 'info');

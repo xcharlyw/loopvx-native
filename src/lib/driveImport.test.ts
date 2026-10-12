@@ -25,9 +25,16 @@ describe('browserEntries', () => {
 describe('sampleFromDriveFile', () => {
   it('reads tempo and key from the name and the category from the folder', () => {
     const s = sampleFromDriveFile(file('abc', 'Rumble_155bpm_Fm.wav', 'audio/wav', '2500000'), 'Loops/Kicks', 1000);
-    expect(s).toMatchObject({ id: 'drive:abc', name: 'Rumble_155bpm_Fm.wav', driveId: 'abc', folder: 'Loops/Kicks', size: 2500000, addedAt: 1000, bpm: 155, category: 'kick' });
+    expect(s).toMatchObject({ id: 'drive:abc', name: 'Rumble_155bpm_Fm.wav', driveId: 'abc', folder: 'Kicks', size: 2500000, addedAt: 1000, bpm: 155, category: 'kick' });
     expect(s.key).toBeTruthy();
   });
+  it('keeps only the last sub-folder as the library folder, but still reads the category from the whole path', () => {
+    const s = sampleFromDriveFile(file('d', 'Loop 07.wav'), 'Computer/My Mac/Sounds/Kicks');
+    expect(s.folder).toBe('Kicks');
+    expect(s.category).toBe('kick');
+    expect(sampleFromDriveFile(file('e', 'x.wav'), 'Single').folder).toBe('Single');
+  });
+
   it('leaves tempo empty for one-shots and the folder empty at the top', () => {
     const s = sampleFromDriveFile(file('x', 'Snare.wav'), '', 5);
     expect(s.bpm).toBeUndefined();

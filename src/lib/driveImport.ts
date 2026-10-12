@@ -59,14 +59,17 @@ export function notYetImported<T extends { file: DriveEntry }>(items: T[], sampl
   return items.filter((i) => !have.has(i.file.id));
 }
 
-/** A library entry for a Drive file; `folder` is its path below the folder the user chose (the name's tokens and the folder decide the category). */
+/**
+ * A library entry for a Drive file. `folder` is its path below the folder the user chose; the file name and that whole
+ * path decide the category, but the library folder is only the last part: the Drive folder the file sits in.
+ */
 export function sampleFromDriveFile(file: DriveEntry, folder: string, now = Date.now()): Sample {
   const size = Number(file.size);
   return {
     ...parseSampleName(file.name, folder),
     id: driveSampleId(file.id),
     name: file.name,
-    folder: folder || undefined,
+    folder: folder.split('/').filter(Boolean).pop() || undefined,
     driveId: file.id,
     driveModified: file.modifiedTime,
     size: Number.isFinite(size) && size > 0 ? size : undefined,

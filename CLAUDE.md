@@ -85,14 +85,13 @@ tests/              server tests (anything in api/ is deployed as a function)
   Drive (trash only). Sign-in asks for `drive.file` (the LOOPVX sync folder) **and** `drive.readonly` (`DRIVE_SCOPE` in
   `config.ts`); `api/drive-token.ts` returns the granted `scope`, `driveCanRead()` gates the **Drive import** (Library →
   `DriveImport`: browse folders, tick files or import a folder recursively; pure logic in `driveImport.ts`, run in
-  `driveImportRun.ts`; samples get id `drive:<fileId>`, dedupe by `driveId`, folder path + name give category/BPM/key; the
+  `driveImportRun.ts`; samples get id `drive:<fileId>`, dedupe by `driveId`, the file name and the folder path give category/BPM/key, but the library folder is **only the last sub-folder** (the Drive folder the file sits in, no tree); the
   copies are then synced into LOOPVX/Samples like any sample). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; not verified against a real Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
 ## Library folders
 
-`Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (the relative path below the imported folder, so a
-folder import recreates its tree), Splice ("Splice/<pack>") and the user. Folders that hold samples exist by themselves;
+`Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (only the name of the Drive folder the file sits in), Splice ("Splice/<pack>") and the user. Folders that hold samples exist by themselves;
 empty ones the user made live in `state.folders` (kv `folders`). Pure logic in `lib/folders.ts` (tree, counts, rename/merge,
 dissolve = contents move up, move samples; tested), bulk writes through `db.putSamples`/`upsertSamples` (one storage write,
 `updatedAt` touched so Drive sync carries the new `folder`). UI `LibraryFolders.tsx` + `LibraryPanel`: without search/filter

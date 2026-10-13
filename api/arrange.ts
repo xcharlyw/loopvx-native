@@ -6,7 +6,7 @@ import { authorize, text } from './_lib/auth';
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models';
 export const DEFAULT_MODEL = 'gemini-3.6-flash';
 export const FALLBACK_MODEL = 'gemini-3.5-flash-lite';
-const RETRY_MS = Number(process.env.GEMINI_RETRY_MS ?? 1200);
+const retryMs = () => Number(process.env.GEMINI_RETRY_MS ?? 1200);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface Body {
@@ -91,20 +91,23 @@ export async function POST(req: Request): Promise<Response> {
     return text(400, 'Ungültige Anfrage');
   }
 
-  // Google answers 503 "high demand" in spikes: try again once on the same model, then on a lighter fallback model.
-  const models = [...new Set([process.env.GEMINI_MODEL || DEFAULT_MODEL, process.env.GEMINI_FALLBACK_MODEL || FALLBACK_MODEL, process.env.GEMINI_MODEL || DEFAULT_MODEL])];
+  // Google answers 503 "high demand" in spikes and 429 when a shared key is at its per-minute limit: alternate the main and the
+  // lighter model with growing pauses (about 10 s in all) before giving up.
+  const main = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  const light = process.env.GEMINI_FALLBACK_MODEL || FALLBACK_MODEL;
+  const attempts = [main, light, main, light, main].map((model, i) => ({ model, wait: i * retryMs() }));
   const payload = JSON.stringify({
     systemInstruction: { parts: [{ text: SYSTEM }] },
     contents: [{ role: 'user', parts: [{ text: buildUserText(body) }] }],
     generationConfig: { responseMimeType: 'application/json' },
   });
   let res: Response | undefined;
-  let model = models[0];
-  for (let i = 0; i < models.length; i++) {
-    model = models[i];
+  let model = main;
+  for (const attempt of attempts) {
+    if (attempt.wait) await sleep(attempt.wait);
+    model = attempt.model;
     res = await fetch(`${GEMINI}/${encodeURIComponent(model)}:generateContent`, { method: 'POST', headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' }, body: payload });
     if (res.ok || ![429, 500, 503, 504].includes(res.status)) break;
-    if (i < models.length - 1) await sleep(RETRY_MS);
   }
   if (!res || !res.ok) {
     const status = res?.status ?? 502;

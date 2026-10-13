@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { DEVICE_DEFS } from '../audio/devices';
 import { paramDef } from '../lib/automation';
+import { sidechainSources } from '../lib/sidechain';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
@@ -18,6 +19,7 @@ import { Sheet } from './Sheet';
 /** Rename, recolour or delete the selected track. Saves as you type; leaving the field empty restores the old name. */
 export function TrackPanel() {
   const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
+  const project = useStore((st) => st.project);
   const [draft, setDraft] = useState<string | null>(null);
   if (!track) {
     return (
@@ -157,6 +159,19 @@ export function TrackPanel() {
           text={pct(fx.pump)}
           onChange={(v) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, pump: Math.round(v * 100) / 100 } })), { merge: true })}
         />
+        {fx.pump > 0 && (
+          <View style={[s.buttons, { marginBottom: 6 }]}>
+            <Txt style={s.note}>Pumpt auf:</Txt>
+            <Chip variant={!track.fx?.pumpFrom ? 'on' : 'ghost'} textStyle={{ fontSize: 12 }} onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, pumpFrom: undefined } })))}>
+              Jeden Beat
+            </Chip>
+            {sidechainSources(project, trackId).map((src) => (
+              <Chip key={src.id} variant={track.fx?.pumpFrom === src.id ? 'on' : 'ghost'} accessibilityLabel={`Sidechain von ${src.name}`} textStyle={{ fontSize: 12 }} onPress={() => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, pumpFrom: src.id } })))}>
+                {`Kick von ${src.name}`}
+              </Chip>
+            ))}
+          </View>
+        )}
         <Param label="Pan" value={fx.pan} min={-1} max={1} text={panText(fx.pan)} onChange={(v) => setFx({ pan: Math.abs(v) < 0.05 ? 0 : Math.round(v * 100) / 100 })} />
         <Txt style={[s.note, { marginTop: 10 }]}>Filter: links Lowpass, rechts Highpass, Mitte aus. Pump duckt die Spur auf jedem Beat wie ein Sidechain zur Kick (ideal für Rumble, Bass und Pads). Delay läuft im punktierten Achtel zum Projekttempo.</Txt>
         {!fxIsDefault(track.fx) && (

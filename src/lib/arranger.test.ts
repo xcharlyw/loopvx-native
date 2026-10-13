@@ -92,9 +92,11 @@ describe('arrange without a library', () => {
     expect(plain.added).toEqual([]);
     expect(plain.project.tracks.every((t) => !t.automation)).toBe(true);
   });
-  it('gives the bass a pump and keeps instruments', () => {
-    const bass = arrange(base(), [], opts).project.tracks.find((t) => t.name === 'Rumble Bass')!;
+  it('gives the bass a pump on the 909 kick and keeps instruments', () => {
+    const res = arrange(base(), [], opts).project;
+    const bass = res.tracks.find((t) => t.name === 'Rumble Bass')!;
     expect(bass.fx?.pump).toBeGreaterThan(0);
+    expect(bass.fx?.pumpFrom).toBe(res.tracks.find((t) => t.name === 'Drums 909')!.id);
     expect(trackSynth(bass).wave).toBe('sawtooth');
   });
 });

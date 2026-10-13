@@ -94,7 +94,7 @@ export const delaySeconds = (bpm: number) => (60 / Math.max(20, bpm)) * 0.75;
 export const DELAY_FEEDBACK = 0.38;
 
 /** Effect settings with defaults filled in. */
-export const trackFx = (fx: TrackFx | undefined): Required<TrackFx> => ({ filter: 0, drive: 0, reverb: 0, delay: 0, pan: 0, pump: 0, ...fx });
+export const trackFx = (fx: TrackFx | undefined): Required<Omit<TrackFx, 'pumpFrom'>> & Pick<TrackFx, 'pumpFrom'> => ({ filter: 0, drive: 0, reverb: 0, delay: 0, pan: 0, pump: 0, ...fx });
 
 /** True when a track uses no effect at all. */
 export const fxIsDefault = (fx: TrackFx | undefined) => {

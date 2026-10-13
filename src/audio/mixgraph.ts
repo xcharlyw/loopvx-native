@@ -1,10 +1,11 @@
 import type { AnalyserNode, AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode, WaveShaperNode } from 'react-native-audio-api';
 import { knobValue, laneValue, parseDeviceParam, sampleLane } from '../lib/automation';
 import { audibleGain } from '../lib/project';
+import { pumpHits } from '../lib/sidechain';
 import type { AutoParam, Device, Project, Track } from '../types';
 import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
 import { DeviceBay } from './devicebay';
-import { beatsInWindow, secondsPerBar } from './timing';
+import { secondsPerBar } from './timing';
 
 /** Oversampling keeps a shaper's harmonics from folding back as inharmonic hash; not every platform has it. */
 function oversample(shaper: WaveShaperNode, mode: 'none' | '2x' | '4x') {
@@ -253,8 +254,8 @@ export class MixGraph {
     const beat = spb / 4;
     for (const t of pumped) {
       const g = this.chain(t).pump.gain;
-      for (const b of beatsInWindow(fromBar, toBar)) {
-        const when = time + (b.bar - fromBar) * spb;
+      for (const bar of pumpHits(project, t.fx?.pumpFrom, fromBar, toBar)) {
+        const when = time + (bar - fromBar) * spb;
         if (when < this.ctx.currentTime) continue;
         for (const e of pumpEvents(when, trackFx(t.fx).pump, beat)) {
           if (e.kind === 'set') g.setValueAtTime(e.v, e.t);

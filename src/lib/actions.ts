@@ -298,17 +298,53 @@ async function renderWav(project: Project, region: { from: number; to: number })
 }
 
 export async function exportWav() {
+  const mix = await renderMixdown();
+  if (mix) await saveFile(mix.data, mix.name, 'audio/wav', 'com.microsoft.waveform-audio').catch((e) => toast(errorText(e), 'error'));
+}
+
+/** The mixdown of the export region as a WAV, or null (nothing to render, or the render failed: already told). */
+export async function renderMixdown(): Promise<{ data: Uint8Array; name: string } | null> {
   const { project } = getState();
   if (!project.tracks.some((t) => t.clips.length)) {
     toast('Nichts zu exportieren – lege zuerst Clips ins Arrangement.');
-    return;
+    return null;
   }
   toast('Export läuft …');
   try {
-    const wav = await renderWav(project, exportRegion(project));
-    await saveFile(wav, `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm.wav`, 'audio/wav', 'com.microsoft.waveform-audio');
+    const data = await renderWav(project, exportRegion(project));
+    return { data, name: `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm.wav` };
   } catch (e) {
     toast(errorText(e), 'error');
+    return null;
+  }
+}
+
+/** True when this browser can hand a file to the system share sheet (iPhone Safari, Android Chrome). Native always can. */
+export function canShareFiles(): boolean {
+  if (Platform.OS !== 'web') return true;
+  try {
+    const probe = new globalThis.File([new Uint8Array(1)], 'probe.wav', { type: 'audio/wav' });
+    return typeof navigator !== 'undefined' && !!navigator.canShare?.({ files: [probe] });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Share a rendered mixdown (WhatsApp, AirDrop, Mail ...). On web this must run straight inside a tap:
+ * browsers only open the share sheet with a fresh user gesture, so render first, then share on the next tap.
+ * Falls back to a download where files can't be shared.
+ */
+export async function shareMixdown(mix: { data: Uint8Array; name: string }) {
+  if (Platform.OS !== 'web' || !canShareFiles()) {
+    await saveFile(mix.data, mix.name, 'audio/wav', 'com.microsoft.waveform-audio');
+    return;
+  }
+  const file = new globalThis.File([mix.data as BlobPart], mix.name, { type: 'audio/wav' });
+  try {
+    await navigator.share({ files: [file], title: mix.name });
+  } catch (e) {
+    if ((e as Error)?.name !== 'AbortError') toast(errorText(e), 'error');
   }
 }
 

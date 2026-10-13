@@ -248,6 +248,11 @@ looping included) into a new sample `cons:<id>` (bpm = project bpm, folder "Kons
   `project.ts` take `MASTER_ID`, `DevicePanel` shows the master when `devicesFor === 'master'` (no source slot, no Splice). Measured: a master EQ lowpass at 400 Hz cuts
   hats' zero crossings 15x, bypassed it is transparent.
 - **Track meters**: `MixGraph.meter(trackId)` (an analyser after the fader, live context only, made on first use), `engine.trackPeak`, `StripMeter` in the mixer.
+- **Sidechain**: `fx.pumpFrom` (a track id) makes the pump duck on that track's kick hits instead of every beat (`lib/sidechain.ts`: `pumpHits` = the 909 kit's
+  C1 notes, or every note of a kick/sample instrument; falls back to every beat when the source is gone; `sidechainSources` for the TrackPanel chips "Pumpt auf").
+  The arranger points the bass/lead/pad pump at its 909 drums. Measured offline: with kicks on beats 1 and 3 only those beats duck.
+- **Share the mixdown** (ExportPanel "Teilen"): `renderMixdown` then `shareMixdown` (Web Share API with files; native: the share sheet of `saveFile`). Browsers only open the
+  sheet inside a fresh tap, so on web the render runs on the first tap and "Jetzt teilen" shares on the second; without file sharing it downloads instead.
 
 ## Arranger
 

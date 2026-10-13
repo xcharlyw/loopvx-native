@@ -234,6 +234,9 @@ export function arrange(project: Project, samples: Sample[], opts: ArrangeOption
     return next;
   });
 
+  // With the 909 playing the kick, bass, lead and pad pump on its real kick hits (a sidechain) instead of on every beat.
+  const drums = !kickLoop ? tracks.find((t) => roleOf(t) === 'drums') : undefined;
+  if (drums) tracks = tracks.map((t) => (['bass', 'lead', 'pad'].includes(roleOf(t) ?? '') && t.fx?.pump && !t.fx.pumpFrom ? { ...t, fx: { ...t.fx, pumpFrom: drums.id } } : t));
   // The sections become markers in the ruler, so the structure stays visible.
   const marked = withMarkers({ ...project, tracks, loop: { enabled: false, start: 0, end } }, sections.map((s) => ({ bar: s.start, name: s.label })));
   return { project: marked, sections, added, missingSamples };

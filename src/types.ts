@@ -107,6 +107,8 @@ export interface TrackFx {
   pan?: number;
   /** Sidechain-style ducking on every beat (like Kickstart), 0..1. */
   pump?: number;
+  /** Duck on the kick hits of this (drum MIDI) track instead of on every beat. */
+  pumpFrom?: string;
 }
 
 /** A track parameter that can follow a curve over the arrangement. */

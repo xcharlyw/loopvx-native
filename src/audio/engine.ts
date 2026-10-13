@@ -62,7 +62,9 @@ async function voiceReady(src: Voice): Promise<void> {
 const usesStretch = (project: Project, samples: Map<string, Sample>) =>
   project.tracks.some((t) => t.clips.some((c) => samples.get(c.sampleId)?.warp === 'stretch'));
 
-const LOOKAHEAD = 1.0; // seconds of audio scheduled ahead
+const LOOKAHEAD = 1.5; // seconds of audio scheduled ahead
+/** The arrangement is scheduled in pieces of this many bars, each queued shortly before it plays: a whole 128-bar track at once is thousands of voices and freezes a phone. */
+const CHUNK_BARS = 4;
 const TICK_MS = 100;
 
 /** Start a looping, tempo-warped sample voice. */
@@ -343,7 +345,7 @@ function startSynthVoice(
   return osc;
 }
 
-/** The notes of a MIDI clip that start sounding inside [fromBar, toBar); cut at the window end (loop end). */
+/** The notes of a MIDI clip that start sounding inside [fromBar, toBar); they ring on to their end but are cut at `cutBar` (the loop or arrangement end). */
 function scheduleNotes(
   ctx: AnyContext,
   clip: Clip,
@@ -354,6 +356,8 @@ function scheduleNotes(
   time: number,
   fromBar: number,
   toBar: number,
+  cutBar: number,
+  fresh: boolean,
 ): Voice[] {
   const voices: Voice[] = [];
   const clipEnd = clip.start + clip.length;
@@ -361,9 +365,10 @@ function scheduleNotes(
   let openHat: { voice: Voice; at: number } | undefined; // a closed hat cuts the open hat before it
   for (const note of kit ? [...(clip.notes ?? [])].sort((a, b) => a.start - b.start) : clip.notes ?? []) {
     const start = clip.start + note.start;
-    const end = Math.min(start + note.length, clipEnd, toBar);
+    const end = Math.min(start + note.length, clipEnd, cutBar);
     const begin = Math.max(start, fromBar);
-    if (begin >= end - 1e-9 || start >= clipEnd) continue;
+    // Notes that began before this piece were scheduled with the piece before (unless the transport starts here).
+    if (begin >= end - 1e-9 || start >= clipEnd || begin >= toBar - 1e-9 || (!fresh && start < fromBar - 1e-9)) continue;
     const level = voicePeak(synth, note.velocity) * clipGainAt(clip, begin - clip.start);
     const at = time + (begin - fromBar) * spb;
     const voice = startSynthVoice(ctx, synth, note.pitch, level, at, (end - begin) * spb, dest, buffers, 240 / spb);
@@ -377,7 +382,11 @@ function scheduleNotes(
   return voices;
 }
 
-/** Schedule all arrangement clips that sound inside [fromBar, toBar) starting at context time `time`. */
+/**
+ * Schedule the arrangement clips and notes that start inside [fromBar, toBar), at context time `time`. `cutBar` is where
+ * everything stops (default the window end); `fresh` is true when the transport starts at this window, so clips already
+ * sounding at `fromBar` are included.
+ */
 function scheduleWindow(
   ctx: AnyContext,
   project: Project,
@@ -387,20 +396,24 @@ function scheduleWindow(
   time: number,
   fromBar: number,
   toBar: number,
+  cutBar = toBar,
+  fresh = true,
 ): Voice[] {
   const spb = secondsPerBar(project.bpm);
   const sources: Voice[] = [];
   for (const track of project.tracks) {
     for (const clip of track.clips) {
       if (clip.notes) {
-        sources.push(...scheduleNotes(ctx, clip, trackSynth(track), buffers, trackDest(track), spb, time, fromBar, toBar));
+        sources.push(...scheduleNotes(ctx, clip, trackSynth(track), buffers, trackDest(track), spb, time, fromBar, toBar, cutBar, fresh));
         continue;
       }
       const sample = samples.get(clip.sampleId);
       const buffer = buffers.get(clip.sampleId);
       if (!sample || !buffer) continue;
       const loopBars = sampleLengthBars(buffer.duration, project.bpm, sample.bpm);
-      const plan = planClip(clip, fromBar, toBar, loopBars);
+      // Like notes: a clip is scheduled with the piece it starts in, and runs on (to `cutBar`) past the piece's end.
+      if (clip.start >= toBar - 1e-9 || (!fresh && clip.start < fromBar - 1e-9)) continue;
+      const plan = planClip(clip, fromBar, cutBar, loopBars);
       if (!plan) continue;
       const when = time + plan.delayBars * spb;
       // Clip gain and fades: a gain node per voice, automated along the clip's envelope.
@@ -457,6 +470,8 @@ export class AudioEngine {
   /** Session mode: bars since the session clock started that already have their pump automation. */
   private sessionPumpedTo = 0;
   private segments: Segment[] = [];
+  /** Where arrangement playback stops or loops: the loop end, or the end of the last clip. */
+  private playEnd = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private sessionOrigin = 0;
   private sessionVoices = new Map<string, SessionVoice>();
@@ -599,17 +614,18 @@ export class AudioEngine {
     const start = ctx.currentTime + (Platform.OS === 'web' && usesStretch(project, this.samples) ? 0.4 : 0.06);
     const end = project.loop.enabled && fromBar < project.loop.end ? project.loop.end : projectEndBars(project);
     this.segments = [];
-    this.queueSegment(start, fromBar, Math.max(fromBar + 0.25, end));
+    this.playEnd = Math.max(fromBar + 0.25, end);
+    this.queueSegment(start, fromBar, Math.min(this.playEnd, fromBar + CHUNK_BARS), true);
     this.playing = true;
     this.timer = setInterval(() => this.tick(), TICK_MS);
     this.emit();
   }
 
-  private queueSegment(time: number, fromBar: number, toBar: number) {
+  private queueSegment(time: number, fromBar: number, toBar: number, fresh: boolean) {
     const project = this.project!;
     this.segments.push({ time, fromBar, toBar });
     if (this.segments.length > 8) this.segments.shift();
-    const created = scheduleWindow(this.ctx!, project, this.samples, this.buffers, (t) => this.trackGain(t), time, fromBar, toBar);
+    const created = scheduleWindow(this.ctx!, project, this.samples, this.buffers, (t) => this.trackGain(t), time, fromBar, toBar, this.playEnd, fresh);
     for (const s of created) {
       s.onEnded = () => {
         this.sources = this.sources.filter((x) => x !== s);
@@ -681,9 +697,13 @@ export class AudioEngine {
     if (this.mode === 'arrange' && this.segments.length) {
       const last = this.segments[this.segments.length - 1];
       const lastEnd = last.time + (last.toBar - last.fromBar) * secondsPerBar(project.bpm);
+      // Queue the next piece shortly before the last one ends (one per tick keeps a tick short); after the end, loop back or stop.
       if (lastEnd - ctx.currentTime < LOOKAHEAD) {
-        if (project.loop.enabled && project.loop.end > project.loop.start) {
-          this.queueSegment(lastEnd, project.loop.start, project.loop.end);
+        if (last.toBar < this.playEnd - 1e-9) {
+          this.queueSegment(lastEnd, last.toBar, Math.min(this.playEnd, last.toBar + CHUNK_BARS), false);
+        } else if (project.loop.enabled && project.loop.end > project.loop.start) {
+          this.playEnd = project.loop.end;
+          this.queueSegment(lastEnd, project.loop.start, Math.min(project.loop.end, project.loop.start + CHUNK_BARS), true);
         } else if (ctx.currentTime >= lastEnd) {
           this.stop();
           return;

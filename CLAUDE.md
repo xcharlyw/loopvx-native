@@ -194,6 +194,16 @@ Constraints learned the hard way:
 - Not verified on a phone natively: feedback loops through DelayNodes (echo, compressor detector, chorus feedback) and
   4x oversampling on shapers are standard Web Audio; if a native build misbehaves, look there first.
 
+## Live playback scheduling
+
+`engine.play` does **not** schedule the whole arrangement: it queues pieces of `CHUNK_BARS` (4) bars (`queueSegment`), the next one when the last has less than
+`LOOKAHEAD` (1.5 s) left (`tick`, one piece per tick), then loops back to the loop start or stops at `playEnd`. A piece schedules the clips and notes that **start** in it
+(`scheduleWindow(..., toBar, cutBar, fresh)`: they ring on past the piece's end and are cut only at `cutBar`, the loop/arrangement end; `fresh` = the transport starts
+here, so things already sounding at `fromBar` are included). Pump and automation are scheduled per piece like per loop pass. Reason: a 128-bar arrangement is ~3000 notes,
+and creating all their voices at once blocked the main thread for 2.4 s on a fast machine (a phone froze or lost the sound); now play() blocks ~80 ms. Offline render
+still schedules the region in one go (default `cutBar = toBar`, `fresh = true`). Checked live: drums sound across piece boundaries, a 12-bar note holds through them
+and stops at its end, a loop wraps.
+
 ## Piano roll dragging
 
 A selected note gets a move area and a length grip (`noteHitAreas`, `src/lib/noteDrag.ts`): the move area is

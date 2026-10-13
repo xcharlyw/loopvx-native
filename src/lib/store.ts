@@ -8,7 +8,7 @@ import { createProject, isProject, repairProject } from './project';
 export type View = 'arrange' | 'session';
 /** Size of the open panel: full, half (docked below, the arrangement stays usable) or only its title bar. */
 export type SheetSize = 'full' | 'half' | 'bar';
-export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'automation' | 'arranger' | 'markers';
+export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'automation' | 'arranger' | 'markers' | 'shortcuts' | 'menu';
 
 export interface Toast {
   id: number;

@@ -89,6 +89,16 @@ tests/              server tests (anything in api/ is deployed as a function)
   copies are then synced into LOOPVX/Samples like any sample, **by a copy inside Drive** (`copyFile`, no upload from the phone; an upload if Drive refuses). A folder import first scans (`collectAudio` with `onFile`/`cancelled` hooks, up to 3000 files), shows a plan card (`summarizeImport`: new vs. existing, size, library folders) and only then downloads; both phases have "Abbrechen", importing again continues where it stopped because known Drive ids are skipped). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; checked against the real metadata of Karl's Drive: "My Mac" is a folder he owns with no parent; the full listing of owned folders can be slow on a big Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
+## Commands, shortcuts and menus (Live 12 style)
+
+`src/ui/commands.ts` is the one table of actions (`COMMANDS`: id, German label, menu group Datei / Bearbeiten / Erstellen / Ansicht / Optionen / Hilfe or null, `keys`, `run`,
+`enabled`). The key handler (`useShortcuts` in `App.tsx`), the desktop menu bar (`MenuBar.tsx`, web and wide screens only, `MENU_BAR_H`; hovering another title while one is
+open switches, like a Mac menu bar), the phone menu (☰ in the TopBar → panel `menu`) and the shortcut list (panel `shortcuts`, Hilfe → Tastenkürzel or `?`) all read it,
+so a shortcut shown is one that works. Pure key matching in `lib/keymap.ts` (tested): letters match the typed character (German Z/Y work), with Alt the physical key (⌥B
+types "∫" on a Mac); named keys check Shift only when the spec sets it. Shortcuts are Live's where the browser allows it; Chrome never hands Cmd/Ctrl+T, N, W, Shift+T to a
+page, so tracks also have Alt+T / Alt+Shift+T and a new project is Cmd/Ctrl+Alt+N. Own additions (no Live default): Cmd+Shift+K metronome, Cmd+Shift+L loop on/off, Cmd+I marker,
+↑/↓ select track, ? shortcut list. Keys typed into inputs are ignored; Space on a focused button is left to the button.
+
 ## Panel sizes (Sheet)
 
 The panels are no longer in a `Modal` but in an overlay inside `Shell` (`App.tsx`), so they can dock. `state.sheetSize` (`full` | `half` | `bar`, kept while the app runs, shared by all panels):

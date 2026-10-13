@@ -7,19 +7,8 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { engine } from '../audio/engine';
 import { preparePageAudio } from '../audio/pageAudio';
 import { C } from '../constants/theme';
-import {
-  consolidateSelectedClip,
-  copySelectedClips,
-  loopSelection,
-  pasteClipsAtCursor,
-  selectAllClipsOfTrack,
-  deleteSelectedClip,
-  duplicateSelectedClip,
-  nudgeSelectedClip,
-  splitSelectedClip,
-  togglePlay,
-} from '../lib/actions';
-import { boot, getState, redo, setState, undo, useStore } from '../lib/store';
+import { matchesKey } from '../lib/keymap';
+import { boot, setState, useStore } from '../lib/store';
 import { getSession } from '../lib/supabase';
 import { startSync } from '../lib/sync';
 import { ArrangeView } from './ArrangeView';
@@ -40,6 +29,9 @@ import { PromptBar } from './PromptBar';
 import { SessionView } from './SessionView';
 import { TrackPanel } from './TrackPanel';
 import { TopBar } from './TopBar';
+import { COMMANDS } from './commands';
+import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
+import { useSmall } from './hooks';
 import { sheetLayout } from './sheetLayout';
 
 function Shell() {
@@ -50,6 +42,8 @@ function Shell() {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const [bottomH, setBottomH] = useState(0);
+  const small = useSmall();
+  const menuBar = Platform.OS === 'web' && !small;
   const close = () => setState({ panel: 'none' });
   const open = panel !== 'none';
   const layout = sheetLayout(sheetSize, { width, height });
@@ -67,6 +61,7 @@ function Shell() {
 
   return (
     <View style={[s.app, { paddingTop: insets.top }]}>
+      {menuBar && <MenuBar />}
       <TopBar />
       {/* A docked panel takes its height from the arrangement, so the tracks above stay visible and scrollable. */}
       <View style={[s.main, docked && { marginBottom: layout.height }]}>
@@ -78,7 +73,7 @@ function Shell() {
       </View>
 
       {open && (
-        <View style={[s.overlay, docked ? { left: 0, right: 0, bottom: bottomH, height: layout.height } : { top: 0, left: 0, right: 0, bottom: 0 }]} pointerEvents="box-none">
+        <View style={[s.overlay, docked ? { left: 0, right: 0, bottom: bottomH, height: layout.height } : { top: menuBar ? MENU_BAR_H : 0, left: 0, right: 0, bottom: 0 }]} pointerEvents="box-none">
           <View style={docked ? s.dockRow : s.modalRow} pointerEvents="box-none">
             {!docked && <Pressable style={s.backdrop} onPress={close} />}
             {docked && <View style={{ flex: 1 }} pointerEvents="none" />}
@@ -95,6 +90,8 @@ function Shell() {
               {panel === 'automation' && <AutomationPanel />}
               {panel === 'arranger' && <ArrangerPanel />}
               {panel === 'markers' && <MarkersPanel />}
+              {panel === 'shortcuts' && <ShortcutsPanel />}
+              {panel === 'menu' && <MenuPanel />}
             </View>
           </View>
         </View>
@@ -128,56 +125,21 @@ function useAudioUnlock() {
   }, []);
 }
 
-/** Ableton-style keys on web: Space play/stop, Cmd/Ctrl+Z undo (+Shift or Y: redo), Cmd/Ctrl+E split, Cmd/Ctrl+D duplicate, Delete, arrows nudge. */
+/** Keyboard shortcuts (web): Ableton Live's, from the command table in `commands.ts`. */
 function useShortcuts() {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest?.('input, textarea, select')) return;
-      const mod = e.metaKey || e.ctrlKey;
-      const arrange = getState().view === 'arrange';
+      if (target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
       // A focused button already handles Space itself (react-native-web presses it).
       if (e.code === 'Space' && target !== document.body && target?.closest?.('[tabindex], button, [role="button"]')) return;
-      if (e.code === 'Space') {
+      for (const cmd of COMMANDS) {
+        if (!cmd.keys?.some((k) => matchesKey(e, k))) continue;
+        if (cmd.enabled && !cmd.enabled()) continue;
         e.preventDefault();
-        void togglePlay();
-      } else if (mod && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-      } else if (mod && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        redo();
-      } else if (mod && e.key.toLowerCase() === 'e' && arrange) {
-        e.preventDefault();
-        splitSelectedClip();
-      } else if (mod && e.key.toLowerCase() === 'c' && arrange && getState().selectedClipId) {
-        e.preventDefault();
-        copySelectedClips();
-      } else if (mod && e.key.toLowerCase() === 'v' && arrange) {
-        e.preventDefault();
-        pasteClipsAtCursor();
-      } else if (mod && e.key.toLowerCase() === 'l' && arrange) {
-        e.preventDefault();
-        loopSelection();
-      } else if (mod && e.key.toLowerCase() === 'a' && arrange) {
-        e.preventDefault();
-        selectAllClipsOfTrack();
-      } else if (mod && e.key.toLowerCase() === 'j' && arrange) {
-        e.preventDefault();
-        void consolidateSelectedClip();
-      } else if (mod && e.key.toLowerCase() === 'd' && arrange) {
-        e.preventDefault();
-        duplicateSelectedClip();
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && arrange) {
-        e.preventDefault();
-        deleteSelectedClip();
-      } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && arrange && getState().selectedClipId) {
-        e.preventDefault();
-        nudgeSelectedClip((e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 0.25));
-      } else if (e.key === 'Escape') {
-        setState({ panel: 'none', armedSampleId: null, selectedClipId: null });
+        cmd.run();
+        return;
       }
     };
     window.addEventListener('keydown', onKey);

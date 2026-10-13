@@ -90,6 +90,9 @@ export function TopBar() {
       {small && (
         <>
           <Spacer />
+          <Pill style={sm.pill} accessibilityLabel="Menü" onPress={() => setState({ panel: 'menu' })}>
+            <Txt style={{ fontSize: 16, lineHeight: 18 }}>☰</Txt>
+          </Pill>
           <Pill style={sm.pill} accessibilityLabel="Exportieren" onPress={() => setState({ panel: 'export' })}>
             <Export size={16} />
           </Pill>

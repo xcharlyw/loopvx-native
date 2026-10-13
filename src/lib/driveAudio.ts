@@ -1,7 +1,7 @@
 import type { AudioBuffer } from 'react-native-audio-api';
 import { engine } from '../audio/engine';
 import { parseSampleName } from '../audio/timing';
-import { detectTempo, toMono } from '../audio/tempo';
+import { detectTempo, snapTempo, toMono } from '../audio/tempo';
 import { download } from './drive';
 import { sampleFromDriveFile, type DriveEntry } from './driveImport';
 import { placeSample } from './actions';
@@ -87,7 +87,7 @@ export async function previewDriveFile(file: DriveEntry, folder: string): Promis
       const channels = Array.from({ length: c.buffer.numberOfChannels }, (_, i) => c.buffer!.getChannelData(i));
       const guess = detectTempo(toMono(channels), c.buffer.sampleRate);
       if (guess && guess.confidence >= (guess.source === 'loop' ? 0.35 : 0.5)) {
-        c.bpm = guess.bpm;
+        c.bpm = snapTempo(guess.bpm, c.buffer.duration);
         c.detected = true;
       }
     }

@@ -134,6 +134,15 @@ next bar line and joins the loop at the matching bar, so the beats line up (like
 with a fake Drive: warp 150 → 155 (rate 1.0333), tempo detected for an unnamed loop (~149.9), waits for the next bar while playing, insert lands on "Kick + Bass", re-audition
 needs no download. **Not heard on a phone**; very large WAVs are downloaded completely before they play (no streaming).
 
+## Library audition (tempo and level)
+
+▶ in the Library runs `auditionSample` (actions.ts): a sample without a tempo (not a vocal, longer than 1.2 s) is measured first (`detectSampleTempo`, same confidence
+gate as the import) and a confident result is **stored on the sample** (toast "Tempo erkannt"), then `engine.preview` plays it warped to the project tempo and, while the
+song runs, from the next bar (`planPreview`). Detected tempos go through `snapTempo` (tempo.ts, tested): within 0.35 BPM of a whole number, or within 1 % when the
+sample is then whole bars, they become whole BPM (149.82 → 150), otherwise a loop drifts against the song; the Drive preview uses it too. `PreviewLevel` (Library and
+Drive browser): a knob for the audition level (`previewDb`, -24..+6 dB, kv `previewDb`, a per-device preference; `engine.setPreviewDb` changes the playing preview)
+and "Wie Spur: <track>", which sets it to the fader level of the track the sample would land on (`trackForSample`), plus the now-playing line (tempo → project tempo).
+
 ## Library folders
 
 `Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (the pack name), Splice (the pack name) and the user. Folders that hold samples exist by themselves;

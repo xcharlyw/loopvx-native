@@ -8,7 +8,7 @@ import { encodeWav } from '../audio/wav';
 import { db } from '../storage/db';
 import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
-import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
+import { detectTempo, snapTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
@@ -224,7 +224,8 @@ export async function setSampleBpm(sample: Sample, bpm: number | undefined) {
 export async function detectSampleTempo(sample: Sample): Promise<TempoGuess | undefined> {
   const buffer = await engine.loadBuffer(sample.id);
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
-  return detectTempo(toMono(channels), buffer.sampleRate);
+  const guess = detectTempo(toMono(channels), buffer.sampleRate);
+  return guess && { ...guess, bpm: snapTempo(guess.bpm, buffer.duration) };
 }
 
 /**
@@ -501,4 +502,30 @@ export function loadSampleIntoSampler(trackId: string, sampleId: string) {
   const synth = getState().project.tracks.find((t) => t.id === trackId)?.synth;
   if (synth) void engine.previewNote(synth, synth.sampleRoot ?? 60);
   toast(`${sample.name.replace(/\.[a-z0-9]+$/i, '')} → Sampler auf ${track.name}`);
+}
+
+export interface AuditionInfo {
+  bpm?: number;
+  /** The tempo was found just now by listening (and stored on the sample). */
+  detected: boolean;
+}
+
+/**
+ * Audition a library sample in the project tempo, like Live's browser: a loop without a tempo is measured first (confident
+ * results are stored on the sample, so the next clip warps right too), then it plays warped and, while the song runs, joins
+ * on the next bar.
+ */
+export async function auditionSample(sample: Sample): Promise<AuditionInfo> {
+  let current = sample;
+  let detected = false;
+  if (!current.bpm && current.category !== 'vocal' && (current.duration === undefined || current.duration > 1.2)) {
+    const guess = await detectSampleTempo(current).catch(() => null);
+    if (guess && guess.confidence >= (guess.source === 'loop' ? 0.35 : 0.5)) {
+      current = { ...(getState().samples.find((x) => x.id === sample.id) ?? sample), bpm: guess.bpm };
+      await upsertSample(current);
+      detected = true;
+    }
+  }
+  await engine.preview(current, getState().project.bpm);
+  return { bpm: current.bpm, detected };
 }

@@ -62,6 +62,8 @@ export interface AppState {
   sync: SyncStatus;
   /** Metronome during playback (a per-device preference, not part of the project). */
   metronome: boolean;
+  /** Audition level in dB (Library / Drive browser), a per-device preference like the metronome. */
+  previewDb: number;
 }
 
 let state: AppState = {
@@ -89,6 +91,7 @@ let state: AppState = {
   canRedo: false,
   sync: { state: 'off' },
   metronome: false,
+  previewDb: 0,
 };
 
 const listeners = new Set<() => void>();
@@ -300,6 +303,13 @@ export function setMetronome(on: boolean) {
   void db.setKv('metronome', on);
 }
 
+export function setPreviewDb(level: number) {
+  const v = Math.max(-24, Math.min(6, Math.round(level * 2) / 2));
+  engine.setPreviewDb(v);
+  setState({ previewDb: v });
+  void db.setKv('previewDb', v);
+}
+
 // ---------------- toasts ----------------
 
 let toastId = 0;
@@ -319,15 +329,17 @@ export function errorText(e: unknown): string {
 export const START_BLANK = '__start-blank__';
 
 export async function boot() {
-  const [samples, projects, lastId, metronome, folders] = await Promise.all([
+  const [samples, projects, lastId, metronome, previewDb, folders] = await Promise.all([
     db.getSamples(),
     db.getProjects(),
     db.getKv<string>('lastProjectId'),
     db.getKv<boolean>('metronome'),
+    db.getKv<number>('previewDb'),
     db.getKv<string[]>('folders'),
   ]);
   if (Array.isArray(folders)) setState({ folders });
   if (metronome) setMetronome(true);
+  if (typeof previewDb === 'number' && Number.isFinite(previewDb)) setPreviewDb(previewDb);
   setSamples(samples);
   // Damaged entries (never written by this app, but storage can be edited) are skipped, not fatal.
   const valid = projects.filter(isProject);

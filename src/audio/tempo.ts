@@ -188,3 +188,16 @@ export function toMono(channels: Float32Array[]): Float32Array {
   for (const ch of channels) for (let i = 0; i < out.length; i++) out[i] += ch[i] / channels.length;
   return out;
 }
+
+/**
+ * Producers work in whole BPM: a guess near one (149.82) is snapped to it (150), within 0.35 BPM, or within 1 % when the
+ * sample is then a whole number of bars long. Otherwise a fractional tempo would make a loop drift against the song.
+ */
+export function snapTempo(bpm: number, seconds: number): number {
+  const whole = Math.round(bpm);
+  if (Math.abs(whole - bpm) <= 0.35) return whole;
+  if (Math.abs(whole - bpm) / bpm > 0.01) return bpm;
+  const bars = (seconds * whole) / 240;
+  const nearest = Math.round(bars);
+  return nearest >= 1 && Math.abs(bars - nearest) < 0.01 * nearest ? whole : bpm;
+}

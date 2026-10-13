@@ -12,6 +12,8 @@ import { signIn } from '../lib/supabase';
 import { useEngine } from './hooks';
 import { Check, Play, Stop } from './icons';
 import { Btn, Chip, Txt } from './kit';
+import { PreviewLevel } from './PreviewLevel';
+import { parseSampleName } from '../audio/timing';
 
 type Access = 'checking' | 'unlinked' | 'noread' | 'ok';
 interface Crumb {
@@ -234,11 +236,13 @@ export function DriveImport() {
         </Txt>
       </View>
 
-      {previewing && now && (
-        <Txt style={s.nowPlaying}>
-          {`▶ ${now.file.name} · ${now.bpm ? `${now.detected ? '~' : ''}${now.bpm} → ${getState().project.bpm} BPM` : `Tempo unbekannt, läuft mit ${getState().project.bpm} BPM`}${engine.playing ? ' · startet im nächsten Takt' : ''}`}
-        </Txt>
-      )}
+      <PreviewLevel category={now ? parseSampleName(now.file.name, '').category : undefined}>
+        {previewing && now ? (
+          <Txt style={s.nowPlaying}>
+            {`▶ ${now.file.name} · ${now.bpm ? `${now.detected ? '~' : ''}${now.bpm} → ${getState().project.bpm} BPM` : 'Tempo unbekannt: Originaltempo'}${engine.playing ? ' · startet im nächsten Takt' : ''}`}
+          </Txt>
+        ) : null}
+      </PreviewLevel>
       {loading && <Txt style={s.note}>Lade …</Txt>}
       {error && <Txt style={[s.note, { color: C.danger }]}>{error}</Txt>}
       {!loading && !error && !folders.length && !audio.length && (

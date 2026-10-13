@@ -1,4 +1,4 @@
-import { detectTempo, onsetCurve, toMono } from './tempo';
+import { detectTempo, onsetCurve, snapTempo, toMono } from './tempo';
 
 const SR = 22050;
 
@@ -100,5 +100,20 @@ describe('helpers', () => {
     expect(Array.from(m)).toEqual([0.5, 0.5]);
     const one = Float32Array.of(0.3);
     expect(toMono([one])).toBe(one);
+  });
+});
+
+describe('snapTempo', () => {
+  it('snaps a guess within 0.35 BPM to whole BPM', () => {
+    expect(snapTempo(149.82, 3.2)).toBe(150);
+    expect(snapTempo(160.3, 5)).toBe(160);
+  });
+  it('snaps a wider guess only when the sample is then whole bars long', () => {
+    expect(snapTempo(150.6, (240 / 151) * 4)).toBe(151);
+    expect(snapTempo(150.6, 3.5)).toBe(150.6);
+  });
+  it('leaves tempos far from a whole number alone', () => {
+    expect(snapTempo(127.5, 7)).toBe(127.5);
+    expect(snapTempo(97.5, 4)).toBe(97.5);
   });
 });

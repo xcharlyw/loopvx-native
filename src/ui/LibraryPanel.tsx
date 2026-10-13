@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { autoDetectTempos, downloadSample, placeSample } from '../lib/actions';
+import { auditionSample, autoDetectTempos, downloadSample, placeSample, type AuditionInfo } from '../lib/actions';
 import { moveSamples, prettyPath, normPath, samplesIn } from '../lib/folders';
 import { SORT_LABELS, keysFit, sortSamples, type SortBy } from '../lib/libraryFilter';
 import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
@@ -17,6 +17,7 @@ import { Check, Play, Plus, Stop, Upload } from './icons';
 import { FolderBar, FolderPicker, FolderRows } from './LibraryFolders';
 import { confirmDestructive } from './confirm';
 import { RecordButton } from './RecordButton';
+import { PreviewLevel, previewStyles } from './PreviewLevel';
 import { Btn, Chip, IconBtn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 import { sampleDragJustEnded, useSampleDragSource } from './dnd';
@@ -35,7 +36,9 @@ export function LibraryPanel() {
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const [editing, setEditing] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [heard, setHeard] = useState<({ id: string } & AuditionInfo) | null>(null);
   const previewing = useEngine(() => engine.isPreviewing());
+  const playingSample = previewing && previewId ? samples.find((x) => x.id === previewId) : undefined;
   const [path, setPath] = useState('');
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -105,7 +108,10 @@ export function LibraryPanel() {
     }
     try {
       setPreviewId(x.id);
-      await engine.preview(x, project.bpm);
+      setHeard(null);
+      const info = await auditionSample(x);
+      setHeard({ id: x.id, ...info });
+      if (info.detected) toast(`Tempo erkannt: ${info.bpm} BPM, läuft auf ${project.bpm} BPM`);
     } catch (e) {
       toast(errorText(e), 'error');
     }
@@ -185,6 +191,15 @@ export function LibraryPanel() {
       {picking && <FolderPicker count={selected.size} onPick={(f) => void moveTo(f)} onClose={() => setPicking(false)} />}
       {browsing && <FolderRows path={path} setPath={setPath} />}
 
+      <PreviewLevel category={playingSample?.category}>
+        {previewing && playingSample ? (
+          <Txt numberOfLines={2} style={previewStyles.playing}>
+            {`▶ ${playingSample.name.replace(/\.[a-z0-9]+$/i, '')} · ${playingSample.bpm ? `${heard?.id === playingSample.id && heard.detected ? '~' : ''}${playingSample.bpm} → ${project.bpm} BPM` : 'ohne Tempo: Originaltempo'}${engine.playing ? ' · im Takt zum Song' : ''}`}
+          </Txt>
+        ) : (
+          <Txt style={s.muted}>▶ spielt ein Sample im Projekttempo, im Takt zum laufenden Song.</Txt>
+        )}
+      </PreviewLevel>
       {list.length === 0 && !browsing && <Txt style={[s.muted, { marginVertical: 14 }]}>Keine Samples gefunden.</Txt>}
       {list.length === 0 && browsing && !samples.length && <Txt style={[s.muted, { marginVertical: 14 }]}>Noch keine Samples. Lade welche hoch oder importiere sie aus Drive oder Splice.</Txt>}
 

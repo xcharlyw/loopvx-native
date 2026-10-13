@@ -18,7 +18,7 @@ import { DECAY_FLOOR, padAt, planHit } from './drum909';
 import { createLimiter, MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
 import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, planVoice, voicePeak } from './synth';
-import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, planPreview, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
+import { beatsInWindow, clipEnvelope, clipGainAt, dbToGain, loopEndSeconds, nextBoundary, planClip, planPreview, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
 
@@ -476,6 +476,9 @@ export class AudioEngine {
   private sessionOrigin = 0;
   private sessionVoices = new Map<string, SessionVoice>();
   private previewSource: AudioBufferSourceNode | null = null;
+  private previewGain: GainNode | null = null;
+  /** Level of auditions (Library, Drive browser) in dB, so a sample can be matched to the track it is meant for. */
+  private previewDb = 0;
   private unlocking: Promise<AudioContext> | null = null;
   private listeners = new Set<() => void>();
 
@@ -879,14 +882,29 @@ export class AudioEngine {
       src.loopStart = 0;
       src.loopEnd = plan.loopEnd;
     }
-    src.connect(this.master!);
+    const gain = ctx.createGain();
+    gain.gain.value = dbToGain(this.previewDb);
+    src.connect(gain);
+    gain.connect(this.master!);
     src.start(ctx.currentTime + plan.delay, plan.offset);
     src.onEnded = () => {
-      if (this.previewSource === src) this.previewSource = null;
+      gain.disconnect();
+      if (this.previewSource === src) {
+        this.previewSource = null;
+        this.previewGain = null;
+      }
       this.emit();
     };
     this.previewSource = src;
+    this.previewGain = gain;
     this.emit();
+  }
+
+  /** Audition level in dB; changes the sample that is playing right away. */
+  setPreviewDb(db: number) {
+    this.previewDb = db;
+    const g = this.previewGain;
+    if (g && this.ctx) g.gain.setTargetAtTime(dbToGain(db), this.ctx.currentTime, 0.02);
   }
 
   stopPreview() {

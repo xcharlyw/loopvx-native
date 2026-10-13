@@ -79,6 +79,7 @@ export function ArrangeView() {
   const selectionKey = useStore((st) => selectedClipIds(st).join(','));
   const selection = useMemo(() => (selectionKey ? selectionKey.split(',') : []), [selectionKey]);
   const multiSelect = useStore((st) => st.multiSelect);
+  const autoMode = useStore((st) => st.autoMode);
   const armedSampleId = useStore((st) => st.armedSampleId);
   const small = useSmall();
   const { headerW, rowH } = layout(small);
@@ -122,7 +123,7 @@ export function ArrangeView() {
   const anySolo = project.tracks.some((t) => t.solo);
   // Open automation lanes: which parameter's curve shows under which track.
   const [lanes, setLanes] = useState<Record<string, AutoParam>>({});
-  const openLanes = project.tracks.filter((t) => lanes[t.id]).length;
+  const openLanes = autoMode ? 0 : project.tracks.filter((t) => lanes[t.id]).length;
   const bodyH = Math.max(viewportH, project.tracks.length * rowH + openLanes * LANE_H + ADD_ROW_H + BOTTOM_PAD);
   const toggleLane = (t: Track) =>
     setLanes((m) => {
@@ -135,8 +136,10 @@ export function ArrangeView() {
   const cycleLane = (t: Track) =>
     setLanes((m) => {
       const choices: AutoParam[] = [...AUTO_ORDER, ...deviceAutoParams(t).map((d) => d.param)];
-      return { ...m, [t.id]: choices[(choices.indexOf(m[t.id] ?? 'filter') + 1) % choices.length] };
+      return { ...m, [t.id]: choices[(choices.indexOf(m[t.id] ?? overlayParam(t, m)) + 1) % choices.length] };
     });
+  // Automation mode: the curve shown over a track's clips (the open lane's, else the first one it has, else volume).
+  const overlayParam = (t: Track, m: Record<string, AutoParam> = lanes): AutoParam => m[t.id] ?? t.automation?.find((l) => l.points.length)?.param ?? 'volume';
 
   const grid = zoom >= 32 ? 0.25 : 1;
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -150,7 +153,7 @@ export function ArrangeView() {
   const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const bandOrigin = useRef<{ px: number; py: number } | null>(null);
   const live = useRef({ zoom, rowH, project, lanes, on: FINE_POINTER || multiSelect });
-  live.current = { zoom, rowH, project, lanes, on: FINE_POINTER || multiSelect };
+  live.current = { zoom, rowH, project, lanes: autoMode ? {} : lanes, on: (FINE_POINTER || multiSelect) && !autoMode };
   const rowAt = (y: number) => {
     const { project: p, rowH: h, lanes: open } = live.current;
     let top = 0;
@@ -386,12 +389,16 @@ export function ArrangeView() {
                     <Pressable
                       accessibilityLabel={`Automation von ${track.name}`}
                       accessibilityState={{ selected: !!laneParam }}
-                      onPress={() => toggleLane(track)}
+                      onPress={() => (autoMode ? cycleLane(track) : toggleLane(track))}
                       style={[s.fxBtn, (!!laneParam || !!track.automation?.length) && s.fxBtnOn]}
                     >
                       <Txt style={[s.fxText, (!!laneParam || !!track.automation?.length) && { color: C.accentInk }]}>A</Txt>
                     </Pressable>
-                    {!small && (
+                    {autoMode && !small ? (
+                      <Pressable accessibilityLabel={`Automations-Parameter von ${track.name}`} onPress={() => cycleLane(track)} style={s.autoChip}>
+                        <Txt numberOfLines={1} style={s.autoChipText}>{`${paramDef(track, overlayParam(track)).label} ▾`}</Txt>
+                      </Pressable>
+                    ) : !small && !autoMode && (
                       <Fader
                         value={track.volume}
                         max={1.5}
@@ -400,7 +407,7 @@ export function ArrangeView() {
                     )}
                   </View>
                 </Pressable>
-                {laneParam && (
+                {laneParam && !autoMode && (
                   <Pressable accessibilityLabel={`Parameter der Automation von ${track.name}`} onPress={() => cycleLane(track)} style={[s.laneHeader, { height: LANE_H }]}>
                     <Txt style={s.laneParam}>{`${paramDef(track, laneParam).label} ▾`}</Txt>
                     <Txt style={s.laneHint}>{laneOf(track, laneParam).length ? `${laneOf(track, laneParam).length} Punkte` : 'tippen: Parameter'}</Txt>
@@ -479,8 +486,9 @@ export function ArrangeView() {
                       />
                     );
                   })}
+                  {autoMode && <TrackCurve track={track} param={overlayParam(track)} zoom={zoom} width={width} height={rowH - 1} totalBars={totalBars} />}
                 </Pressable>
-                {lanes[track.id] && <LaneRow track={track} param={lanes[track.id]} zoom={zoom} width={width} totalBars={totalBars} />}
+                {lanes[track.id] && !autoMode && <LaneRow track={track} param={lanes[track.id]} zoom={zoom} width={width} totalBars={totalBars} />}
                 </Fragment>
               ))}
               {isEmpty && (
@@ -508,6 +516,16 @@ function LaneRow({ track, param, zoom, width, totalBars }: { track: Track; param
   return (
     <View style={[s.lane, { width, height: LANE_H }]}>
       <AutomationCurve track={track} param={param} start={0} span={totalBars} width={width} height={LANE_H - 1} selected={sel} onSelect={setSel} grid={zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8} labels={false} />
+    </View>
+  );
+}
+
+/** Automation mode: the curve over the track's own clips, like Ableton's automation lanes in the track (A). */
+function TrackCurve({ track, param, zoom, width, height, totalBars }: { track: Track; param: AutoParam; zoom: number; width: number; height: number; totalBars: number }) {
+  const [sel, setSel] = useState<number | null>(null);
+  return (
+    <View style={s.trackCurve}>
+      <AutomationCurve track={track} param={param} start={0} span={totalBars} width={width} height={height} selected={sel} onSelect={setSel} grid={zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8} labels={false} overlay />
     </View>
   );
 }
@@ -654,6 +672,9 @@ const s = StyleSheet.create({
   fxBtn: { minWidth: 22, height: 24, paddingHorizontal: 2, borderRadius: 7, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
   fxBtnOn: { backgroundColor: C.accent, borderColor: C.accent },
   fxText: { ...mono(), fontSize: 9, color: C.muted },
+  autoChip: { flexShrink: 1, minWidth: 0, height: 20, paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: C.accent, justifyContent: 'center' },
+  autoChipText: { ...font(600), fontSize: 10, color: C.accent },
+  trackCurve: { position: 'absolute', left: 0, top: 0, zIndex: 5 },
   /** MIDI tracks get a square dot, audio tracks a round one. */
   dotMidi: { borderRadius: 2 },
   trackControls: { flexDirection: 'row', alignItems: 'center', gap: 3 },

@@ -290,6 +290,12 @@ The filter lane goes through `djFilter`, so it keeps the DJ filter's curve. Meas
 couple of bars, a reverb lane stays dry until its point. UI `AutomationPanel` (TrackPanel "Automation"): parameter chips, a graph of 16/32/64/128 bars (no scrolling:
 the buttons move the window), tap = new point, drag = move (one undo step), buttons nudge/delete, shapes for the visible window. Same curve component (`AutomationCurve`) is used in the arrange view: the "A" button of a track header opens a lane under the track (`LaneRow`, `LANE_H`, all bars at the arrangement's zoom; tap the lane header to cycle the parameter), like Ableton.
 The `volume` lane is a multiplier of the track's fader (0..1), so the mixer fader keeps working under a fade.
+**Automation mode and draw mode (Live's A and B)**: `state.autoMode` (key A, the curve icon in the BottomBar, Ansicht menu) draws each track's curve over its own clips
+(`TrackCurve` in `ArrangeView`, `AutomationCurve overlay`): touches edit the curve instead of the clips, the parameter is the open lane's, else the first lane with points,
+else volume; the header's "A" button (and the chip on wide screens) cycles it. `state.drawMode` (B or Cmd+B, pencil in the BottomBar, "✎ Zeichnen" in the sheet) makes a drag
+draw the line freehand: pure `drawStroke` (automation.ts, tested) replaces the curve over the bars the finger crossed, one point per `drawStep(px per bar)` (1/16 bar zoomed in,
+coarser zoomed out), fills gaps of a fast finger, keeps the old curve outside (anchor points right before/after) and drops collinear points (`simplifyLane`). One undo step
+per stroke. A double tap on a point deletes it. On touch, automation mode takes the swipes over the tracks (scroll with the ruler/headers or leave the mode).
 **Device knobs** are automatable too: lane `param` = `dev:<deviceId>:<paramKey>` (`deviceAutoParams`, `parseDeviceParam`, `paramDef` gives label/range/readout for
 any param), values are the **knob position 0..1** (`knobPosition`/`knobValue` through `knobMath`, so frequency sweeps move like the log knob). `MixGraph.scheduleAutomation`
 groups the lanes of one device and sends one `Slot.automate` per moment (otherwise lanes would overwrite each other); `setParam` in `devicenodes.ts` takes the env with

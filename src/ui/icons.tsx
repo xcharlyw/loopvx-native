@@ -160,6 +160,14 @@ export const Pencil = (p: P) => (
     <Path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />
   </Icon>
 );
+/** An automation curve with breakpoints (Ableton's automation mode). */
+export const AutoIcon = (p: P) => (
+  <Icon {...p}>
+    <Path d="M3 17l5-8 5 5 8-9" />
+    <Circle cx="8" cy="9" r="1.6" {...solid} />
+    <Circle cx="13" cy="14" r="1.6" {...solid} />
+  </Icon>
+);
 export const Scissors = (p: P) => (
   <Icon {...p}>
     <Circle cx="6" cy="6" r="3" />

@@ -156,3 +156,64 @@ export function joinPoints(...parts: AutoPoint[][]): AutoPoint[] {
   for (const part of parts) for (const p of part) byBar.set(Math.round(p.bar * 1e6) / 1e6, p);
   return [...byBar.values()].sort((a, b) => a.bar - b.bar);
 }
+
+// ---------------------------------------------------------------- drawing (Ableton's draw mode)
+
+/** Drops points that sit on the straight line between their neighbours (within `tolerance`): a drawn line stays light. */
+export function simplifyLane(points: AutoPoint[], tolerance: number): AutoPoint[] {
+  if (points.length < 3) return points;
+  const out: AutoPoint[] = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const a = out[out.length - 1];
+    const b = points[i + 1];
+    const p = points[i];
+    const onLine = b.bar === a.bar ? p.value : a.value + ((b.value - a.value) * (p.bar - a.bar)) / (b.bar - a.bar);
+    if (Math.abs(p.value - onLine) > tolerance) out.push(p);
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+/**
+ * A freehand line drawn over a lane: the finger's path (`stroke`, in bars and values, in the order drawn) replaces the
+ * curve over the bars it covers, one point per `step` bars (gaps from a fast finger are filled in a straight line; going
+ * back over a bar redraws it). Outside the drawn range the old curve stays as it was: an extra point right before and
+ * after the line keeps its values there. `base` is the curve before the stroke began.
+ */
+export function drawStroke(param: AutoParam, base: AutoPoint[], stroke: AutoPoint[], step = AUTO_GRID): AutoPoint[] {
+  if (!stroke.length) return base;
+  const cells = new Map<number, number>();
+  const put = (bar: number, value: number) => cells.set(Math.max(0, Math.round(bar / step)), value);
+  put(stroke[0].bar, stroke[0].value);
+  for (let i = 1; i < stroke.length; i++) {
+    const a = stroke[i - 1];
+    const b = stroke[i];
+    const lo = Math.min(a.bar, b.bar);
+    const hi = Math.max(a.bar, b.bar);
+    for (let k = Math.ceil(lo / step); k * step <= hi; k++) {
+      const bar = k * step;
+      put(bar, hi === lo ? b.value : a.value + ((b.value - a.value) * (bar - a.bar)) / (b.bar - a.bar));
+    }
+    put(b.bar, b.value);
+  }
+  const keys = [...cells.keys()].sort((x, y) => x - y);
+  const from = keys[0] * step;
+  const to = keys[keys.length - 1] * step;
+  const drawn = keys.map((k) => ({ bar: k * step, value: Math.round(clampValue(param, cells.get(k)!) * 1000) / 1000 }));
+  const outside = base.filter((p) => p.bar < from - 1e-9 || p.bar > to + 1e-9);
+  const anchors: AutoPoint[] = [];
+  if (base.length) {
+    if (from - AUTO_GRID >= 0) anchors.push({ bar: from - AUTO_GRID, value: laneValue(base, from - AUTO_GRID)! });
+    anchors.push({ bar: to + AUTO_GRID, value: laneValue(base, to + AUTO_GRID)! });
+  }
+  const def = isDeviceParam(param) ? { min: 0, max: 1 } : AUTO_PARAMS[param];
+  // Points of the old curve win over the anchors on the same bar (the anchors only repeat them).
+  return simplifyLane(joinPoints(anchors, outside, drawn), (def.max - def.min) * 0.004);
+}
+
+/** The drawing resolution for a lane `pxPerBar` wide per bar: 1/16 bar when zoomed in, coarser so points stay ~6 px apart. */
+export function drawStep(pxPerBar: number): number {
+  let step = AUTO_GRID;
+  while (step < 1 && step * pxPerBar < 6) step *= 2;
+  return step;
+}

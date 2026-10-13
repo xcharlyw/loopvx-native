@@ -5,7 +5,7 @@ import { C, font, mono } from '../constants/theme';
 import { AUTO_GRID, AUTO_ORDER, AUTO_PARAMS, deviceAutoParams, laneOf, paramDef, ramp, setLane, throwAt, withPoint, withoutPoint } from '../lib/automation';
 import { formatBarPosition } from '../audio/timing';
 import { mapTrack } from '../lib/project';
-import { updateProject, useStore } from '../lib/store';
+import { setState, updateProject, useStore } from '../lib/store';
 import type { AutoParam, AutoPoint } from '../types';
 import { AutomationCurve } from './AutomationCurve';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -22,6 +22,7 @@ const HEIGHT = 160;
 export function AutomationPanel() {
   const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
   const end = useStore((st) => projectEndBars(st.project));
+  const drawMode = useStore((st) => st.drawMode);
   const [param, setParam] = useState<AutoParam>('filter');
   const [span, setSpan] = useState(32);
   const [start, setStart] = useState(0);
@@ -122,6 +123,9 @@ export function AutomationPanel() {
           ▶
         </Btn>
         <Txt style={s.range}>{`Takt ${Math.floor(start) + 1}–${Math.ceil(to)}`}</Txt>
+        <Chip variant={drawMode ? 'on' : 'ghost'} accessibilityLabel="Zeichenmodus" textStyle={{ fontSize: 12 }} onPress={() => setState({ drawMode: !drawMode })}>
+          ✎ Zeichnen
+        </Chip>
       </View>
 
       <View onLayout={(e) => setWidth(Math.max(120, e.nativeEvent.layout.width))} style={s.graph}>
@@ -152,7 +156,7 @@ export function AutomationPanel() {
             </View>
           </>
         ) : (
-          <Txt style={s.note}>Tippe einen Punkt an, um ihn zu verschieben oder zu löschen. Ziehen geht direkt im Graph.</Txt>
+          <Txt style={s.note}>{drawMode ? 'Zeichenmodus: ziehe im Graph, um die Linie frei zu zeichnen (B schaltet um).' : 'Tippe einen Punkt an, um ihn zu verschieben, Doppeltipp löscht ihn. Mit ✎ Zeichnen (B) malst du die Linie frei.'}</Txt>
         )}
       </Section>
 

@@ -43,6 +43,10 @@ export interface AppState {
   extraHead: string | null;
   /** Taps on clips add to / remove from the selection instead of replacing it. */
   multiSelect: boolean;
+  /** Ableton's automation mode (A): every track shows a curve over its clips, and touches edit the curve instead of the clips. */
+  autoMode: boolean;
+  /** Ableton's draw mode (B): a drag over an automation curve draws the line freehand instead of moving points. */
+  drawMode: boolean;
   /** What the device panel shows: the selected track's chain or the master bus. */
   devicesFor: 'track' | 'master';
   /** Playhead when stopped (bars). */
@@ -73,6 +77,8 @@ let state: AppState = {
   extraClipIds: [],
   extraHead: null,
   multiSelect: false,
+  autoMode: false,
+  drawMode: false,
   devicesFor: 'track',
   cursor: 0,
   zoom: 56,

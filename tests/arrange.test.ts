@@ -94,6 +94,6 @@ describe('POST /api/arrange', () => {
     globalThis.fetch = jest.fn(async (url: string, init?: RequestInit) => (url.includes(':generateContent') ? new Response('busy', { status: 503 }) : inner(url, init))) as unknown as typeof fetch;
     const res = await POST(request({ prompt: 'x' }));
     expect(res.status).toBe(503);
-    expect(await res.text()).toContain('überlastet');
+    expect(await res.text()).toContain('überlastet (503)');
   });
 });

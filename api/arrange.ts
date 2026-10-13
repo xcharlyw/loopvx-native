@@ -42,6 +42,17 @@ Classic hard techno: intro 16, build 16, drop 32, break 16, build 8, drop 32, ou
 rumble = rolling sub rumble, offbeat = bouncy offbeat bass, reese = dark detuned reese, acid = 303 acid line;
 kit-rolling = busy rolling groove, kit-minimal = sparse, kit-techno = straight driving.`;
 
+/** The human part of a Google error body ({"error":{"message":...}}), cut short. */
+export function googleMessage(body: string): string {
+  try {
+    const m = (JSON.parse(body) as { error?: { message?: string } }).error?.message;
+    if (m) return m.slice(0, 300);
+  } catch {
+    // not JSON
+  }
+  return body.slice(0, 300);
+}
+
 export function buildUserText(b: Body): string {
   const tracks = (b.tracks ?? []).slice(0, 24).map((t) => `${String(t.name ?? '').slice(0, 40)} (${String(t.role ?? 'other').slice(0, 12)})`).join(', ');
   const lib = Object.entries(b.library ?? {}).map(([k, n]) => `${k}: ${Number(n) || 0}`).join(', ');
@@ -97,8 +108,10 @@ export async function POST(req: Request): Promise<Response> {
   }
   if (!res || !res.ok) {
     const status = res?.status ?? 502;
-    if ([429, 503].includes(status)) return text(503, 'Gemini ist gerade überlastet, bitte in einer Minute nochmal versuchen.');
-    return text(502, `Gemini (${status}): ${((await res?.text()) ?? '').slice(0, 500)}`);
+    const detail = googleMessage((await res?.text()) ?? '');
+    if (status === 429) return text(429, `Gemini-Limit erreicht (429): ${detail}`);
+    if (status === 503) return text(503, `Gemini ist gerade überlastet (503), bitte in einer Minute nochmal versuchen. ${detail}`);
+    return text(502, `Gemini (${status}) mit ${model}: ${detail}`);
   }
   const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
   const answer = (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');

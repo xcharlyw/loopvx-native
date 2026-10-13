@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { echoSeconds } from '../audio/devicemath';
 import { DEVICE_DEFS, deviceSummary, GROUP_LABELS, GROUP_ORDER, MAX_DEVICES, deviceParams, formatParam, type ParamDef } from '../audio/devices';
 import { DEVICE_PRESETS, presetOf, presetParams } from '../audio/devicepresets';
 import { presetById } from '../audio/presets';
-import { C, font } from '../constants/theme';
+import { C, font, mono } from '../constants/theme';
 import { MASTER_ID, addDevice, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
 import { setState, toast, updateProject, useStore } from '../lib/store';
 import type { Device, DeviceType, Track } from '../types';
 import { Close } from './icons';
 import { Btn, Chip, Txt } from './kit';
 import { Sheet } from './Sheet';
+import { PluginFrame, SKIN } from './skin';
 import { SpliceSearch } from './SpliceSearch';
 import { Card } from './synth/Tabs';
 import { Knob, KnobRow } from './synth/Knob';
@@ -47,6 +48,8 @@ const SCOPE_FILTER: FilterKind[] = ['lowpass', 'highpass', 'bandpass'];
  * clips, then the effects in signal order, each with a live picture and knobs. Effects can be bypassed,
  * moved and removed; everything happens on the running mix without restarting playback.
  */
+const CARD_W = 340;
+
 export function DevicePanel() {
   const forMaster = useStore((st) => st.devicesFor === 'master');
   const selected = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
@@ -71,7 +74,9 @@ export function DevicePanel() {
   const trackId = track.id;
   const devices = track.devices ?? [];
   const kind = trackKind(track);
-  const inner = Math.max(200, width - 26);
+  // A wide detail view (desktop) lays the chain out left to right like Live's device view.
+  const chain = width > 760;
+  const inner = chain ? CARD_W - 26 : Math.max(200, width - 26);
   const toggle = (id: string) => {
     const next = new Set(folded);
     if (!next.delete(id)) next.add(id);
@@ -102,7 +107,7 @@ export function DevicePanel() {
       <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
         <Txt style={s.sub}>{forMaster ? 'Master · Summe aller Spuren, vor dem Sicherheits-Limiter' : `${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : 'Audio-Spur'}`}</Txt>
 
-        {!forMaster && <Source track={track} kind={kind} />}
+        {!forMaster && !chain && <Source track={track} kind={kind} />}
 
         {devices.length > 1 && (
           <View style={s.foldRow}>
@@ -112,9 +117,18 @@ export function DevicePanel() {
           </View>
         )}
 
-        {devices.map((d, i) => (
-          <DeviceCard key={d.id} track={track} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
-        ))}
+        <ScrollView horizontal scrollEnabled={chain} contentContainerStyle={chain ? s.chain : s.stack} style={!chain && { overflow: 'visible' }}>
+          {chain && !forMaster && (
+            <View style={{ width: 220 }}>
+              <Source track={track} kind={kind} />
+            </View>
+          )}
+          {devices.map((d, i) => (
+            <View key={d.id} style={chain ? { width: CARD_W } : { alignSelf: 'stretch' }}>
+              <DeviceCard track={track} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
+            </View>
+          ))}
+        </ScrollView>
 
         {devices.length === 0 && <Txt style={[s.note, { marginBottom: 10 }]}>Noch keine Effekte. Füge Geräte hinzu: EQ, Compressor, Saturator, Echo, Reverb ...</Txt>}
 
@@ -233,7 +247,7 @@ function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, b
 
   return (
     <View style={dim && { opacity: 0.55 }}>
-      <View style={s.card}>
+      <PluginFrame style={s.card}>
         <View style={s.cardHead}>
           <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ${isFolded ? 'ausklappen' : 'einklappen'}`} accessibilityState={{ expanded: !isFolded }} onPress={onToggle} style={s.titleBox}>
             <Txt style={s.chevron}>{isFolded ? '▸' : '▾'}</Txt>
@@ -294,7 +308,7 @@ function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, b
             ))}
           </>
         )}
-      </View>
+      </PluginFrame>
     </View>
   );
 }
@@ -324,24 +338,26 @@ function Scope({ device, p, bpm, width }: { device: Device; p: Record<string, nu
 const s = StyleSheet.create({
   sub: { ...font(400), fontSize: 12, color: C.muted, marginBottom: 10 },
   presetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  presetName: { flex: 1, height: 30, borderRadius: 8, borderWidth: 1, borderColor: C.line, backgroundColor: '#0c0c0e', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
-  presetText: { ...font(600), fontSize: 13, color: C.accent },
+  presetName: { flex: 1, height: 30, borderRadius: 5, borderWidth: 1, borderColor: SKIN.lcdEdge, backgroundColor: SKIN.lcd, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
+  presetText: { ...mono(500), fontSize: 12, color: SKIN.lcdText, textShadowColor: 'rgba(198,255,61,0.55)', textShadowRadius: 6 },
   presetList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   foldRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
-  card: { backgroundColor: '#111114', borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12, marginBottom: 10 },
+  card: { padding: 12, marginBottom: 10 },
+  chain: { gap: 10, alignItems: 'flex-start' },
+  stack: { flexDirection: 'column', width: '100%' },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 36 },
   titleBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },
   chevron: { fontSize: 14, color: C.accent, width: 14 },
-  cardTitle: { ...font(700), fontSize: 10.5, letterSpacing: 1.4, color: C.muted },
+  cardTitle: { ...font(700), fontSize: 10.5, letterSpacing: 1.6, color: C.accent },
   summary: { ...font(400), fontSize: 11.5, color: C.text, marginTop: 2 },
   note: { color: C.muted, fontSize: 12, lineHeight: 17 },
   cap: { ...font(700), fontSize: 10, letterSpacing: 1.4, color: C.muted, marginBottom: 4 },
-  source: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111114', borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 12, marginBottom: 10 },
+  source: { flexDirection: 'row', alignItems: 'center', backgroundColor: SKIN.panelBottom, borderWidth: 1, borderColor: SKIN.edge, borderRadius: 12, padding: 12, marginBottom: 10 },
   sourceName: { ...font(700), fontSize: 15 },
   sourceSub: { ...font(400), fontSize: 11, color: C.muted, marginTop: 2 },
   open: { ...font(600), fontSize: 12, color: C.accent },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  small: { width: 30, height: 28, borderRadius: 8, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  small: { width: 30, height: 28, borderRadius: 5, borderWidth: 1, borderColor: '#3a3a42', backgroundColor: '#1c1c21', alignItems: 'center', justifyContent: 'center' },
   smallText: { fontSize: 11, color: C.text },
   disabled: { opacity: 0.35 },
   choice: { width: '100%', marginVertical: 6 },

@@ -20,13 +20,15 @@ interface Props {
   reset?: number;
   size?: number;
   color?: string;
+  /** Width of the cell (default 76); small knobs side by side in a mixer strip need less. */
+  width?: number;
 }
 
 /**
  * A rotary knob like the ones of a plugin synth: drag up or down to turn it (a long, calm travel for fine
  * control), double tap to reset. The arc shows the value; knobs around zero fill from 12 o'clock.
  */
-export function Knob({ label, value, min, max, onChange, format, curve = 'linear', step, reset, size = 58, color = C.accent }: Props) {
+export function Knob({ label, value, min, max, onChange, format, curve = 'linear', step, reset, size = 58, color = C.accent, width }: Props) {
   const [active, setActive] = useState(false);
   const gesture = useRef<{ t0: number; moved: boolean } | null>(null);
   const lastEmit = useRef<number | null>(null);
@@ -66,7 +68,7 @@ export function Knob({ label, value, min, max, onChange, format, curve = 'linear
   const tip = polar(c, c, r - 9, tToDeg(t));
   const base = polar(c, c, 6, tToDeg(t));
   return (
-    <View style={s.cell}>
+    <View style={[s.cell, width !== undefined && { width }]}>
       <View {...pan} accessibilityRole="adjustable" accessibilityLabel={`${label} ${format ? format(value) : value}`} style={[{ width: size, height: size }, web({ touchAction: 'none', cursor: 'ns-resize', userSelect: 'none' })]}>
         <Svg width={size} height={size} pointerEvents="none">
           <Path d={arcPath(c, c, r, -135, 135)} stroke={C.line} strokeWidth={4} strokeLinecap="round" fill="none" />

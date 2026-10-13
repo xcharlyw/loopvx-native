@@ -27,9 +27,10 @@ describe('placement on a wide screen (Live layout)', () => {
     expect(placementFor('piano', 'full', win, true)).toEqual({ docked: true, width: 1400, height: 414, detail: true });
     expect(placementFor('devices', 'half', win, true)).toEqual({ docked: true, width: 1400, height: 288, detail: true });
     expect(placementFor('clip', 'bar', win, true).height).toBe(BAR_HEIGHT);
+    expect(placementFor('mixer', 'full', win, true).height).toBe(558);
   });
   it('keeps the other panels and every panel on a phone as they were', () => {
-    expect(placementFor('mixer', 'full', win, true)).toEqual({ docked: false, width: 420, detail: false });
+    expect(placementFor('export', 'full', win, true)).toEqual({ docked: false, width: 420, detail: false });
     expect(placementFor('piano', 'full', { width: 390, height: 800 }, false)).toEqual({ docked: false, width: 390, detail: false });
   });
   it('sizes the browser column', () => {

@@ -19,6 +19,8 @@ interface Props {
   /** 1px track outline, as Chrome draws on a native (accent-color) range input. */
   trackBorderColor?: string;
   style?: StyleProp<ViewStyle>;
+  /** Vertical faders: a hardware console cap (a wide grooved block) instead of the round thumb. */
+  cap?: boolean;
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -31,14 +33,16 @@ export function Fader({
   onChange,
   vertical,
   length = 160,
-  thumbSize = 14,
+  thumbSize: thumbSizeProp = 14,
   thickness = 4,
   thumbColor = C.text,
   fillColor,
   trackColor = C.line,
   trackBorderColor,
   style,
+  cap,
 }: Props) {
+  const thumbSize = cap ? 18 : thumbSizeProp;
   const [size, setSize] = useState(0);
   const origin = useRef(0);
   const ratio = clamp01((value - min) / (max - min || 1));
@@ -64,7 +68,7 @@ export function Fader({
 
   const thumbPos = vertical ? (1 - ratio) * travel : ratio * travel;
   const cross = Math.max(thumbSize, thickness);
-  const box = vertical ? 28 : cross;
+  const box = vertical ? (cap ? 36 : 28) : cross;
   const b = trackBorderColor ? 1 : 0;
   const trackStyle = {
     position: 'absolute' as const,
@@ -79,7 +83,7 @@ export function Fader({
   return (
     <View
       // Chrome gives range inputs a 2px margin; the original layout includes it.
-      style={[vertical ? { width: 28, height: length, marginVertical: 2 } : { flex: 1, minWidth: 0, height: cross, marginHorizontal: 2 }, style]}
+      style={[vertical ? { width: box, height: length, marginVertical: 2 } : { flex: 1, minWidth: 0, height: cross, marginHorizontal: 2 }, style]}
       onLayout={(e) => setSize(vertical ? e.nativeEvent.layout.height : e.nativeEvent.layout.width)}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
@@ -101,7 +105,12 @@ export function Fader({
           }}
         />
       )}
-      {size > 0 && (
+      {size > 0 && cap && vertical && (
+        <View pointerEvents="none" style={[capStyle, { top: thumbPos }]}>
+          <View style={{ height: 2, backgroundColor: thumbColor, borderRadius: 1, marginHorizontal: 3 }} />
+        </View>
+      )}
+      {size > 0 && !(cap && vertical) && (
         <View
           pointerEvents="none"
           style={{
@@ -117,3 +126,23 @@ export function Fader({
     </View>
   );
 }
+
+/** The console fader cap: a dark grooved block with a lit centre line. */
+const capStyle: ViewStyle = {
+  position: 'absolute',
+  left: 1,
+  width: 34,
+  height: 18,
+  borderRadius: 3,
+  backgroundColor: '#3a3a42',
+  borderWidth: 1,
+  borderTopColor: '#6a6a74',
+  borderLeftColor: '#55555e',
+  borderRightColor: '#25252b',
+  borderBottomColor: '#1c1c21',
+  justifyContent: 'center',
+  shadowColor: '#000',
+  shadowOpacity: 0.6,
+  shadowRadius: 4,
+  shadowOffset: { width: 0, height: 2 },
+};

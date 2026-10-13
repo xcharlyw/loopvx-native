@@ -99,6 +99,15 @@ types "∫" on a Mac); named keys check Shift only when the spec sets it. Shortc
 page, so tracks also have Alt+T / Alt+Shift+T and a new project is Cmd/Ctrl+Alt+N. Own additions (no Live default): Cmd+Shift+K metronome, Cmd+Shift+L loop on/off, Cmd+I marker,
 ↑/↓ select track, ? shortcut list. Keys typed into inputs are ignored; Space on a focused button is left to the button.
 
+## Plugin skin (mixer and device cards)
+
+`src/ui/skin.tsx`: `PluginFrame` (vertical gradient panel with a lit top edge, `SKIN` colours), `Lcd` (green-on-black read-out), `LedMeter` (segmented ladder -48..+3 dB, yellow
+from -6, red above 0, peak hold 1.2 s; pure `ledSegments`, tested), `FaderScale` (dB marks for a linear-gain fader). `Fader` has `cap` (a console fader cap); `Knob` has `width`
+for narrow cells. **Mixer** (`MixerPanel`): one console strip per track (name LCD, Hall/Delay send knobs = `fx.reverb`/`fx.delay`, Pan knob, cap fader + scale + LED meter, dB LCD,
+M/S hardware buttons, FX button, number) and the master strip at the right end (clip LED, master fader, Master-FX, metronome). On a wide screen the mixer is a detail panel
+(docked at the bottom, 62 % high). **Device cards** use `PluginFrame`, accent titles and an LCD preset name; with more than 760 px they line up left to right after the
+source card (Live's device chain), otherwise they stack.
+
 ## Panel sizes (Sheet)
 
 The panels are no longer in a `Modal` but in an overlay inside `Shell` (`App.tsx`), so they can dock. `state.sheetSize` (`full` | `half` | `bar`, kept while the app runs, shared by all panels):
@@ -108,7 +117,7 @@ The panels are no longer in a `Modal` but in an overlay inside `Shell` (`App.tsx
 pure `sheetLayout.ts` (tested): half = 42 % of the screen height (240..440 px), width 560 max, on the right on wide screens. The Android back button closes the panel (`BackHandler`).
 **Live layout on wide screens** (web, above the 720 px breakpoint, `menuBar` in `Shell`): the Library is not a panel but Live's **browser column** on the left (`state.browserOpen`,
 `browserWidth`, toggled by `toggleBrowser` = ⌥⌘B / the TopBar "Library" pill; a `panel: 'library'` from anywhere is redirected to it). It renders `LibraryPanel` inside
-`SheetPlace` (`Sheet.tsx` context: no size arrows, its ✕ closes the column). The **detail panels** (`DETAIL_PANELS`: clip, piano, devices, instrument, automation) dock at
+`SheetPlace` (`Sheet.tsx` context: no size arrows, its ✕ closes the column). The **detail panels** (`DETAIL_PANELS`: clip, piano, devices, instrument, automation, mixer) dock at
 the bottom across the width right of the browser (`placementFor`: full = 46 %, half = 32 % of the height, bar), so the arrangement stays above them; the other panels
 (mixer, export, projects, track …) keep the right side sheet. Phones are unchanged.
 Pitfall: with react-native-web a style `{ top: undefined }` does not override an earlier `top: 0` (that put the docked sheet at the top): build separate style objects.

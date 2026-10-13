@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
-import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { C, font } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { mapTrack } from '../lib/project';
 import { setMetronome, setState, updateProject, useStore } from '../lib/store';
 import { Fader } from './Fader';
 import { Metronome } from './icons';
-import { Chip, Mono, MsButton, Section, Txt } from './kit';
+import { trackFx } from '../audio/fx';
+import type { Track } from '../types';
+import { Txt } from './kit';
+import { FaderScale, Lcd, LedMeter, PluginFrame, SKIN } from './skin';
+import { Knob } from './synth/Knob';
 import { Sheet } from './Sheet';
 
 function useLevel(): number {
@@ -63,38 +66,60 @@ function useTrackLevels(ids: string[]): Record<string, number> {
   return levels;
 }
 
-/** A thin vertical meter next to a track's fader. */
-function StripMeter({ level, height }: { level: number; height: number }) {
-  const h = Math.min(1, level) * height;
-  return (
-    <View style={[s.stripMeter, { height }]}>
-      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: h, backgroundColor: level >= 0.99 ? C.danger : level > 0.7 ? '#ffd23d' : C.accent }} />
-    </View>
-  );
-}
-
 const toDb = (g: number) => (g <= 0.0001 ? '-∞' : `${(20 * Math.log10(g)).toFixed(1)} dB`);
 
-/** `.meter`: gradient from accent through yellow to red, revealed up to the level. */
-function Meter({ level }: { level: number }) {
-  const [w, setW] = useState(0);
+const FADER_H = 150;
+const panText = (v: number) => (Math.abs(v) < 0.02 ? 'C' : v < 0 ? `${Math.round(-v * 50)}L` : `${Math.round(v * 50)}R`);
+const pct = (v: number) => `${Math.round(v * 100)}`;
+
+/** One channel strip in the console look: sends, pan, console fader with LED meter, dB read-out, mute/solo, devices. */
+function Strip({ track, level, index }: { track: Track; level: number; index: number }) {
+  const fx = trackFx(track.fx);
+  const set = (patch: Partial<Track['fx']>) => updateProject((p) => mapTrack(p, track.id, (x) => ({ ...x, fx: { ...x.fx, ...patch } })), { reschedule: false });
+  const selected = useStore((st) => st.selectedTrackId === track.id);
   return (
-    <View style={s.meter} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
-      <View style={{ width: `${Math.min(100, level * 100)}%`, height: '100%', overflow: 'hidden' }}>
-        {w > 0 && (
-          <Svg width={w} height={8}>
-            <Defs>
-              <LinearGradient id="m" x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0" stopColor={C.accent} />
-                <Stop offset="0.8" stopColor="#ffd23d" />
-                <Stop offset="1" stopColor="#ff5a36" />
-              </LinearGradient>
-            </Defs>
-            <Rect width={w} height={8} fill="url(#m)" />
-          </Svg>
-        )}
+    <PluginFrame style={[s.strip, selected && { borderColor: C.accent }]}>
+      <View style={[s.colorBar, { backgroundColor: track.color }]} />
+      <Pressable onPress={() => setState({ selectedTrackId: track.id })} accessibilityLabel={`Kanal ${track.name}`}>
+        <Lcd style={{ marginHorizontal: 6 }} textStyle={{ fontSize: 10 }}>
+          {track.name}
+        </Lcd>
+      </Pressable>
+      <View style={s.knobs}>
+        <Knob label="Hall" value={fx.reverb} min={0} max={1} size={30} width={42} reset={0} format={pct} color={SKIN.solo} onChange={(v) => set({ reverb: Math.round(v * 100) / 100 })} />
+        <Knob label="Delay" value={fx.delay} min={0} max={1} size={30} width={42} reset={0} format={pct} color={SKIN.solo} onChange={(v) => set({ delay: Math.round(v * 100) / 100 })} />
       </View>
-    </View>
+      <Knob label="Pan" value={fx.pan} min={-1} max={1} size={32} width={80} reset={0} format={panText} onChange={(v) => set({ pan: Math.abs(v) < 0.04 ? 0 : Math.round(v * 100) / 100 })} />
+      <View style={s.faderRow}>
+        <FaderScale max={1.5} height={FADER_H} />
+        <Fader
+          vertical
+          cap
+          length={FADER_H}
+          thickness={4}
+          thumbColor={track.color}
+          trackColor={SKIN.slot}
+          trackBorderColor="#2a2a30"
+          value={track.volume}
+          max={1.5}
+          onChange={(v) => updateProject((p) => mapTrack(p, track.id, (x) => ({ ...x, volume: v })), { reschedule: false })}
+        />
+        <LedMeter level={level} height={FADER_H} />
+      </View>
+      <Lcd style={{ marginHorizontal: 6 }}>{toDb(track.volume)}</Lcd>
+      <View style={s.msRow}>
+        <Pressable accessibilityLabel={`${track.name} stumm`} onPress={() => updateProject((p) => mapTrack(p, track.id, (x) => ({ ...x, muted: !x.muted })), { reschedule: false })} style={[s.hwBtn, track.muted && { backgroundColor: C.mute, borderColor: C.mute }]}>
+          <Txt style={[s.hwBtnText, track.muted && { color: C.accentInk }]}>M</Txt>
+        </Pressable>
+        <Pressable accessibilityLabel={`${track.name} solo`} onPress={() => updateProject((p) => mapTrack(p, track.id, (x) => ({ ...x, solo: !x.solo })), { reschedule: false })} style={[s.hwBtn, track.solo && { backgroundColor: SKIN.solo, borderColor: SKIN.solo }]}>
+          <Txt style={[s.hwBtnText, track.solo && { color: C.accentInk }]}>S</Txt>
+        </Pressable>
+      </View>
+      <Pressable accessibilityLabel={`Geräte von ${track.name}`} onPress={() => setState({ selectedTrackId: track.id, devicesFor: 'track', panel: 'devices' })} style={[s.fxBtn, !!track.devices?.length && s.fxBtnOn]}>
+        <Txt style={[s.fxBtnText, !!track.devices?.length && { color: C.accentInk }]}>{track.devices?.length ? `FX ${track.devices.length}` : 'FX +'}</Txt>
+      </Pressable>
+      <Txt style={s.number}>{index + 1}</Txt>
+    </PluginFrame>
   );
 }
 
@@ -108,105 +133,71 @@ export function MixerPanel() {
 
   return (
     <Sheet title="Mixer">
-      <Section title="Master">
-        <Meter level={level} />
-        <View style={[s.row, { marginTop: 10 }]}>
-          <Fader
-            value={master}
-            max={1.2}
-            onChange={(v) => {
-              setMaster(v);
-              engine.setMasterVolume(v);
-            }}
-          />
-          <Mono style={s.db}>{toDb(master)}</Mono>
-        </View>
-        {level >= 0.99 && <Txt style={s.clip}>Clipping! Spuren leiser machen.</Txt>}
-        <View style={[s.row, { marginTop: 10 }]}>
-          <Chip variant={masterFx ? 'on' : 'ghost'} accessibilityLabel="Master-Geräte" onPress={() => setState({ devicesFor: 'master', panel: 'devices' })} textStyle={{ fontSize: 12 }}>
-            {masterFx ? `Master-FX ${masterFx}` : 'Master-FX +'}
-          </Chip>
-          <Txt style={s.noteInline}>EQ, Kompressor oder Limiter auf der Summe aller Spuren.</Txt>
-        </View>
-        <View style={[s.row, { marginTop: 12 }]}>
-          <Chip variant={metronome ? 'on' : 'ghost'} onPress={() => setMetronome(!metronome)}>
-            <Metronome size={14} color={metronome ? C.accentInk : C.text} />
-            {metronome ? 'Metronom an' : 'Metronom aus'}
-          </Chip>
-        </View>
-      </Section>
-
-      <ScrollView horizontal contentContainerStyle={s.mixer}>
-        {project.tracks.map((t) => (
-          <View key={t.id} style={s.strip}>
-            <View style={[s.stripName, { borderTopColor: t.color }]}>
-              <Txt numberOfLines={1} style={s.stripNameText}>
-                {t.name}
-              </Txt>
+      <View style={s.console}>
+        <ScrollView horizontal contentContainerStyle={s.mixer}>
+          {project.tracks.map((t, i) => (
+            <Strip key={t.id} track={t} index={i} level={trackLevels[t.id] ?? 0} />
+          ))}
+          <PluginFrame style={[s.strip, s.masterStrip]}>
+            <View style={[s.colorBar, { backgroundColor: C.accent }]} />
+            <Lcd style={{ marginHorizontal: 6 }} textStyle={{ fontSize: 10 }}>
+              MASTER
+            </Lcd>
+            <View style={[s.clipLed, level >= 0.99 && { backgroundColor: SKIN.red, shadowColor: SKIN.red, shadowOpacity: 0.9, shadowRadius: 6 }]}>
+              <Txt style={s.clipLedText}>CLIP</Txt>
             </View>
-            <View style={s.faderRow}>
-            <Fader
-              vertical
-              length={160}
-              thumbSize={16}
-              thickness={8}
-              thumbColor={C.accent}
-              fillColor={C.accent}
-              trackColor="#3b3b3b"
-              trackBorderColor="#858585"
-              value={t.volume}
-              max={1.5}
-              onChange={(v) => updateProject((p) => mapTrack(p, t.id, (x) => ({ ...x, volume: v })), { reschedule: false })}
-            />
-            <StripMeter level={trackLevels[t.id] ?? 0} height={160} />
-            </View>
-            <Mono style={s.stripDb}>{toDb(t.volume)}</Mono>
-            <View style={s.msRow}>
-              <MsButton
-                label="M"
-                on={t.muted}
-                onPress={() => updateProject((p) => mapTrack(p, t.id, (x) => ({ ...x, muted: !x.muted })), { reschedule: false })}
+            <View style={[s.faderRow, { marginTop: 'auto' }]}>
+              <FaderScale max={1.2} height={FADER_H} />
+              <Fader
+                vertical
+                cap
+                length={FADER_H}
+                thickness={4}
+                thumbColor={C.accent}
+                trackColor={SKIN.slot}
+                trackBorderColor="#2a2a30"
+                value={master}
+                max={1.2}
+                onChange={(v) => {
+                  setMaster(v);
+                  engine.setMasterVolume(v);
+                }}
               />
-              <MsButton
-                label="S"
-                on={t.solo}
-                onPress={() => updateProject((p) => mapTrack(p, t.id, (x) => ({ ...x, solo: !x.solo })), { reschedule: false })}
-              />
+              <LedMeter level={level} height={FADER_H} width={9} />
             </View>
-            <Chip variant={t.devices?.length ? 'on' : 'ghost'} onPress={() => setState({ selectedTrackId: t.id, devicesFor: 'track', panel: 'devices' })} textStyle={{ fontSize: 11 }}>
-              {t.devices?.length ? `FX ${t.devices.length}` : 'FX +'}
-            </Chip>
-          </View>
-        ))}
-      </ScrollView>
-      <Txt style={s.note}>Startwerte für Hard Techno: Kick + Bass 0 dB, Top Loop −6 dB, Vocals −6 dB, Synth −9 dB.</Txt>
+            <Lcd style={{ marginHorizontal: 6 }}>{toDb(master)}</Lcd>
+            <Pressable accessibilityLabel="Master-Geräte" onPress={() => setState({ devicesFor: 'master', panel: 'devices' })} style={[s.fxBtn, !!masterFx && s.fxBtnOn]}>
+              <Txt style={[s.fxBtnText, !!masterFx && { color: C.accentInk }]}>{masterFx ? `FX ${masterFx}` : 'FX +'}</Txt>
+            </Pressable>
+            <Pressable accessibilityLabel="Metronom" onPress={() => setMetronome(!metronome)} style={[s.fxBtn, metronome && s.fxBtnOn]}>
+              <Metronome size={13} color={metronome ? C.accentInk : C.text} />
+            </Pressable>
+          </PluginFrame>
+        </ScrollView>
+      </View>
+      {level >= 0.99 && <Txt style={s.clip}>Clipping auf dem Master: Spuren leiser machen.</Txt>}
+      <Txt style={s.note}>Regler: ziehen nach oben/unten, Doppeltipp setzt zurück. Hall und Delay sind die Sends der Spur. Startwerte für Hard Techno: Kick + Bass 0 dB, Top Loop −6 dB, Vocals −6 dB, Synth −9 dB.</Txt>
     </Sheet>
   );
 }
 
 const s = StyleSheet.create({
-  meter: { height: 8, borderRadius: 4, backgroundColor: C.line, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  db: { width: 64, textAlign: 'right', color: C.muted },
   clip: { color: C.danger, fontSize: 12, marginTop: 8 },
-  mixer: { gap: 10, paddingBottom: 6 },
-  strip: {
-    width: 88,
-    backgroundColor: C.panel,
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    gap: 8,
-  },
-  stripName: { alignSelf: 'stretch', borderTopWidth: 3, paddingTop: 6 },
-  stripNameText: { ...font(600), fontSize: 11, textAlign: 'center' },
-  stripDb: { fontSize: 11, color: C.muted },
-  msRow: { flexDirection: 'row', gap: 4 },
+  console: { backgroundColor: '#09090b', borderRadius: 14, borderWidth: 1, borderColor: C.lineSoft, padding: 8 },
+  mixer: { gap: 6 },
+  strip: { width: 96, paddingTop: 0, paddingBottom: 8, alignItems: 'center', gap: 4 },
+  masterStrip: { width: 104, borderColor: '#4a5a1c' },
+  colorBar: { alignSelf: 'stretch', height: 4, marginBottom: 4 },
+  knobs: { flexDirection: 'row', justifyContent: 'center' },
+  faderRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  msRow: { flexDirection: 'row', gap: 6 },
+  hwBtn: { width: 34, height: 24, borderRadius: 5, borderWidth: 1, borderColor: '#3a3a42', backgroundColor: '#1c1c21', alignItems: 'center', justifyContent: 'center' },
+  hwBtnText: { ...font(700), fontSize: 11, color: C.text },
+  fxBtn: { alignSelf: 'stretch', marginHorizontal: 8, height: 24, borderRadius: 5, borderWidth: 1, borderColor: '#3a3a42', backgroundColor: '#1c1c21', alignItems: 'center', justifyContent: 'center' },
+  fxBtnOn: { backgroundColor: C.accent, borderColor: C.accent },
+  fxBtnText: { ...font(700), fontSize: 10, color: C.text, letterSpacing: 0.5 },
+  number: { ...font(600), fontSize: 9, color: C.dim },
+  clipLed: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 3, backgroundColor: '#3a1414' },
+  clipLedText: { ...font(700), fontSize: 8, color: '#ffffffcc', letterSpacing: 1 },
   note: { color: C.muted, fontSize: 12, marginTop: 12, lineHeight: 17 },
-  noteInline: { color: C.muted, fontSize: 11, flex: 1 },
-  faderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stripMeter: { width: 5, borderRadius: 3, backgroundColor: C.line, overflow: 'hidden' },
 });

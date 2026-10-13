@@ -216,7 +216,7 @@ Track order: `moveTrack(project, id, delta)` (pure, tested), buttons "▲ Nach o
 
 `Track.devices` is the chain after the instrument/clips and before the DJ filter, drive, pan and fader:
 `input -> devices -> hp -> lp -> drive -> pan -> pump -> fader`. Types: EQ, Compressor, Saturator, Echo, Reverb,
-Chorus, Filter (with LFO), Limiter, Utility. `devices.ts` is the registry (`DEVICE_DEFS`: key, range, default,
+Chorus, Filter (with LFO), Limiter, Utility, Transient Shaper, Kickstart, ShaperBox. `devices.ts` is the registry (`DEVICE_DEFS`: key, range, default,
 unit, how a knob shows it; `deviceParams` clamps/snaps and fills defaults, so projects stay safe), `devicemath.ts`
 the pure maths (biquad responses incl. peaking/shelves = Chromium's `getFrequencyResponse` to 0.000 dB, compressor
 gain computer, saturator curves, echo times), `devicenodes.ts` the Web Audio graph of each device, `devicebay.ts`
@@ -240,6 +240,20 @@ Constraints learned the hard way:
 - Filters parked "off" must be neutral: a lowpass above Nyquist is flat (`LP_OFF`), a highpass at 5 Hz.
 - Not verified on a phone natively: feedback loops through DelayNodes (echo, compressor detector, chorus feedback) and
   4x oversampling on shapers are standard Web Audio; if a native build misbehaves, look there first.
+
+## Transient Shaper, Kickstart, ShaperBox
+
+Three more devices (pure maths in `audio/rhythmmath.ts`, tested; nodes in `devicenodes.ts`; factory presets).
+- **Transient Shaper** (`transient`: Attack / Sustain −100..+100 %, Tempo, Output): a fast follower (rectifier → lowpass ~160 Hz) and a slow one (rectifier →
+  `peakFollower` hold loop with ~300 ms release → lowpass ~12 Hz), both through a log waveshaper (`logCurve`), subtracted; `transientCurve` turns the dB difference
+  into the VCA gain (`transientGainDb`: ±12 dB max). Two plain lowpasses fell together in the decay and saw no sustain: the slow side needs the hold. Measured
+  offline on 909 kicks: Attack +100 lifts the hit 0.27 → 0.47, Sustain −100 drops the tail 0.008 → 0.002, +100 lifts it to 0.034, 0/0 is neutral.
+- **Kickstart** (`kickstart`: Kurve 1 of 8, Rate, Mix) and **ShaperBox** (`shaper`: Ziel Volume / Filter / Pan, Shape incl. gates, Rate, Tiefe, Filter offen) are
+  **tempo-synced**: a `DeviceNode` may have `rhythm(p, env)` / `resetRhythm()`. `MixGraph.schedulePump` calls `TrackChain.scheduleRhythm` (and the master bay) for every
+  window, live and offline, also in session mode; each cycle on the bar grid (`cycleStarts`, `RATE_BARS`) gets one `setValueCurveAtTime` (98 % of the cycle so curves
+  never overlap; cycles already begun are skipped); `resetPump` cancels them. Gates fade their edges over 3 % of a step (only after an off step: a fade between two on
+  steps clicked). Measured offline: Kickstart Classic 1/4 at 100 % ducks the beat start to 22 %; the Trance-Gate follows its pattern; Filter Saw closes (0.054 → 0.018);
+  Pan sine swings R ↔ L. Cards show `CycleScope` / `TransientScope` (`synth/DeviceScopes.tsx`).
 
 ## Live playback scheduling
 

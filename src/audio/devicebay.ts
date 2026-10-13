@@ -1,7 +1,7 @@
 import type { AudioNode, BaseAudioContext, GainNode } from 'react-native-audio-api';
 import type { Device } from '../types';
 import { deviceParams } from './devices';
-import { buildDevice, setParam, type DeviceNode, type DeviceParam } from './devicenodes';
+import { buildDevice, setParam, type DeviceNode, type DeviceParam, type RhythmEnv } from './devicenodes';
 
 /** One device in the chain: its nodes, plus a bypass path so switching it off is a click-free crossfade. */
 class Slot {
@@ -52,6 +52,15 @@ class Slot {
     if (device) this.node.update(deviceParams(device), { bpm, smooth: true });
   }
 
+  /** Tempo-synced devices (Kickstart, ShaperBox): schedule one window. Off devices are skipped (the bypass carries the sound). */
+  rhythm(device: Device, env: RhythmEnv) {
+    if (device.on && this.node.rhythm) this.node.rhythm(deviceParams(device), env);
+  }
+
+  resetRhythm() {
+    this.node.resetRhythm?.();
+  }
+
   dispose() {
     this.node.dispose();
     for (const n of [this.input, this.output, this.inner, this.bypass]) n.disconnect();
@@ -85,6 +94,15 @@ export class DeviceBay {
   /** The slot of a device, for automation. */
   slot(id: string): Slot | undefined {
     return this.slots.find((s) => s.id === id);
+  }
+
+  /** Schedule the tempo-synced devices of the chain for one window. */
+  scheduleRhythm(devices: Device[] | undefined, env: RhythmEnv) {
+    for (const d of devices ?? []) this.slot(d.id)?.rhythm(d, env);
+  }
+
+  resetRhythm() {
+    for (const s of this.slots) s.resetRhythm();
   }
 
   /** Every automated slot back to its device's values (`devices` = the chain as it is now). */

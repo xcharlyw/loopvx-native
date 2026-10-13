@@ -1,9 +1,10 @@
 import type { Device, DeviceType } from '../types';
+import { KICKSTART_CURVES, RHYTHM_RATES, SHAPER_SHAPES, SHAPER_TARGETS } from './rhythmmath';
 
 // The device chain's data: which effects exist, their parameters (range, default, how a knob shows them) and
 // how a device is created. Pure; `devicemath.ts` has the numbers behind them, `devicenodes.ts` the Web Audio graph.
 
-export type ParamUnit = 'hz' | 'db' | 'pct' | 'ms' | 'sec' | 'ratio' | 'oct' | 'pan' | 'hzfree' | 'enum' | 'switch';
+export type ParamUnit = 'hz' | 'db' | 'pct' | 'pct100' | 'ms' | 'sec' | 'ratio' | 'oct' | 'pan' | 'hzfree' | 'enum' | 'switch';
 
 export interface ParamDef {
   key: string;
@@ -149,6 +150,42 @@ export const DEVICE_DEFS: Record<DeviceType, DeviceDef> = {
       P('lfoDepth', 'LFO Tiefe', 0, 4, 0, 'oct'),
     ],
   },
+  transient: {
+    type: 'transient',
+    label: 'Transient Shaper',
+    blurb: 'Attack betonen oder zähmen, Ausklang länger oder kürzer',
+    group: 'dynamics',
+    params: [
+      P('attack', 'Attack', -100, 100, 0, 'pct100', { step: 1 }),
+      P('sustain', 'Sustain', -100, 100, 0, 'pct100', { step: 1 }),
+      P('speed', 'Tempo', 0, 1, 0.5, 'pct'),
+      P('out', 'Output', -12, 12, 0, 'db', { step: 0.5 }),
+    ],
+  },
+  kickstart: {
+    type: 'kickstart',
+    label: 'Kickstart',
+    blurb: 'Sidechain-Pumpen im Takt, ohne Sidechain-Kabel',
+    group: 'dynamics',
+    params: [
+      P('curve', 'Kurve', 0, KICKSTART_CURVES.length - 1, 0, 'enum', { step: 1, options: KICKSTART_CURVES }),
+      P('rate', 'Rate', 0, RHYTHM_RATES.length - 1, 2, 'enum', { step: 1, options: RHYTHM_RATES }),
+      P('mix', 'Mix', 0, 1, 0.8, 'pct'),
+    ],
+  },
+  shaper: {
+    type: 'shaper',
+    label: 'ShaperBox',
+    blurb: 'LFO-Shapes im Takt auf Volume, Filter oder Pan',
+    group: 'utility',
+    params: [
+      P('target', 'Ziel', 0, SHAPER_TARGETS.length - 1, 0, 'enum', { step: 1, options: SHAPER_TARGETS }),
+      P('shape', 'Shape', 0, SHAPER_SHAPES.length - 1, 0, 'enum', { step: 1, options: SHAPER_SHAPES }),
+      P('rate', 'Rate', 0, RHYTHM_RATES.length - 1, 2, 'enum', { step: 1, options: RHYTHM_RATES }),
+      P('depth', 'Tiefe', 0, 1, 0.7, 'pct'),
+      P('cutoff', 'Filter offen', 200, 18000, 12000, 'hz', { curve: 'log' }),
+    ],
+  },
   limiter: {
     type: 'limiter',
     label: 'Limiter',
@@ -224,6 +261,8 @@ export function formatParam(def: ParamDef, v: number): string {
       return `${v > 0 ? '+' : ''}${dec(v, Math.abs(v) < 10 && def.step !== 1 ? 1 : 0)} dB`;
     case 'pct':
       return `${Math.round(v * 100)} %`;
+    case 'pct100':
+      return `${v > 0 ? '+' : ''}${Math.round(v)} %`;
     case 'ms':
       return v >= 100 ? `${Math.round(v)} ms` : `${dec(v, 1)} ms`;
     case 'sec':
@@ -279,6 +318,12 @@ export function deviceSummary(device: Pick<Device, 'type' | 'params'>): string {
       return `Gain ${f('gain')} · Ceiling ${f('ceiling')}`;
     case 'splice':
       return 'Katalog-Suche';
+    case 'transient':
+      return `Attack ${f('attack')} · Sustain ${f('sustain')}`;
+    case 'kickstart':
+      return `${f('curve')} · ${f('rate')} · ${f('mix')}`;
+    case 'shaper':
+      return `${f('target')} · ${f('shape')} · ${f('rate')}`;
     case 'utility':
       return `${f('gain')}${Math.abs(p.pan) > 0.005 ? ` · ${f('pan')}` : ''}${p.invert >= 0.5 ? ' · Phase' : ''}`;
   }

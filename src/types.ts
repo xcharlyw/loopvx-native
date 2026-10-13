@@ -130,7 +130,7 @@ export interface AutomationLane {
 }
 
 /** Effects that can sit in a track's device chain (after the instrument or the audio clips). */
-export type DeviceType = 'eq' | 'comp' | 'sat' | 'echo' | 'reverb' | 'chorus' | 'filter' | 'limiter' | 'utility' | 'splice';
+export type DeviceType = 'eq' | 'comp' | 'sat' | 'echo' | 'reverb' | 'chorus' | 'filter' | 'limiter' | 'utility' | 'splice' | 'transient' | 'kickstart' | 'shaper';
 
 export interface Device {
   id: string;

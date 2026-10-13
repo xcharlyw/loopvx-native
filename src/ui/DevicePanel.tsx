@@ -15,7 +15,8 @@ import { PluginFrame, SKIN } from './skin';
 import { SpliceSearch } from './SpliceSearch';
 import { Card } from './synth/Tabs';
 import { Knob, KnobRow } from './synth/Knob';
-import { CompScope, EchoScope, EqScope, LimiterScope, ReverbScope, SatScope } from './synth/DeviceScopes';
+import { CompScope, CycleScope, EchoScope, EqScope, LimiterScope, ReverbScope, SatScope, TransientScope } from './synth/DeviceScopes';
+import { KICKSTART_CURVES, RHYTHM_RATES, SHAPER_SHAPES, SHAPER_TARGETS, kickstartCurve, shaperShape } from '../audio/rhythmmath';
 import { FilterScope } from './synth/Scopes';
 import type { FilterKind } from '../audio/scopes';
 
@@ -330,6 +331,12 @@ function Scope({ device, p, bpm, width }: { device: Device; p: Record<string, nu
       return <FilterScope type={SCOPE_FILTER[Math.round(p.type)] ?? 'lowpass'} cutoff={p.cutoff} resonance={p.type === 2 ? 0.5 + p.res * 0.6 : p.res} width={width} />;
     case 'limiter':
       return <LimiterScope gain={p.gain} ceiling={p.ceiling} width={width} />;
+    case 'transient':
+      return <TransientScope attack={p.attack} sustain={p.sustain} width={width} />;
+    case 'kickstart':
+      return <CycleScope values={kickstartCurve(p.curve, p.mix, 64)} label={`${KICKSTART_CURVES[Math.round(p.curve)]} · ${RHYTHM_RATES[Math.round(p.rate)]}`} width={width} />;
+    case 'shaper':
+      return <CycleScope values={Array.from({ length: 128 }, (_, i) => 1 - p.depth * (1 - shaperShape(p.shape, i / 128)))} label={`${SHAPER_TARGETS[Math.round(p.target)]} · ${SHAPER_SHAPES[Math.round(p.shape)]} · ${RHYTHM_RATES[Math.round(p.rate)]}`} cycles={2} width={width} />;
     default:
       return null;
   }

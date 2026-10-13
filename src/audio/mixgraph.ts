@@ -5,6 +5,7 @@ import { pumpHits } from '../lib/sidechain';
 import type { AutoParam, Device, Project, Track } from '../types';
 import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
 import { DeviceBay } from './devicebay';
+import type { RhythmEnv } from './devicenodes';
 import { secondsPerBar } from './timing';
 
 /** Oversampling keeps a shaper's harmonics from folding back as inharmonic hash; not every platform has it. */
@@ -163,6 +164,15 @@ class TrackChain {
     this.bay.slot(device.id)?.automate(device, override, bpm, at, ramp);
   }
 
+  /** Tempo-synced devices of this track (Kickstart, ShaperBox) for one window. */
+  scheduleRhythm(track: Track, env: RhythmEnv) {
+    this.bay.scheduleRhythm(track.devices, env);
+  }
+
+  resetRhythm() {
+    this.bay.resetRhythm();
+  }
+
   resetAutomation() {
     if (this.lastApply) this.bay.resetAutomation(this.lastApply.track.devices, this.lastApply.bpm);
     if (!this.automated.size) return;
@@ -248,6 +258,9 @@ export class MixGraph {
    */
   schedulePump(project: Project, time: number, fromBar: number, toBar: number, automation = true) {
     if (automation) this.scheduleAutomation(project, time, fromBar, toBar);
+    const env = { bpm: project.bpm, time, fromBar, toBar };
+    for (const t of project.tracks) if (t.devices?.some((d) => d.type === 'kickstart' || d.type === 'shaper')) this.chain(t).scheduleRhythm(t, env);
+    this.masterBay.scheduleRhythm(project.master?.devices, env);
     const pumped = project.tracks.filter((t) => trackFx(t.fx).pump > 0);
     if (!pumped.length) return;
     const spb = secondsPerBar(project.bpm);
@@ -302,6 +315,8 @@ export class MixGraph {
   /** Drop all pump and automation events (transport stopped or rescheduled). */
   resetPump() {
     for (const c of this.chains.values()) c.resetAutomation();
+    for (const c of this.chains.values()) c.resetRhythm();
+    this.masterBay.resetRhythm();
     const now = this.ctx.currentTime;
     for (const c of this.chains.values()) {
       c.pump.gain.cancelScheduledValues(0);

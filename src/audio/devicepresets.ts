@@ -14,6 +14,32 @@ const P = (id: string, name: string, params: Record<string, number> = {}): Devic
 
 export const DEVICE_PRESETS: Record<DeviceType, DevicePreset[]> = {
   splice: [P('default', 'Standard')],
+  transient: [
+    P('default', 'Standard'),
+    P('kick-punch', 'Kick Punch', { attack: 60, sustain: -20 }),
+    P('tight-drums', 'Tight Drums', { attack: 30, sustain: -60, speed: 0.7 }),
+    P('snare-crack', 'Snare Crack', { attack: 80, sustain: 0, speed: 0.8 }),
+    P('soften', 'Weich', { attack: -60, sustain: 20 }),
+    P('room', 'Mehr Raum', { attack: 0, sustain: 70, speed: 0.3 }),
+  ],
+  kickstart: [
+    P('default', 'Standard'),
+    P('classic-full', 'Classic 100 %', { curve: 0, mix: 1 }),
+    P('rumble-pump', 'Rumble Pump', { curve: 1, mix: 0.9 }),
+    P('pad-breathe', 'Pad Atmen', { curve: 2, mix: 0.7 }),
+    P('hard-gate', 'Hard Gate', { curve: 6, mix: 1 }),
+    P('half-time', 'Halftime', { curve: 3, rate: 3, mix: 0.8 }),
+    P('subtle', 'Dezent', { curve: 0, mix: 0.4 }),
+  ],
+  shaper: [
+    P('default', 'Standard'),
+    P('trance-gate', 'Trance Gate', { target: 0, shape: 6, rate: 4, depth: 1 }),
+    P('sixteenths', '1/16 Chop', { target: 0, shape: 5, rate: 4, depth: 0.9 }),
+    P('filter-wobble', 'Filter Wobble', { target: 1, shape: 2, rate: 2, depth: 0.6, cutoff: 6000 }),
+    P('filter-saw', 'Filter Saw', { target: 1, shape: 0, rate: 3, depth: 0.8, cutoff: 9000 }),
+    P('auto-pan', 'Auto Pan', { target: 2, shape: 2, rate: 4, depth: 0.7 }),
+    P('offbeat-duck', 'Offbeat', { target: 0, shape: 7, rate: 4, depth: 1 }),
+  ],
   eq: [
     P('default', 'Standard'),
     P('lowcut-30', 'Low Cut 30 Hz', { hp: 30 }),

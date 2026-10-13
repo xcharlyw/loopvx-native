@@ -17,6 +17,7 @@ import {
   satPreGain,
 } from './devicemath';
 import { limiterCurve, reverbImpulse } from './fx';
+import { RATE_BARS, cycleStarts, kickstartCurve, logCurve, shaperCurve, transientCurve } from './rhythmmath';
 
 // The Web Audio graph of each device. Every builder returns an `input`, an `output` and an `update` that moves the
 // parameters to new values (gliding while playing, jumping when rendering offline). Where a plugin would run
@@ -43,6 +44,17 @@ export interface DeviceNode {
   update(p: Record<string, number>, env: UpdateEnv): void;
   /** Stop oscillators and cut the connections: the device is gone from the chain. */
   dispose(): void;
+  /** Tempo-synced devices: schedule the bars [fromBar, toBar) that start at context time `time`. */
+  rhythm?(p: Record<string, number>, env: RhythmEnv): void;
+  /** Drop what `rhythm` scheduled (transport stopped) and go back to neutral. */
+  resetRhythm?(): void;
+}
+
+export interface RhythmEnv {
+  bpm: number;
+  time: number;
+  fromBar: number;
+  toBar: number;
 }
 
 const TIME_CONSTANT = 0.015;
@@ -166,7 +178,7 @@ function shell(k: Kit): { input: GainNode; output: GainNode } {
   return { input: k.gain(), output: k.gain() };
 }
 
-type Builder = (k: Kit) => Pick<DeviceNode, 'input' | 'output'> & { update: DeviceNode['update'] };
+type Builder = (k: Kit) => Pick<DeviceNode, 'input' | 'output' | 'rhythm' | 'resetRhythm'> & { update: DeviceNode['update'] };
 
 /** Equal-power blend: at 50 % both paths are -3 dB. */
 const blend = (mix: number) => ({ dry: Math.cos((mix * Math.PI) / 2), wet: Math.sin((mix * Math.PI) / 2) });
@@ -539,6 +551,159 @@ const buildUtility: Builder = (k) => {
   };
 };
 
+// ---------------------------------------------------------------- transient shaper
+
+/**
+ * Transient shaper from plain nodes: two envelope followers on the rectified input, a fast one (it catches the attack)
+ * and a slow one. In the log domain their difference is positive while a sound starts and negative while it fades,
+ * independent of how loud it is. A waveshaper turns that difference into a gain (`transientCurve`): Attack scales the
+ * positive part, Sustain the negative part.
+ *
+ *   in ──> vca ──> out
+ *   in ──> |x| ──> lowpass fast ─────────────> log ──┐
+ *          |x| ──> peak hold ──> lowpass slow ──> log ──┴─(fast - slow)──> gain curve ──> vca.gain
+ */
+/**
+ * Peak follower: peak = max(|x|, decay * peak one block ago), the same loop the compressor's detector uses (max built from
+ * gains and a |x| shaper, the loop closed through a 128-sample delay). `decay` sets the release.
+ */
+function peakFollower(k: Kit, rectified: AudioNode): { peak: GainNode; decay: GainNode } {
+  const mean = k.gain(0.5);
+  const half = k.gain(0.5);
+  const negate = k.gain(-1);
+  const decay = k.gain(0.97);
+  const loop = k.delay(0.05, PEAK_LOOP_SAMPLES / k.ctx.sampleRate);
+  const peak = k.gain();
+  rectified.connect(mean);
+  rectified.connect(half);
+  decay.connect(mean);
+  decay.connect(negate);
+  negate.connect(half);
+  const abs = k.shaper(new Float32Array([1, 0, 1]));
+  half.connect(abs);
+  mean.connect(peak);
+  abs.connect(peak);
+  peak.connect(loop);
+  loop.connect(decay);
+  return { peak, decay };
+}
+
+const buildTransient: Builder = (k) => {
+  const { input, output } = shell(k);
+  const vca = k.gain(0);
+  const out = k.gain();
+  input.connect(vca);
+  vca.connect(out);
+  out.connect(output);
+  const rect = k.shaper(new Float32Array([1, 0, 1]));
+  input.connect(rect);
+  const fast = k.biquad('lowpass', 160, BUTTERWORTH_DB);
+  rect.connect(fast);
+  // The slow envelope rises slowly (lowpass) but also falls slowly (peak hold with a long release): ahead of the fast one
+  // at an attack, above it in the decay. Two plain lowpasses would fall together and see no sustain.
+  const hold = peakFollower(k, rect);
+  const slow = k.biquad('lowpass', 12, BUTTERWORTH_DB);
+  hold.peak.connect(slow);
+  const logFast = k.shaper(logCurve());
+  const logSlow = k.shaper(logCurve());
+  fast.connect(logFast);
+  slow.connect(logSlow);
+  const diff = k.gain(1);
+  const negate = k.gain(-1);
+  logFast.connect(diff);
+  logSlow.connect(negate);
+  negate.connect(diff);
+  const curve = k.swappableShaper(transientCurve(0, 0), diff, vca.gain);
+  let shapeKey = '';
+  return {
+    input,
+    output,
+    update(p, env) {
+      const key = `${p.attack}|${p.sustain}`;
+      if (key !== shapeKey) {
+        shapeKey = key;
+        curve.set(transientCurve(p.attack, p.sustain));
+      }
+      // Tempo: faster followers react to shorter hits (hats), slower ones to kicks and basslines.
+      const speed = Math.pow(2, 2 * p.speed - 1);
+      setParam(k.ctx, fast.frequency, 160 * speed, env);
+      setParam(k.ctx, slow.frequency, 12 * speed, env);
+      setParam(k.ctx, hold.decay.gain, peakDecay(300 / speed, k.ctx.sampleRate), env);
+      setParam(k.ctx, out.gain, dbToGain(p.out), env);
+    },
+  };
+};
+
+// ---------------------------------------------------------------- tempo-synced: Kickstart and ShaperBox
+
+/** Schedules one curve per cycle on `param` (cycles that already began are skipped; a small gap keeps curves from overlapping). */
+function scheduleCycles(k: Kit, param: AudioParam, rateBars: number, env: RhythmEnv, curve: Float32Array<ArrayBuffer>) {
+  const spb = 240 / Math.max(20, env.bpm);
+  const now = k.ctx.currentTime;
+  for (const bar of cycleStarts(env.fromBar, env.toBar, rateBars)) {
+    const when = env.time + (bar - env.fromBar) * spb;
+    if (when < now) continue;
+    try {
+      param.setValueCurveAtTime(curve, when, rateBars * spb * 0.98);
+    } catch {
+      // overlaps an event already there (a rescheduled window): that cycle keeps the old curve
+    }
+  }
+}
+
+/** Kickstart: a gain that ducks at the start of every cycle and swells back along the chosen curve. */
+const buildKickstart: Builder = (k) => {
+  const { input, output } = shell(k);
+  const vca = k.gain(1);
+  input.connect(vca);
+  vca.connect(output);
+  return {
+    input,
+    output,
+    update() {},
+    rhythm(p, env) {
+      scheduleCycles(k, vca.gain, RATE_BARS[Math.round(p.rate)] ?? 0.25, env, kickstartCurve(p.curve, p.mix));
+    },
+    resetRhythm() {
+      vca.gain.cancelScheduledValues(0);
+      vca.gain.setValueAtTime(1, k.ctx.currentTime);
+    },
+  };
+};
+
+const SHAPER_LP_OFF = 30000; // above Nyquist: flat
+
+/** ShaperBox-style: a tempo-synced shape on volume, a lowpass cutoff or pan. The other two stay neutral. */
+const buildShaper: Builder = (k) => {
+  const { input, output } = shell(k);
+  const lp = k.biquad('lowpass', SHAPER_LP_OFF, BUTTERWORTH_DB);
+  const vca = k.gain(1);
+  const pan = k.ctx.createStereoPanner();
+  k.nodes.push(pan);
+  input.connect(lp);
+  lp.connect(vca);
+  vca.connect(pan);
+  pan.connect(output);
+  const neutral = () => {
+    const now = k.ctx.currentTime;
+    for (const [param, v] of [[lp.frequency, SHAPER_LP_OFF], [vca.gain, 1], [pan.pan, 0]] as const) {
+      param.cancelScheduledValues(0);
+      param.setValueAtTime(v, now);
+    }
+  };
+  return {
+    input,
+    output,
+    update() {},
+    rhythm(p, env) {
+      const target = Math.round(p.target);
+      const param = target === 1 ? lp.frequency : target === 2 ? pan.pan : vca.gain;
+      scheduleCycles(k, param, RATE_BARS[Math.round(p.rate)] ?? 0.25, env, shaperCurve({ target, shape: p.shape, depth: p.depth, cutoff: p.cutoff }));
+    },
+    resetRhythm: neutral,
+  };
+};
+
 /** The Splice slot makes no sound of its own: it is a place to search and load sounds from, so the signal passes through. */
 const buildSplice: Builder = (k) => {
   const { input, output } = shell(k);
@@ -557,6 +722,9 @@ const BUILDERS: Record<DeviceType, Builder> = {
   filter: buildFilter,
   limiter: buildLimiter,
   utility: buildUtility,
+  transient: buildTransient,
+  kickstart: buildKickstart,
+  shaper: buildShaper,
 };
 
 /** Builds the nodes of a device (unconnected to anything but themselves), or null for an unknown type. */

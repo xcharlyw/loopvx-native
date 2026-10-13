@@ -153,3 +153,54 @@ export function LimiterScope({ gain, ceiling, width, height = 100, color = C.acc
     </Frame>
   );
 }
+
+/** One cycle of a tempo-synced shape (Kickstart's duck, a ShaperBox shape): values 0..1 left to right, `cycles` repeats. */
+export function CycleScope({ values, label, cycles = 4, width, height = 90, color = C.accent }: { values: ArrayLike<number>; label: string; cycles?: number; width: number; height?: number; color?: string }) {
+  const n = values.length;
+  const pts: [number, number][] = [];
+  const w = width - 12;
+  for (let c = 0; c < cycles; c++) {
+    for (let i = 0; i < n; i++) {
+      const v = Math.max(0, Math.min(1, values[i]));
+      pts.push([6 + ((c + i / n) / cycles) * w, 8 + (1 - v) * (height - 20)]);
+    }
+  }
+  return (
+    <Frame width={width} height={height} id="cycle">
+      {Array.from({ length: cycles + 1 }, (_, c) => (
+        <Line key={c} x1={6 + (c / cycles) * w} y1={0} x2={6 + (c / cycles) * w} y2={height} stroke={GRID} strokeWidth={1} />
+      ))}
+      <Path d={`${line(pts)} L ${width - 6} ${height - 12} L 6 ${height - 12} Z`} fill={color} fillOpacity={0.12} />
+      <Path d={line(pts)} stroke={color} strokeWidth={2} fill="none" strokeLinejoin="round" />
+      <SvgText x={6} y={height - 2} {...LABEL}>
+        {label}
+      </SvgText>
+    </Frame>
+  );
+}
+
+/** A drum hit's level before (dashed) and after the transient shaper: attack scales the start, sustain the decay. */
+export function TransientScope({ attack, sustain, width, height = 90, color = C.accent }: { attack: number; sustain: number; width: number; height?: number; color?: string }) {
+  const before: [number, number][] = [];
+  const after: [number, number][] = [];
+  const floor = -36;
+  for (let i = 0; i <= 100; i++) {
+    const t = i / 100;
+    const env = t < 0.04 ? t / 0.04 : Math.exp(-(t - 0.04) / 0.18);
+    const db = 20 * Math.log10(Math.max(env, 1e-4));
+    const phase = t < 0.12 ? 1 : 0; // attack part, then decay
+    const gain = phase ? (attack / 100) * 6 * (1 - t / 0.12) : (sustain / 100) * Math.min(12, (t - 0.12) * 40);
+    const y = (d: number) => 8 + (Math.min(0, Math.max(floor, d)) / floor) * (height - 20);
+    before.push([6 + t * (width - 12), y(db)]);
+    after.push([6 + t * (width - 12), y(db + gain - 6)]);
+  }
+  return (
+    <Frame width={width} height={height} id="transient">
+      <Path d={line(before)} stroke={C.dim} strokeWidth={1.5} strokeDasharray="4 3" fill="none" />
+      <Path d={line(after)} stroke={color} strokeWidth={2} fill="none" strokeLinejoin="round" />
+      <SvgText x={6} y={height - 2} {...LABEL}>
+        Anschlag → Ausklang
+      </SvgText>
+    </Frame>
+  );
+}

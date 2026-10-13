@@ -185,6 +185,8 @@ only picks audio tracks, `createMidiClipOnTrack` refuses audio tracks, Session s
 disabled). The type can only be changed on an empty track (`setTrackKind`, TrackPanel "Spurtyp"). The arrange
 header marks MIDI tracks with a square colour dot (audio: round) and has an FX button (opens the device chain, shows the
 device count); the add row has "+ Audio" and "+ MIDI".
+Track order: `moveTrack(project, id, delta)` (pure, tested), buttons "▲ Nach oben" / "▼ Nach unten" in the TrackPanel (section "Position"); one undo step each, the panel stays open
+(use the half-size sheet to watch the arrangement). No drag-to-reorder in the headers yet (a drag there fights the vertical scroll on touch).
 
 ## Device chain (plugin slots)
 

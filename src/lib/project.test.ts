@@ -1,4 +1,4 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -309,5 +309,30 @@ describe('device chain', () => {
     p = updateDevice(p, id, dev.id, { params: { attack: 30 } });
     expect(p.tracks[0].devices![0].params).toMatchObject({ ratio: 8, attack: 30 });
     expect(p.tracks[0].devices![0].on).toBe(false);
+  });
+});
+
+describe('moveTrack', () => {
+  const base = () => {
+    const p = createProject('T', 150, 'F minor');
+    return { ...p, tracks: ['a', 'b', 'c'].map((id) => ({ ...createTrack('synth', 8, id, 'midi'), id })) };
+  };
+  const order = (p: ReturnType<typeof base>) => p.tracks.map((t) => t.id).join('');
+  it('moves a track up and down', () => {
+    expect(order(moveTrack(base(), 'b', -1))).toBe('bac');
+    expect(order(moveTrack(base(), 'b', 1))).toBe('acb');
+    expect(order(moveTrack(base(), 'a', 2))).toBe('bca');
+  });
+  it('stops at the ends and ignores unknown ids', () => {
+    const p = base();
+    expect(moveTrack(p, 'a', -1)).toBe(p);
+    expect(moveTrack(p, 'c', 1)).toBe(p);
+    expect(moveTrack(p, 'zzz', 1)).toBe(p);
+    expect(order(moveTrack(p, 'c', -9))).toBe('cab');
+  });
+  it('keeps the tracks themselves (clips, slots) as they are', () => {
+    const p = base();
+    const moved = moveTrack(p, 'a', 1);
+    expect(moved.tracks.find((t) => t.id === 'a')).toBe(p.tracks[0]);
   });
 });

@@ -274,6 +274,18 @@ export function renameTrack(project: Project, trackId: string, name: string): Pr
   return mapTrack(project, trackId, (t) => ({ ...t, name: clean }));
 }
 
+/** Move a track `delta` places up (negative) or down in the list, stopping at the ends. Unchanged when it cannot move. */
+export function moveTrack(project: Project, trackId: string, delta: number): Project {
+  const from = project.tracks.findIndex((t) => t.id === trackId);
+  if (from < 0) return project;
+  const to = Math.max(0, Math.min(project.tracks.length - 1, from + delta));
+  if (to === from) return project;
+  const tracks = [...project.tracks];
+  const [moved] = tracks.splice(from, 1);
+  tracks.splice(to, 0, moved);
+  return { ...project, tracks };
+}
+
 export function removeTrack(project: Project, trackId: string): Project {
   return { ...project, tracks: project.tracks.filter((t) => t.id !== trackId) };
 }

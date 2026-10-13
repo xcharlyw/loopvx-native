@@ -7,7 +7,7 @@ import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
-import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, renameTrack, setTrackKind, trackKind, trackSynth } from '../lib/project';
+import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, moveTrack, renameTrack, setTrackKind, trackKind, trackSynth } from '../lib/project';
 import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import type { TrackFx } from '../types';
 import { confirmDestructive } from './confirm';
@@ -29,6 +29,7 @@ export function TrackPanel() {
     );
   }
   const trackId = track.id;
+  const trackIndex = project.tracks.findIndex((t) => t.id === trackId);
   const synth = trackSynth(track);
   const kind = trackKind(track);
   const devices = track.devices ?? [];
@@ -81,6 +82,18 @@ export function TrackPanel() {
           accessibilityLabel="Spurname"
         />
         <Txt style={s.note}>Tipp: Ein langer Druck auf den Spurnamen öffnet diese Ansicht auch direkt.</Txt>
+      </Section>
+
+      <Section title="Position">
+        <View style={s.buttons}>
+          <Btn small disabled={trackIndex <= 0} accessibilityLabel="Spur nach oben" onPress={() => updateProject((p) => moveTrack(p, trackId, -1), { reschedule: false })}>
+            ▲ Nach oben
+          </Btn>
+          <Btn small disabled={trackIndex >= project.tracks.length - 1} accessibilityLabel="Spur nach unten" onPress={() => updateProject((p) => moveTrack(p, trackId, 1), { reschedule: false })}>
+            ▼ Nach unten
+          </Btn>
+        </View>
+        <Txt style={s.note}>{`Spur ${trackIndex + 1} von ${project.tracks.length}. Mit dem Pfeil im Fenster-Kopf (⌄) siehst du die Spuren dabei im Arrangement.`}</Txt>
       </Section>
 
       <Section title="Farbe">

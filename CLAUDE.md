@@ -89,6 +89,15 @@ tests/              server tests (anything in api/ is deployed as a function)
   copies are then synced into LOOPVX/Samples like any sample, **by a copy inside Drive** (`copyFile`, no upload from the phone; an upload if Drive refuses). A folder import first scans (`collectAudio` with `onFile`/`cancelled` hooks, up to 3000 files), shows a plan card (`summarizeImport`: new vs. existing, size, library folders) and only then downloads; both phases have "Abbrechen", importing again continues where it stopped because known Drive ids are skipped). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; checked against the real metadata of Karl's Drive: "My Mac" is a folder he owns with no parent; the full listing of owned folders can be slow on a big Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
+## Panel sizes (Sheet)
+
+The panels are no longer in a `Modal` but in an overlay inside `Shell` (`App.tsx`), so they can dock. `state.sheetSize` (`full` | `half` | `bar`, kept while the app runs, shared by all panels):
+**full** = the side panel / whole screen on a phone with a dimmed backdrop (tap = close); **half** = docked above the transport bar (`bottom` = the measured height of `BottomBar`), `main` gets a
+`marginBottom` of the sheet's height so the arrangement shrinks instead of being covered and stays scrollable and tappable; **bar** = only the title row. `Sheet.tsx` has the buttons
+"Fenster verkleinern" / "Fenster vergrößern"; in bar mode the title reopens it and the body is `display: none` (stays mounted, so an open Drive folder or a plan survives). Sizes in
+pure `sheetLayout.ts` (tested): half = 42 % of the screen height (240..440 px), width 560 max, on the right on wide screens. The Android back button closes the panel (`BackHandler`).
+Pitfall: with react-native-web a style `{ top: undefined }` does not override an earlier `top: 0` (that put the docked sheet at the top): build separate style objects.
+
 ## Drive browser = sample browser (audition and insert)
 
 `DriveImport` (Library → "Google Drive durchsuchen") works like Ableton's browser: tap a file = **audition**, "＋ Einfügen" = put it on a track, no import step ("Mehrere wählen" and the

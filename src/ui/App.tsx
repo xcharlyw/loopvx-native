@@ -1,8 +1,8 @@
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { useFonts } from 'expo-font';
-import { useEffect } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useEffect, useState } from 'react';
+import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { engine } from '../audio/engine';
 import { preparePageAudio } from '../audio/pageAudio';
@@ -40,43 +40,65 @@ import { PromptBar } from './PromptBar';
 import { SessionView } from './SessionView';
 import { TrackPanel } from './TrackPanel';
 import { TopBar } from './TopBar';
+import { sheetLayout } from './sheetLayout';
 
 function Shell() {
   const view = useStore((st) => st.view);
   const panel = useStore((st) => st.panel);
+  const sheetSize = useStore((st) => st.sheetSize);
   const toasts = useStore((st) => st.toasts);
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const [bottomH, setBottomH] = useState(0);
   const close = () => setState({ panel: 'none' });
+  const open = panel !== 'none';
+  const layout = sheetLayout(sheetSize, { width, height });
+  const docked = open && layout.docked;
+
+  // The Android back button closes the panel (the panel used to be a Modal that did this).
+  useEffect(() => {
+    if (!open || Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setState({ panel: 'none' });
+      return true;
+    });
+    return () => sub.remove();
+  }, [open]);
 
   return (
     <View style={[s.app, { paddingTop: insets.top }]}>
       <TopBar />
-      <View style={s.main}>
+      {/* A docked panel takes its height from the arrangement, so the tracks above stay visible and scrollable. */}
+      <View style={[s.main, docked && { marginBottom: layout.height }]}>
         {view === 'arrange' ? <ArrangeView /> : <SessionView />}
         <PromptBar />
       </View>
-      <BottomBar />
+      <View onLayout={(e) => setBottomH(e.nativeEvent.layout.height)}>
+        <BottomBar />
+      </View>
 
-      <Modal visible={panel !== 'none'} transparent animationType="fade" onRequestClose={close}>
-        <View style={s.modalRow}>
-          <Pressable style={s.backdrop} onPress={close} />
-          <View style={[s.sheet, { width: Math.min(420, width), paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-            {panel === 'library' && <LibraryPanel />}
-            {panel === 'mixer' && <MixerPanel />}
-            {panel === 'projects' && <ProjectsPanel />}
-            {panel === 'clip' && <ClipPanel />}
-            {panel === 'track' && <TrackPanel />}
-            {panel === 'export' && <ExportPanel />}
-            {panel === 'piano' && <PianoRollPanel />}
-            {panel === 'instrument' && <InstrumentPanel />}
-            {panel === 'devices' && <DevicePanel />}
-            {panel === 'automation' && <AutomationPanel />}
-            {panel === 'arranger' && <ArrangerPanel />}
-            {panel === 'markers' && <MarkersPanel />}
+      {open && (
+        <View style={[s.overlay, docked ? { left: 0, right: 0, bottom: bottomH, height: layout.height } : { top: 0, left: 0, right: 0, bottom: 0 }]} pointerEvents="box-none">
+          <View style={docked ? s.dockRow : s.modalRow} pointerEvents="box-none">
+            {!docked && <Pressable style={s.backdrop} onPress={close} />}
+            {docked && <View style={{ flex: 1 }} pointerEvents="none" />}
+            <View style={[s.sheet, docked ? s.sheetDocked : { paddingTop: insets.top, paddingBottom: insets.bottom }, { width: layout.width }]}>
+              {panel === 'library' && <LibraryPanel />}
+              {panel === 'mixer' && <MixerPanel />}
+              {panel === 'projects' && <ProjectsPanel />}
+              {panel === 'clip' && <ClipPanel />}
+              {panel === 'track' && <TrackPanel />}
+              {panel === 'export' && <ExportPanel />}
+              {panel === 'piano' && <PianoRollPanel />}
+              {panel === 'instrument' && <InstrumentPanel />}
+              {panel === 'devices' && <DevicePanel />}
+              {panel === 'automation' && <AutomationPanel />}
+              {panel === 'arranger' && <ArrangerPanel />}
+              {panel === 'markers' && <MarkersPanel />}
+            </View>
           </View>
         </View>
-      </Modal>
+      )}
 
       <View pointerEvents="none" style={[s.toasts, { top: 12 + insets.top, width: Math.min(440, width - 24), left: (width - Math.min(440, width - 24)) / 2 }]}>
         {toasts.map((t) => (
@@ -193,9 +215,12 @@ export function App() {
 const s = StyleSheet.create({
   app: { flex: 1, backgroundColor: C.bg, overflow: 'hidden' },
   main: { flex: 1, minHeight: 0 },
+  overlay: { position: 'absolute', zIndex: 30 },
   modalRow: { flex: 1, flexDirection: 'row' },
+  dockRow: { flex: 1, flexDirection: 'row' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { backgroundColor: C.bg2, borderLeftWidth: 1, borderLeftColor: C.line },
+  sheetDocked: { borderTopWidth: 1, borderTopColor: C.line, borderTopLeftRadius: 14, overflow: 'hidden' },
   toasts: { position: 'absolute', gap: 6, zIndex: 40 },
   toast: {
     backgroundColor: C.panel2,

@@ -6,6 +6,8 @@ import { History } from './history';
 import { createProject, isProject, repairProject } from './project';
 
 export type View = 'arrange' | 'session';
+/** Size of the open panel: full, half (docked below, the arrangement stays usable) or only its title bar. */
+export type SheetSize = 'full' | 'half' | 'bar';
 export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'automation' | 'arranger' | 'markers';
 
 export interface Toast {
@@ -30,6 +32,7 @@ export interface AppState {
   folders: string[];
   view: View;
   panel: Panel;
+  sheetSize: SheetSize;
   selectedTrackId: string | null;
   selectedClipId: string | null;
   /** More clips selected together with `selectedClipId` (multi-selection: Shift/Cmd/Ctrl-click, or the multi-select mode on touch). */
@@ -61,6 +64,7 @@ let state: AppState = {
   folders: [],
   view: 'arrange',
   panel: 'none',
+  sheetSize: 'full',
   selectedTrackId: null,
   selectedClipId: null,
   extraClipIds: [],

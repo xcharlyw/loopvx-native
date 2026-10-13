@@ -91,6 +91,16 @@ export const Close = (p: P) => (
     <Path d="M6 6l12 12M18 6 6 18" />
   </Icon>
 );
+export const ChevronDown = (p: P) => (
+  <Icon {...p}>
+    <Path d="M6 9l6 6 6-6" />
+  </Icon>
+);
+export const ChevronUp = (p: P) => (
+  <Icon {...p}>
+    <Path d="M6 15l6-6 6 6" />
+  </Icon>
+);
 export const ZoomIn = (p: P) => (
   <Icon {...p}>
     <Circle cx="11" cy="11" r="6" />

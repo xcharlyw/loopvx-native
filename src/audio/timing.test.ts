@@ -10,6 +10,7 @@ import {
   nextBoundary,
   parseSampleName,
   planClip,
+  planPreview,
   sampleLengthBars,
   secondsPerBar,
   warpRate,
@@ -156,5 +157,35 @@ describe('parseSampleName', () => {
   it('uses the folder name for the category', () => {
     expect(parseSampleName('loop_01.wav', 'Synths').category).toBe('synth');
     expect(parseSampleName('thing.wav', 'Kicks').category).toBe('kick');
+  });
+});
+
+describe('planPreview', () => {
+  const base = { projectBpm: 150, sampleBpm: 150, durationSec: 6.4 }; // 4 bars at 150 BPM
+  it('starts right away from the beginning when nothing plays', () => {
+    expect(planPreview({ ...base, positionBars: null })).toEqual({ delay: 0, offset: 0, loop: true, loopEnd: 6.4 });
+  });
+  it('waits for the next bar line and joins the loop at the matching bar', () => {
+    const spb = secondsPerBar(150); // 1.6 s
+    const plan = planPreview({ ...base, positionBars: 2.5 });
+    expect(plan.delay).toBeCloseTo(0.5 * spb, 6);
+    expect(plan.offset).toBeCloseTo(3 * spb, 6); // song bar 3 = bar 3 of a 4-bar loop (0-based)
+    const wrap = planPreview({ ...base, positionBars: 7.25 });
+    expect(wrap.offset).toBeCloseTo(0, 6); // song bar 8 is the loop's bar 0
+  });
+  it('takes the following bar when the next one is too close', () => {
+    const plan = planPreview({ ...base, positionBars: 3.99 });
+    expect(plan.delay).toBeGreaterThan(1.5);
+  });
+  it('scales the offset with the warp rate', () => {
+    // a 140 BPM loop at 150: plays 150/140 faster, buffer seconds per project bar = spb * rate
+    const sampleBpm = 140;
+    const dur = secondsPerBar(sampleBpm) * 2;
+    const plan = planPreview({ positionBars: 0.5, projectBpm: 150, sampleBpm, durationSec: dur });
+    expect(plan.offset).toBeCloseTo(1 * secondsPerBar(150) * (150 / 140), 5);
+    expect(plan.offset).toBeLessThan(plan.loopEnd);
+  });
+  it('plays one-shots once', () => {
+    expect(planPreview({ positionBars: null, projectBpm: 150, durationSec: 0.4 }).loop).toBe(false);
   });
 });

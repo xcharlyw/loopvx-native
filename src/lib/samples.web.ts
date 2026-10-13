@@ -57,6 +57,11 @@ export async function sampleSource(sample: Sample): Promise<string | ArrayBuffer
   return blob.arrayBuffer();
 }
 
+/** A temporary copy of downloaded audio for auditioning. Web: the engine decodes the bytes directly (a copy, decoding detaches them). */
+export async function previewSource(_id: string, data: ArrayBuffer, _ext: string): Promise<string | ArrayBuffer> {
+  return data.slice(0);
+}
+
 /** Let the user pick any one file (e.g. a .loopvx project backup) and read it. */
 export async function pickFile(): Promise<{ name: string; data: ArrayBuffer } | null> {
   const result = await DocumentPicker.getDocumentAsync({ type: '*/*', multiple: false });

@@ -89,6 +89,18 @@ tests/              server tests (anything in api/ is deployed as a function)
   copies are then synced into LOOPVX/Samples like any sample, **by a copy inside Drive** (`copyFile`, no upload from the phone; an upload if Drive refuses). A folder import first scans (`collectAudio` with `onFile`/`cancelled` hooks, up to 3000 files), shows a plan card (`summarizeImport`: new vs. existing, size, library folders) and only then downloads; both phases have "Abbrechen", importing again continues where it stopped because known Drive ids are skipped). The browser also lists "Computer" (Drive for desktop backups such as "My Mac": Drive's API has no listing for them, so they are found as folders owned by the user **without a parent**, `computerFolders`/`browseChildren`; checked against the real metadata of Karl's Drive: "My Mac" is a folder he owns with no parent; the full listing of owned folders can be slow on a big Drive) and "Mit mir geteilt". Never write outside the LOOPVX folder. The SoulVX Supabase project and its Google client are unrelated: don't touch.
 - Commit trailers per the session's attribution reminder; no model names in pushed artifacts.
 
+## Drive browser = sample browser (audition and insert)
+
+`DriveImport` (Library → "Google Drive durchsuchen") works like Ableton's browser: tap a file = **audition**, "＋ Einfügen" = put it on a track, no import step ("Mehrere wählen" and the
+folder "Importieren" buttons still copy many files). `lib/driveAudio.ts`: `previewDriveFile` downloads the file once (small memory LRU: 12 files / 120 MB, shared in-flight
+downloads), decodes it (`engine.decodePreview`; web decodes bytes, native a cache file from `previewSource` in the `samples(.web).ts` pair), takes the tempo from the name or
+detects it (`detectTempo`, same confidence gate as the import) and calls `engine.startPreview`; a file already in the library (same `driveId`) plays from the library copy. `insertDriveFile`
+stores the file as a normal Drive sample (`drive:<id>`, so sync, folders and dedupe work as before) and calls `placeSample` (right track by category, at the playhead).
+`startPreview` + pure `planPreview` (timing.ts, tested): warped to the project tempo (`warpRate`), loops until stopped (not one-shots under 1.2 s), and while the song plays it waits for the
+next bar line and joins the loop at the matching bar, so the beats line up (like Ableton's launch quantization). `stopPreview` emits so the buttons follow. Checked in the browser
+with a fake Drive: warp 150 → 155 (rate 1.0333), tempo detected for an unnamed loop (~149.9), waits for the next bar while playing, insert lands on "Kick + Bass", re-audition
+needs no download. **Not heard on a phone**; very large WAVs are downloaded completely before they play (no streaming).
+
 ## Library folders
 
 `Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (the pack name), Splice (the pack name) and the user. Folders that hold samples exist by themselves;

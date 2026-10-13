@@ -49,6 +49,17 @@ export async function sampleSource(sample: Sample): Promise<string | ArrayBuffer
   return sample.uri;
 }
 
+/** A temporary copy of downloaded audio for auditioning. Native: a file in the cache directory, which the engine decodes. */
+export async function previewSource(id: string, data: ArrayBuffer, ext: string): Promise<string | ArrayBuffer> {
+  const dir = new Directory(Paths.cache, 'drivepreview');
+  if (!dir.exists) dir.create();
+  const file = new File(dir, `${id.replace(/[^\w-]/g, '_')}.${ext}`);
+  if (file.exists) file.delete();
+  file.create();
+  file.write(new Uint8Array(data));
+  return file.uri;
+}
+
 /** Let the user pick any one file (e.g. a .loopvx project backup) and read it. */
 export async function pickFile(): Promise<{ name: string; data: ArrayBuffer } | null> {
   const result = await DocumentPicker.getDocumentAsync({ type: '*/*', multiple: false, copyToCacheDirectory: true });

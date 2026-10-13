@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
+import { engine } from '../audio/engine';
 import { autoDetectTempos } from '../lib/actions';
 import { browseChildren, driveCanRead, driveLinked, searchByName, type DriveFile } from '../lib/drive';
 import { COMPUTERS_ID, VIRTUAL_ROOTS, browserEntries, collectAudio, isVirtualId, sizeText, summarizeImport, type ImportSummary } from '../lib/driveImport';
+import { insertDriveFile, previewDriveFile } from '../lib/driveAudio';
 import { importDriveItems } from '../lib/driveImportRun';
 import { errorText, getState, toast } from '../lib/store';
 import { signIn } from '../lib/supabase';
-import { Check } from './icons';
+import { useEngine } from './hooks';
+import { Check, Play, Stop } from './icons';
 import { Btn, Chip, Txt } from './kit';
 
 type Access = 'checking' | 'unlinked' | 'noread' | 'ok';
@@ -18,8 +21,9 @@ interface Crumb {
 const ROOT: Crumb = { id: 'root', name: 'Mein Laufwerk' };
 
 /**
- * Pick loops from the user's own Google Drive folders and copy them into the library: browse folders, tick files
- * or import a whole folder (with its sub-folders; the folder names help to sort samples into categories).
+ * The user's own Google Drive as a sample browser, like Ableton's: audition a file at the project tempo (looped, in sync
+ * with the song) and drop it on a track with one tap, no import step. "Mehrere wählen" and the folder buttons still copy
+ * many files into the library at once (with sub-folders; the folder names help to sort samples into categories).
  * Needs the Drive read scope; without it the screen offers the sign-in that asks for it.
  */
 export function DriveImport() {
@@ -30,6 +34,11 @@ export function DriveImport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<Record<string, DriveFile>>({});
+  const [multi, setMulti] = useState(false);
+  // The file being auditioned (name + tempo info) and the one being fetched or inserted right now.
+  const [now, setNow] = useState<{ file: DriveFile; folder: string; bpm?: number; detected: boolean } | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const previewing = useEngine(() => engine.isPreviewing());
   const [query, setQuery] = useState('');
   const [searched, setSearched] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; name: string } | null>(null);
@@ -110,6 +119,33 @@ export function DriveImport() {
     }
   };
 
+  const pathOf = () => (searched ? '' : stack.map((c) => c.name).slice(1).join('/'));
+  const togglePreview = async (f: DriveFile) => {
+    if (previewing && now?.file.id === f.id) {
+      engine.stopPreview();
+      setNow(null);
+      return;
+    }
+    setBusyId(f.id);
+    try {
+      const info = await previewDriveFile(f, pathOf());
+      setNow({ file: f, folder: pathOf(), bpm: info.bpm, detected: info.detected });
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+  const insert = async (f: DriveFile, folder: string) => {
+    setBusyId(f.id);
+    try {
+      await insertDriveFile(f, folder);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
   const importPicked = () => void run(Object.values(picked).map((file) => ({ file, folder: searched ? '' : stack.map((c) => c.name).slice(1).join('/') })));
   const importFolder = async (folder: Crumb, path: string) => {
     stopRef.current = false;
@@ -142,8 +178,8 @@ export function DriveImport() {
 
   if (!open) {
     return (
-      <Btn small accessibilityLabel="Aus Google Drive importieren" onPress={() => setOpen(true)}>
-        Aus Google Drive importieren
+      <Btn small accessibilityLabel="Google Drive durchsuchen" onPress={() => setOpen(true)}>
+        Google Drive durchsuchen
       </Btn>
     );
   }
@@ -198,6 +234,11 @@ export function DriveImport() {
         </Txt>
       </View>
 
+      {previewing && now && (
+        <Txt style={s.nowPlaying}>
+          {`▶ ${now.file.name} · ${now.bpm ? `${now.detected ? '~' : ''}${now.bpm} → ${getState().project.bpm} BPM` : `Tempo unbekannt, läuft mit ${getState().project.bpm} BPM`}${engine.playing ? ' · startet im nächsten Takt' : ''}`}
+        </Txt>
+      )}
       {loading && <Txt style={s.note}>Lade …</Txt>}
       {error && <Txt style={[s.note, { color: C.danger }]}>{error}</Txt>}
       {!loading && !error && !folders.length && !audio.length && (
@@ -233,25 +274,51 @@ export function DriveImport() {
 
       {audio.length > 0 && (
         <View style={s.row}>
-          <Chip onPress={() => setPicked(Object.fromEntries(audio.map((f) => [f.id, f])))} textStyle={{ fontSize: 11 }}>
-            Alle wählen
+          <Chip variant={multi ? 'on' : 'ghost'} accessibilityLabel="Mehrere wählen" onPress={() => { setMulti(!multi); setPicked({}); }} textStyle={{ fontSize: 11 }}>
+            Mehrere wählen
           </Chip>
-          {pickedCount > 0 && (
+          {multi && (
+            <Chip onPress={() => setPicked(Object.fromEntries(audio.map((f) => [f.id, f])))} textStyle={{ fontSize: 11 }}>
+              Alle wählen
+            </Chip>
+          )}
+          {multi && pickedCount > 0 && (
             <Chip onPress={() => setPicked({})} textStyle={{ fontSize: 11 }}>
               Keine
             </Chip>
           )}
         </View>
       )}
-      {audio.map((f) => (
-        <Pressable key={f.id} style={s.item} accessibilityLabel={`Datei ${f.name}`} accessibilityState={{ checked: !!picked[f.id] }} onPress={() => togglePick(f)}>
-          <View style={[s.check, picked[f.id] && s.checkOn]}>{picked[f.id] && <Check size={12} color={C.accentInk} />}</View>
-          <Txt numberOfLines={1} style={s.itemName}>
-            {f.name}
-          </Txt>
-          <Txt style={s.meta}>{sizeText(f.size)}</Txt>
-        </Pressable>
-      ))}
+      {audio.map((f) => {
+        const playing = previewing && now?.file.id === f.id;
+        if (multi) {
+          return (
+            <Pressable key={f.id} style={s.item} accessibilityLabel={`Datei ${f.name}`} accessibilityState={{ checked: !!picked[f.id] }} onPress={() => togglePick(f)}>
+              <View style={[s.check, picked[f.id] && s.checkOn]}>{picked[f.id] && <Check size={12} color={C.accentInk} />}</View>
+              <Txt numberOfLines={1} style={s.itemName}>
+                {f.name}
+              </Txt>
+              <Txt style={s.meta}>{sizeText(f.size)}</Txt>
+            </Pressable>
+          );
+        }
+        return (
+          <View key={f.id} style={[s.item, playing && s.itemOn]}>
+            <Pressable style={[s.play, playing && s.playOn]} accessibilityLabel={playing ? `${f.name} stoppen` : `${f.name} vorhören`} disabled={busyId === f.id} onPress={() => void togglePreview(f)}>
+              {busyId === f.id ? <Txt style={s.meta}>…</Txt> : playing ? <Stop size={13} color={C.accentInk} /> : <Play size={13} color={C.text} />}
+            </Pressable>
+            <Pressable style={s.itemMain} accessibilityLabel={`Datei ${f.name}`} onPress={() => void togglePreview(f)}>
+              <Txt numberOfLines={1} style={s.itemName}>
+                {f.name}
+              </Txt>
+              <Txt style={s.meta}>{sizeText(f.size)}</Txt>
+            </Pressable>
+            <Chip variant="on" accessibilityLabel={`${f.name} einfügen`} onPress={() => void insert(f, pathOf())} textStyle={{ fontSize: 12 }}>
+              {busyId === f.id ? '…' : '＋ Einfügen'}
+            </Chip>
+          </View>
+        );
+      })}
 
       {scanning !== null && (
         <View style={s.row}>
@@ -301,10 +368,16 @@ export function DriveImport() {
           </Btn>
         </View>
       )}
-      <Btn kind="primary" disabled={!pickedCount || importing} accessibilityLabel="Auswahl importieren" onPress={importPicked}>
-        {pickedCount ? `${pickedCount} Datei(en) importieren` : 'Dateien antippen zum Auswählen'}
-      </Btn>
-      <Txt style={s.note}>Die Dateien werden kopiert, das Original in deinem Drive bleibt unverändert. Die Kopien liegen danach auch im LOOPVX-Ordner (Samples).</Txt>
+      {multi && (
+        <Btn kind="primary" disabled={!pickedCount || importing} accessibilityLabel="Auswahl importieren" onPress={importPicked}>
+          {pickedCount ? `${pickedCount} Datei(en) importieren` : 'Dateien antippen zum Auswählen'}
+        </Btn>
+      )}
+      <Txt style={s.note}>
+        {multi
+          ? 'Die Dateien werden kopiert, das Original in deinem Drive bleibt unverändert. Die Kopien liegen danach auch im LOOPVX-Ordner (Samples).'
+          : 'Antippen = vorhören im Projekttempo (läuft das Stück, startet es im nächsten Takt passend zum Beat). „Einfügen“ legt es auf die passende Spur am Abspielkopf. Das Original in deinem Drive bleibt unverändert.'}
+      </Txt>
     </View>
   );
 }
@@ -324,4 +397,8 @@ const s = StyleSheet.create({
   meta: { ...mono(), fontSize: 11, color: C.muted },
   check: { width: 20, height: 20, borderRadius: 6, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: C.accent, borderColor: C.accent },
+  itemOn: { backgroundColor: C.panel2, borderRadius: 8 },
+  play: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  playOn: { backgroundColor: C.accent, borderColor: C.accent },
+  nowPlaying: { ...mono(), fontSize: 11, color: C.accent, lineHeight: 16 },
 });

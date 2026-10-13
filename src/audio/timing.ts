@@ -72,6 +72,36 @@ export function planClip(clip: Clip, fromBar: number, toBar: number, loopBars: n
   return { delayBars: begin - fromBar, offsetBars, durationBars: end - begin };
 }
 
+export interface PreviewPlan {
+  /** Seconds from now until the preview starts: 0, or the wait for the next bar line while the song plays. */
+  delay: number;
+  /** Where in the buffer it starts (seconds at native speed), so a loop lines up with the song's bars. */
+  offset: number;
+  loop: boolean;
+  /** Loop end inside the buffer (seconds at native speed). */
+  loopEnd: number;
+}
+
+/**
+ * How to audition a sample at the project tempo, like Ableton's browser: loops repeat, and while the song plays the
+ * preview waits for the next bar line and starts at the same bar of its loop as the song is at (so beats line up).
+ * `positionBars` is the transport position, or null when nothing plays (then it starts right away from its beginning).
+ */
+export function planPreview(o: { positionBars: number | null; projectBpm: number; sampleBpm?: number; durationSec: number }): PreviewPlan {
+  const loop = o.durationSec > 1.2;
+  const loopEnd = loopEndSeconds(o.durationSec, o.sampleBpm);
+  if (o.positionBars === null) return { delay: 0, offset: 0, loop, loopEnd };
+  const spb = secondsPerBar(o.projectBpm);
+  const rate = warpRate(o.projectBpm, o.sampleBpm);
+  let next = Math.ceil(o.positionBars - 1e-9);
+  if ((next - o.positionBars) * spb < 0.05) next += 1; // too close to schedule cleanly: take the following bar
+  const delay = (next - o.positionBars) * spb;
+  if (!loop || loopEnd <= 0) return { delay, offset: 0, loop, loopEnd };
+  const loopBars = loopEnd / rate / spb;
+  const offset = ((next % loopBars) + loopBars) % loopBars * spb * rate;
+  return { delay, offset: Math.min(offset, Math.max(0, loopEnd - 0.01)), loop, loopEnd };
+}
+
 export const dbToGain = (db: number) => Math.pow(10, db / 20);
 
 /** Fade lengths that fit the clip: shrunk proportionally if together they are longer than it. */

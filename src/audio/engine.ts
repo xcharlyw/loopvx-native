@@ -18,7 +18,7 @@ import { DECAY_FLOOR, padAt, planHit } from './drum909';
 import { createLimiter, MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
 import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, planVoice, voicePeak } from './synth';
-import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
+import { beatsInWindow, clipEnvelope, clipGainAt, loopEndSeconds, nextBoundary, planClip, planPreview, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
 
@@ -852,15 +852,35 @@ export class AudioEngine {
     startSynthVoice(ctx, synth, pitch, voicePeak(synth, 0.8), ctx.currentTime + 0.01, 0.2, this.master!, this.buffers, this.project?.bpm ?? 150);
   }
 
+  /** Audition a library sample at the project tempo (see `startPreview`). */
   async preview(sample: Sample, projectBpm: number) {
-    const ctx = await this.unlock();
     const buffer = await this.loadBuffer(sample.id);
+    await this.startPreview(buffer, sample.bpm, projectBpm);
+  }
+
+  /** Decode audio that is not in the library (a Drive file being auditioned); `source` is bytes on web, a file URI on native. */
+  async decodePreview(source: string | ArrayBuffer): Promise<AudioBuffer> {
+    return (await this.ensureContext()).decodeAudioData(source);
+  }
+
+  /**
+   * Audition a buffer warped to the project tempo, like Ableton's browser: loops repeat until stopped, and while the song
+   * plays it starts on the next bar line at the loop's matching bar (`planPreview`), so it can be heard in the groove.
+   */
+  async startPreview(buffer: AudioBuffer, sampleBpm: number | undefined, projectBpm: number) {
+    const ctx = await this.unlock();
     this.stopPreview();
+    const plan = planPreview({ positionBars: this.playing ? this.position() : null, projectBpm, sampleBpm, durationSec: buffer.duration });
     const src = ctx.createBufferSource({ pitchCorrection: false });
     src.buffer = buffer;
-    src.playbackRate.value = warpRate(projectBpm, sample.bpm);
+    src.playbackRate.value = warpRate(projectBpm, sampleBpm);
+    if (plan.loop) {
+      src.loop = true;
+      src.loopStart = 0;
+      src.loopEnd = plan.loopEnd;
+    }
     src.connect(this.master!);
-    src.start();
+    src.start(ctx.currentTime + plan.delay, plan.offset);
     src.onEnded = () => {
       if (this.previewSource === src) this.previewSource = null;
       this.emit();
@@ -875,7 +895,9 @@ export class AudioEngine {
     } catch {
       /* already stopped */
     }
+    const was = this.previewSource !== null;
     this.previewSource = null;
+    if (was) this.emit();
   }
 
   isPreviewing(): boolean {

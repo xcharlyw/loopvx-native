@@ -122,7 +122,7 @@ export function LibraryPanel() {
   return (
     <Sheet title="Library">
       <Section title="Google Drive">
-        <Txt style={s.note}>Loops aus deinen Drive-Ordnern importieren oder direkt vom Gerät hochladen.</Txt>
+        <Txt style={s.note}>Samples direkt aus deinem Google Drive vorhören und einfügen, oder vom Gerät hochladen.</Txt>
         <View style={[s.row, { marginTop: 10 }]}>
           <Btn small onPress={() => void upload()}>
             <Upload size={14} />

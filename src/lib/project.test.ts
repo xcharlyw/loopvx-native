@@ -1,4 +1,4 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -334,5 +334,29 @@ describe('moveTrack', () => {
     const p = base();
     const moved = moveTrack(p, 'a', 1);
     expect(moved.tracks.find((t) => t.id === 'a')).toBe(p.tracks[0]);
+  });
+});
+
+describe('toggleClipsMuted', () => {
+  const withClips = () => {
+    const p = createProject();
+    const clip = (id: string, start: number) => ({ id, sampleId: 's', start, length: 4, offset: 0 });
+    return mapTrack(mapTrack(p, p.tracks[0].id, (t) => ({ ...t, clips: [clip('a', 0), clip('b', 4)] })), p.tracks[1].id, (t) => ({ ...t, clips: [clip('c', 0)] }));
+  };
+  const muted = (p: ReturnType<typeof createProject>) => p.tracks.flatMap((t) => t.clips).filter((c) => c.muted).map((c) => c.id).sort();
+
+  it('mutes the selected clips only', () => {
+    expect(muted(toggleClipsMuted(withClips(), ['a', 'c']))).toEqual(['a', 'c']);
+  });
+  it('a mixed selection is muted, an all-muted one unmuted (and the field dropped)', () => {
+    const once = toggleClipsMuted(withClips(), ['a']);
+    expect(muted(toggleClipsMuted(once, ['a', 'b']))).toEqual(['a', 'b']);
+    const off = toggleClipsMuted(toggleClipsMuted(once, ['a', 'b']), ['a', 'b']);
+    expect(muted(off)).toEqual([]);
+    expect('muted' in off.tracks[0].clips[0]).toBe(false);
+  });
+  it('unknown ids change nothing', () => {
+    const p = withClips();
+    expect(toggleClipsMuted(p, ['nope'])).toBe(p);
   });
 });

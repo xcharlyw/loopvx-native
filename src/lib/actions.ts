@@ -13,7 +13,7 @@ import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
-import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
+import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
@@ -77,6 +77,13 @@ export function deleteSelectedClip() {
   if (!ids.length) return;
   updateProject((p) => ids.reduce((acc, id) => removeClip(acc, id), p));
   setClipSelection(null);
+}
+
+/** Mute or unmute the selected clips (Live's 0: "Deactivate clip"). */
+export function toggleMuteSelectedClips() {
+  const ids = selectedClipIds();
+  if (!ids.length) return toast('Wähle zuerst einen Clip aus.');
+  updateProject((p) => toggleClipsMuted(p, ids));
 }
 
 /** Remove the selected track (after asking) and select its neighbour. */

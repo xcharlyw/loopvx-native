@@ -24,7 +24,7 @@ export function runSpan(run: Clip[]): { start: number; length: number } {
 export function mergeMidiClips(run: Clip[], id: string = uid()): Clip {
   const { start, length } = runSpan(run);
   const notes: Note[] = run.flatMap((c) =>
-    (c.notes ?? [])
+    (c.muted ? [] : c.notes ?? [])
       .filter((n) => n.start < c.length - 1e-9)
       .map((n) => ({ ...n, start: n.start + c.start - start, length: Math.min(n.length, c.length - n.start) })),
   );

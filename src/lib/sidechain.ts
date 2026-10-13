@@ -17,6 +17,7 @@ export function pumpHits(project: Project, sourceId: string | undefined, fromBar
   const kitOnly = trackSynth(source).wave === 'kit909';
   const hits = new Set<number>();
   for (const clip of source.clips) {
+    if (clip.muted) continue;
     for (const n of clip.notes ?? []) {
       if (kitOnly && n.pitch !== 36) continue;
       if (n.start >= clip.length - 1e-9) continue;

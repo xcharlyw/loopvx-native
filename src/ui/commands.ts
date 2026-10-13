@@ -12,6 +12,7 @@ import {
   selectAllClipsOfTrack,
   setCursor,
   splitSelectedClip,
+  toggleMuteSelectedClips,
   togglePlay,
 } from '../lib/actions';
 import type { KeySpec } from '../lib/keymap';
@@ -107,6 +108,7 @@ export const COMMANDS: Command[] = [
   { id: 'paste', label: 'Einfügen', group: 'Bearbeiten', keys: [{ letter: 'v', mod: true }], run: pasteClipsAtCursor, enabled: arrange },
   { id: 'duplicate', label: 'Duplizieren', group: 'Bearbeiten', keys: [{ letter: 'd', mod: true }], run: duplicateSelectedClip, enabled: hasClip },
   { id: 'delete', label: 'Löschen', group: 'Bearbeiten', keys: [{ keys: ['Delete', 'Backspace'] }], run: deleteSelectedClip, enabled: hasClip },
+  { id: 'muteClip', label: 'Clip stummschalten', group: 'Bearbeiten', keys: [{ letter: '0' }], run: toggleMuteSelectedClips, enabled: hasClip },
   { id: 'split', label: 'Clip teilen', group: 'Bearbeiten', separator: true, keys: [{ letter: 'e', mod: true }], run: splitSelectedClip, enabled: hasClip },
   { id: 'consolidate', label: 'Konsolidieren', group: 'Bearbeiten', keys: [{ letter: 'j', mod: true }], run: () => void consolidateSelectedClip(), enabled: hasClip },
   { id: 'quantize', label: 'Quantisieren (1/16)', group: 'Bearbeiten', keys: [{ letter: 'u', mod: true }], run: quantize, enabled: hasClip },

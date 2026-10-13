@@ -608,7 +608,8 @@ function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, sele
       {...body}
       style={[
         s.clip,
-        { left: clip.start * zoom, width: w, backgroundColor: color, transform: [{ translateY: liftY }] },
+        { left: clip.start * zoom, width: w, backgroundColor: clip.muted ? '#3a3a42' : color, transform: [{ translateY: liftY }] },
+        clip.muted && s.clipMuted,
         dragging && s.clipDragging,
         web({ touchAction: editable ? 'none' : 'auto', cursor: dragging ? 'grabbing' : 'grab' }),
       ]}
@@ -637,8 +638,8 @@ function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, sele
               {fades.fadeOut > 0 && <Path d={`M${w - 2 - fades.fadeOut * zoom} 0L${w - 2} ${height - 2}`} stroke="rgba(0,0,0,0.55)" strokeWidth={1.5} />}
             </Svg>
           )}
-          <Txt numberOfLines={1} style={s.clipName}>
-            {name.replace(/\.[a-z0-9]+$/i, '')}
+          <Txt numberOfLines={1} style={[s.clipName, clip.muted && { color: C.muted }]}>
+            {`${clip.muted ? '⊘ ' : ''}${name.replace(/\.[a-z0-9]+$/i, '')}`}
           </Txt>
         </View>
       </Pressable>
@@ -654,6 +655,7 @@ function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, sele
 }
 
 const s = StyleSheet.create({
+  clipMuted: { opacity: 0.55 },
   arrange: { flex: 1, minHeight: 0, backgroundColor: C.bg2 },
   band: { position: 'absolute', zIndex: 8, borderWidth: 1, borderColor: C.accent, backgroundColor: 'rgba(198,255,61,0.10)' },
   markerRow: { flexDirection: 'row', height: MARKER_H, zIndex: 5 },

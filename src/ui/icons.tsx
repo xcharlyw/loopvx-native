@@ -168,6 +168,13 @@ export const AutoIcon = (p: P) => (
     <Circle cx="13" cy="14" r="1.6" {...solid} />
   </Icon>
 );
+/** A speaker with a cross (muted clip). */
+export const MuteIcon = (p: P) => (
+  <Icon {...p}>
+    <Path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+    <Path d="m16 9.5 5 5m0-5-5 5" />
+  </Icon>
+);
 /** A freehand line with a pen tip (draw mode). */
 export const DrawIcon = (p: P) => (
   <Icon {...p}>

@@ -322,6 +322,10 @@ one selected clip = it plus the clips touching it; several = per track the range
 MIDI: notes merged (each cut at its own clip's end). Audio: rendered with `renderWav` on a bare copy of the track (no fx/devices/automation, volume 1; clip gain, fades and
 looping included) into a new sample `cons:<id>` (bpm = project bpm, folder "Konsolidiert"); one undo step. Shortcut in `useShortcuts` (App.tsx), button in the clip sheet.
 
+**Clip mute** (Live's "Deactivate clip"): `Clip.muted`, toggled by key 0, the speaker button in the BottomBar or the clip sheet, for the whole selection
+(`toggleClipsMuted` in project.ts, tested: a mixed selection is muted, an all-muted one unmuted). `scheduleWindow` skips muted clips (live and export), the sidechain ignores
+them, consolidate drops their notes. Shown grey with "⊘". Measured offline: the export of a muted clip is silent.
+
 ## Markers, clipboard, rubber band, master bus, meters
 
 - **Markers** (`project.markers`, pure `lib/markers.ts`): a strip under the ruler (`MARKER_H`); tap = jump, long press on a marker = `MarkersPanel` (rename/nudge/delete),

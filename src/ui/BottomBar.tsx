@@ -2,11 +2,11 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip } from '../lib/actions';
+import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip, toggleMuteSelectedClips } from '../lib/actions';
 import { redo, selectedClipIds, setClipSelection, setState, undo, useStore } from '../lib/store';
 import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 import { confirmDestructive } from './confirm';
-import { AutoIcon, Check, DrawIcon, Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
+import { AutoIcon, Check, DrawIcon, MuteIcon, Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
 import { useSmall } from './hooks';
 import { IconBtn, PillGroup, Spacer, iconColor } from './kit';
 
@@ -16,6 +16,12 @@ export function BottomBar() {
   const selectedClipId = useStore((s) => s.selectedClipId);
   const multiSelect = useStore((s) => s.multiSelect);
   const autoMode = useStore((s) => s.autoMode);
+  // All selected clips muted: the button shows "on" (pressing it unmutes them).
+  const clipMuted = useStore((s) => {
+    const ids = new Set(selectedClipIds(s));
+    const picked = s.project.tracks.flatMap((t) => t.clips.filter((c) => ids.has(c.id)));
+    return picked.length > 0 && picked.every((c) => c.muted);
+  });
   const drawMode = useStore((s) => s.drawMode);
   const selectedCount = useStore((s) => selectedClipIds(s).length);
   const canUndo = useStore((s) => s.canUndo);
@@ -78,6 +84,9 @@ export function BottomBar() {
 
       {view === 'arrange' && selectedClipId && (
         <PillGroup>
+          <IconBtn accessibilityLabel={clipMuted ? 'Clip einschalten' : 'Clip stummschalten'} accessibilityState={{ selected: clipMuted }} onPress={toggleMuteSelectedClips}>
+            <MuteIcon size={16} color={iconColor(clipMuted)} />
+          </IconBtn>
           <IconBtn accessibilityLabel="Teilen" onPress={splitSelectedClip}>
             <Scissors size={16} />
           </IconBtn>

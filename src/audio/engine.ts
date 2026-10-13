@@ -403,6 +403,7 @@ function scheduleWindow(
   const sources: Voice[] = [];
   for (const track of project.tracks) {
     for (const clip of track.clips) {
+      if (clip.muted) continue; // deactivated clip: silent live and in the export
       if (clip.notes) {
         sources.push(...scheduleNotes(ctx, clip, trackSynth(track), buffers, trackDest(track), spb, time, fromBar, toBar, cutBar, fresh));
         continue;

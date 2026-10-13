@@ -146,6 +146,29 @@ export function findClip(project: Project, clipId: string): { track: Track; clip
   return null;
 }
 
+/** Mutes the clips, or unmutes them when all are muted already (Live's 0 on a selection). */
+export function toggleClipsMuted(project: Project, clipIds: string[]): Project {
+  const ids = new Set(clipIds);
+  const picked = project.tracks.flatMap((t) => t.clips.filter((c) => ids.has(c.id)));
+  if (!picked.length) return project;
+  const mute = picked.some((c) => !c.muted);
+  return {
+    ...project,
+    tracks: project.tracks.map((t) =>
+      t.clips.some((c) => ids.has(c.id))
+        ? {
+            ...t,
+            clips: t.clips.map((c) => {
+              if (!ids.has(c.id)) return c;
+              const { muted: _drop, ...rest } = c;
+              return mute ? { ...rest, muted: true } : rest;
+            }),
+          }
+        : t,
+    ),
+  };
+}
+
 export function updateClip(project: Project, clipId: string, patch: Partial<Clip>): Project {
   return {
     ...project,

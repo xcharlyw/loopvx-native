@@ -4,7 +4,7 @@ import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { BEATS_PER_BAR } from '../config';
 import { C, font, mono } from '../constants/theme';
-import { consolidateSelectedClip, copySelectedClips, loopSelection, pasteClipsAtCursor, detectSampleTempo, exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
+import { toggleMuteSelectedClips, consolidateSelectedClip, copySelectedClips, loopSelection, pasteClipsAtCursor, detectSampleTempo, exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
 import { findClip, updateClip } from '../lib/project';
 import { errorText, setState, toast, updateProject, useStore } from '../lib/store';
 import type { Clip } from '../types';
@@ -189,6 +189,9 @@ function LengthSection({ clip }: { clip: Clip }) {
       <View style={[s.row, { marginTop: 8 }]}>
         <Btn small accessibilityLabel="Konsolidieren" onPress={() => void consolidateSelectedClip()}>
           Konsolidieren (Strg/Cmd + J)
+        </Btn>
+        <Btn small kind={clip.muted ? 'primary' : undefined} accessibilityLabel={clip.muted ? 'Clip einschalten' : 'Clip stummschalten'} onPress={toggleMuteSelectedClips}>
+          {clip.muted ? 'Stumm · einschalten (0)' : 'Stummschalten (0)'}
         </Btn>
       </View>
       <View style={[s.row, { marginTop: 8, flexWrap: 'wrap' }]}>

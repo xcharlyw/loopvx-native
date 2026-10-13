@@ -158,6 +158,8 @@ export interface Clip {
   /** Linear fade lengths in bars from the clip's start / towards its end (default 0 = none). */
   fadeIn?: number;
   fadeOut?: number;
+  /** Deactivated (Live's "Deactivate clip", key 0): stays in place, greyed out, and is not played or rendered. */
+  muted?: boolean;
 }
 
 export interface SessionSlot {

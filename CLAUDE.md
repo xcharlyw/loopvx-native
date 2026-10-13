@@ -56,7 +56,7 @@ src/lib/            store.ts (state, undo, autosave), project.ts (pure project m
                     melody.ts (scales, chord progressions, trance/reese/hypnotic/pad/stab generators),
                     samples(.web).ts, sync*.ts + drive.ts (Google Drive sync), supabase.ts, vocals.ts
 src/storage/db.ts   AsyncStorage persistence; emits change events (Drive sync listens)
-api/                Vercel Functions (vocals.ts, drive-token.ts); api/_lib is shared, not deployed
+api/                Vercel Functions (vocals.ts, drive-token.ts, splice.ts, arrange.ts); api/_lib is shared, not deployed
 tests/              server tests (anything in api/ is deployed as a function)
 ```
 
@@ -74,7 +74,7 @@ tests/              server tests (anything in api/ is deployed as a function)
   Audio unless the page plays media (`pageAudio.ts`). `engine.unlock()` handles both and rebuilds a
   context iOS left stuck after an interruption. Decoding uses a suspended context; never resume
   outside a gesture.
-- **Secrets stay server-side** (Vercel env): `ELEVENLABS_API_KEY`, `GOOGLE_CLIENT_SECRET`. Never put
+- **Secrets stay server-side** (Vercel env): `ELEVENLABS_API_KEY`, `GOOGLE_CLIENT_SECRET`, `GEMINI_API_KEY`. Never put
   a secret in `src/config.ts` or an `EXPO_PUBLIC_` variable. Public: Supabase URL + publishable key.
   Server functions authorize via the caller's Supabase token + `ALLOWED_EMAILS` (`api/_lib/auth.ts`).
 - **Auth / Drive**: Supabase "Loopvx" project (`imjsaqqbfpyegkkqcgzf`, Google provider). Google
@@ -262,7 +262,12 @@ fraction of which section a role plays; MIDI roles get `generatePattern` clips (
 bar of a build and a crash on each drop; no 909 kick when a kick loop carries it), audio roles the best library sample (`candidates`: category, ±8 BPM, `keysFit`, nearest
 tempo first, one of the best three picked by the seed) looped over the whole span. `automationFor` adds filter openings, a reverb throw before each drop, drive build-ups on the
 bass and a fade-out; bass/lead/pad get a pump when they have none. Missing roles are added as MIDI tracks (909 Drums, Rumble Bass, Lead, Pad with tuned faders). It **replaces** the
-clips (undoable). Rule based with seeded randomness: not an LLM; an LLM could later choose the template/parameters (needs a server-side key). UI `ArrangerPanel` (FAB
+clips (undoable). Rule based with seeded randomness. **AI plan (Gemini)**: the sheet's text field sends the text, tempo, key, track roles and fitting
+library counts to `api/arrange.ts` (`GEMINI_API_KEY`, model `GEMINI_MODEL` or `gemini-3.6-flash`, JSON answer, `extractJson`); the model only picks the structure
+(sections with bars and `mute` roles, names = markers), styles (bass/lead/drop drums), roles to add, automation on/off, optional tempo/key and a German summary.
+`lib/arrangePlan.ts` (`parsePlan`, tested) checks every field (bars snap to 4, 4..64, total <= 256, needs a drop, keys normalised) and `planSections` turns it into
+`ArrangeOptions.sections` (a second drop/build plays as drop2/build2); the notes and clips are still built by the rules. Never tested against the real Gemini API
+(no key in the sandbox; tests and the browser check use mocks). UI `ArrangerPanel` (FAB
 "Arrangement" next to "AI Vocals"). Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
 
 ## 909 drum machine (issue #4)

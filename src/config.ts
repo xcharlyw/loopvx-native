@@ -16,6 +16,8 @@ export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_XlXcSoqbc0Wb5koV_b-nyg_D
 const API_BASE = Platform.OS === 'web' ? '/api' : 'https://loopvx-native.vercel.app/api';
 /** The ElevenLabs proxy. */
 export const VOCALS_ENDPOINT = `${API_BASE}/vocals`;
+/** Gemini arrangement planner (the key stays on the server). */
+export const ARRANGE_ENDPOINT = `${API_BASE}/arrange`;
 /** Splice connection (OAuth + MCP proxy; the user's Splice tokens stay on the device). */
 export const SPLICE_ENDPOINT = `${API_BASE}/splice`;
 /** Trades the Google refresh token for a Drive access token (needs the client secret, so server-side). */

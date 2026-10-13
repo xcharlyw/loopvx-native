@@ -1,6 +1,7 @@
 import type { Project, Sample, Track } from '../types';
 import { laneOf, laneValue } from './automation';
 import { arrange, candidates, roleOf, sectionsFor } from './arranger';
+import { planSections } from './arrangePlan';
 import { createProject, createTrack, trackSynth } from './project';
 
 const sample = (id: string, category: Sample['category'], extra: Partial<Sample> = {}): Sample => ({ id, name: `${id}.wav`, category, addedAt: 1, ...extra });
@@ -136,5 +137,37 @@ describe('the short arrangement', () => {
       expect(t.clips.every((c) => c.start + c.length <= 64 + 1e-9)).toBe(true);
       expect(overlaps(t)).toBe(false);
     }
+  });
+});
+
+describe('arrange from a plan', () => {
+  const sections = planSections({
+    sections: [
+      { type: 'intro', bars: 8 },
+      { type: 'drop', bars: 16 },
+      { type: 'break', bars: 16, mute: ['pad'] },
+      { type: 'drop', bars: 16, name: 'Finale' },
+      { type: 'outro', bars: 8 },
+    ],
+  });
+  const r = arrange(base(), [], { ...opts, sections, styles: { bass: 'acid' }, addRoles: ['drums', 'bass', 'pad'] });
+  const track = (name: string) => r.project.tracks.find((t) => t.name === name)!;
+
+  it('uses the plan length, its markers and only the roles asked for', () => {
+    expect(r.added).toEqual(['Drums 909', 'Rumble Bass', 'Pad']);
+    expect(r.project.markers?.map((m) => m.name)).toEqual(['Intro', 'Drop 1', 'Break', 'Finale', 'Outro']);
+    const end = Math.max(...r.project.tracks.flatMap((t) => t.clips.map((c) => c.start + c.length)));
+    expect(end).toBeLessThanOrEqual(64);
+  });
+
+  it('keeps a muted role out of its section', () => {
+    expect(track('Pad').clips.some((c) => c.start < 40 && c.start + c.length > 24)).toBe(false);
+  });
+
+  it('plays the planned bass style', () => {
+    const bass = track('Rumble Bass');
+    expect(bass.clips.length).toBeGreaterThan(0);
+    const plain = arrange(base(), [], { ...opts, sections, addRoles: ['bass'] }).project.tracks.find((t) => t.name === 'Rumble Bass')!;
+    expect(JSON.stringify(bass.clips.map((c) => c.notes))).not.toEqual(JSON.stringify(plain.clips.map((c) => c.notes)));
   });
 });

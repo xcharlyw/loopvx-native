@@ -18,6 +18,8 @@ export interface Section {
   /** Bar where it starts (0-based) and its length in bars. */
   start: number;
   bars: number;
+  /** Roles that stay silent in this section (from an AI plan: "no bass in the break"). */
+  mute?: Role[];
 }
 
 export type ArrangeLength = 64 | 128;
@@ -74,7 +76,11 @@ const SPANS: Record<Role, Partial<Record<SectionId, [number, number]>>> = {
 };
 
 /** The generator style for a MIDI role in a section (kit grooves for the drums). */
-function styleFor(role: Role, section: SectionId, track: Track): PatternStyle | undefined {
+function styleFor(role: Role, section: SectionId, track: Track, styles: ArrangeStyles = {}): PatternStyle | undefined {
+  const drop = section === 'drop' || section === 'drop2';
+  if (role === 'drums' && drop && styles.drums) return styles.drums;
+  if (role === 'bass' && styles.bass) return styles.bass;
+  if (role === 'lead' && styles.lead && section !== 'break') return styles.lead;
   if (role === 'drums') return section === 'intro' || section === 'outro' ? 'kit-minimal' : section === 'build' || section === 'build2' ? 'kit-rolling' : 'kit-techno';
   const wanted = (Object.entries(SUGGESTED_PRESET).find(([, id]) => id === trackSynth(track).preset)?.[0] ?? undefined) as PatternStyle | undefined;
   if (role === 'bass') return section === 'drop2' ? 'reese' : wanted && ['rumble', 'offbeat', 'reese', 'acid'].includes(wanted) ? wanted : 'rumble';
@@ -98,8 +104,20 @@ export function candidates(samples: Sample[], category: Sample['category'], proj
   return fits.sort((a, b) => Math.abs((a.bpm ?? project.bpm) - project.bpm) - Math.abs((b.bpm ?? project.bpm) - project.bpm) || a.name.localeCompare(b.name));
 }
 
+/** Pattern styles a plan may pick: bass and lead everywhere they play, drums for the drops. */
+export interface ArrangeStyles {
+  bass?: 'rumble' | 'offbeat' | 'reese' | 'acid';
+  lead?: 'trance' | 'hypnotic' | 'arp' | 'prog' | 'stabs' | 'rave';
+  drums?: 'kit-techno' | 'kit-rolling' | 'kit-minimal';
+}
+
 export interface ArrangeOptions {
   length: ArrangeLength;
+  /** A custom structure (an AI plan) instead of the fixed shape of `length`. */
+  sections?: Section[];
+  styles?: ArrangeStyles;
+  /** Which missing roles to add (default: all of drums, bass, lead and pad). */
+  addRoles?: Role[];
   seed: number;
   /** Add 909 drums, bass and lead tracks where the project has none. */
   addMissingTracks: boolean;
@@ -124,7 +142,7 @@ const MISSING: { role: Role; name: string; preset: string; category: Track['cate
 ];
 
 /** The clips of one track: a span per section it plays in. */
-function clipsFor(role: Role, track: Track, sections: Section[], project: Project, samples: Sample[], rand: () => number, seed: number, kickLoop: boolean): { clips: Clip[]; missing: boolean } {
+function clipsFor(role: Role, track: Track, sections: Section[], project: Project, samples: Sample[], rand: () => number, seed: number, kickLoop: boolean, styles?: ArrangeStyles): { clips: Clip[]; missing: boolean } {
   const clips: Clip[] = [];
   const { root, scale, progression } = projectHarmony(project);
   let sample: Sample | undefined;
@@ -136,7 +154,7 @@ function clipsFor(role: Role, track: Track, sections: Section[], project: Projec
   }
   for (const sec of sections) {
     const span = SPANS[role][sec.id];
-    if (!span) continue;
+    if (!span || sec.mute?.includes(role)) continue;
     const start = sec.start + Math.round(span[0] * sec.bars);
     const length = Math.round((span[1] - span[0]) * sec.bars);
     if (length < 1) continue;
@@ -144,7 +162,7 @@ function clipsFor(role: Role, track: Track, sections: Section[], project: Projec
       clips.push({ id: uid(), sampleId: sample.id, start, length, offset: 0 }); // the sample loops over the clip's whole length
       continue;
     }
-    const style = styleFor(role, sec.id, track);
+    const style = styleFor(role, sec.id, track, styles);
     if (!style) continue;
     // Before a drop the drums get a snare roll in the last bar; the drop opens with a crash.
     const rollBar = role === 'drums' && (sec.id === 'build' || sec.id === 'build2') && length >= 2;
@@ -197,8 +215,8 @@ function automationFor(role: Role, track: Track, sections: Section[], end: numbe
  */
 export function arrange(project: Project, samples: Sample[], opts: ArrangeOptions): ArrangeResult {
   const rand = seededRandom(opts.seed);
-  const sections = sectionsFor(opts.length);
-  const end = opts.length;
+  const sections = opts.sections?.length ? opts.sections : sectionsFor(opts.length);
+  const end = sections.reduce((e, sec) => Math.max(e, sec.start + sec.bars), 0);
   const added: string[] = [];
   const missingSamples: string[] = [];
   let tracks = project.tracks.map((t) => ({ ...t }));
@@ -206,7 +224,7 @@ export function arrange(project: Project, samples: Sample[], opts: ArrangeOption
   if (opts.addMissingTracks) {
     const have = new Set(tracks.map(roleOf));
     for (const m of MISSING) {
-      if (have.has(m.role)) continue;
+      if (have.has(m.role) || (opts.addRoles && !opts.addRoles.includes(m.role))) continue;
       const preset = presetById(m.preset);
       if (!preset) continue;
       tracks.push({ ...applyPreset(createTrack(m.category, project.sceneCount, m.name, 'midi'), preset), volume: m.volume });
@@ -219,7 +237,7 @@ export function arrange(project: Project, samples: Sample[], opts: ArrangeOption
   tracks = tracks.map((t) => {
     const role = roleOf(t);
     if (!role) return t;
-    const { clips, missing } = clipsFor(role, t, sections, project, samples, rand, opts.seed, kickLoop);
+    const { clips, missing } = clipsFor(role, t, sections, project, samples, rand, opts.seed, kickLoop, opts.styles);
     if (missing) {
       missingSamples.push(t.name);
       return t; // no sample for this track: its clips stay as they were

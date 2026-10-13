@@ -112,7 +112,8 @@ export interface ArrangeStyles {
 }
 
 export interface ArrangeOptions {
-  length: ArrangeLength;
+  /** The fixed shape to use when no `sections` are given (default 128 bars). */
+  length?: ArrangeLength;
   /** A custom structure (an AI plan) instead of the fixed shape of `length`. */
   sections?: Section[];
   styles?: ArrangeStyles;
@@ -215,7 +216,7 @@ function automationFor(role: Role, track: Track, sections: Section[], end: numbe
  */
 export function arrange(project: Project, samples: Sample[], opts: ArrangeOptions): ArrangeResult {
   const rand = seededRandom(opts.seed);
-  const sections = opts.sections?.length ? opts.sections : sectionsFor(opts.length);
+  const sections = opts.sections?.length ? opts.sections : sectionsFor(opts.length ?? 128);
   const end = sections.reduce((e, sec) => Math.max(e, sec.start + sec.bars), 0);
   const added: string[] = [];
   const missingSamples: string[] = [];

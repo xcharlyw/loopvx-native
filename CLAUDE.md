@@ -301,7 +301,8 @@ library counts to `api/arrange.ts` (`GEMINI_API_KEY`, model `GEMINI_MODEL` or `g
 `lib/arrangePlan.ts` (`parsePlan`, tested) checks every field (bars snap to 4, 4..64, total <= 256, needs a drop, keys normalised) and `planSections` turns it into
 `ArrangeOptions.sections` (a second drop/build plays as drop2/build2); the notes and clips are still built by the rules. Never tested against the real Gemini API
 (no key in the sandbox; tests and the browser check use mocks). UI `ArrangerPanel` (FAB
-"Arrangement" next to "AI Vocals"). Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
+"Arrangement" next to "AI Vocals") is **AI only**: the plan-less default (fixed 64/128 shape, "Arrangement erzeugen" without a text) was removed from the UI at Karl's request;
+"Arrangement erzeugen" stays disabled until Gemini has planned. `arrange()` itself still works without `sections` (default `sectionsFor(128)`), tests rely on it. Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
 
 ## 909 drum machine (issue #4)
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { projectEndBars } from '../audio/timing';
 import { C, font, mono } from '../constants/theme';
-import { AUTO_GRID, AUTO_ORDER, AUTO_PARAMS, laneOf, ramp, setLane, throwAt, withPoint, withoutPoint } from '../lib/automation';
+import { AUTO_GRID, AUTO_ORDER, AUTO_PARAMS, deviceAutoParams, laneOf, paramDef, ramp, setLane, throwAt, withPoint, withoutPoint } from '../lib/automation';
 import { formatBarPosition } from '../audio/timing';
 import { mapTrack } from '../lib/project';
 import { updateProject, useStore } from '../lib/store';
@@ -35,7 +35,7 @@ export function AutomationPanel() {
     );
   }
   const trackId = track.id;
-  const def = AUTO_PARAMS[param];
+  const def = paramDef(track, param);
   const points = laneOf(track, param);
   const write = (next: AutoPoint[], opts: { reschedule?: boolean; record?: boolean } = {}) => updateProject((p) => mapTrack(p, trackId, (t) => setLane(t, param, next)), opts);
   const indexOfBar = (list: AutoPoint[], bar: number) => list.findIndex((p) => Math.abs(p.bar - bar) < AUTO_GRID / 2);
@@ -87,6 +87,27 @@ export function AutomationPanel() {
           </Chip>
         ))}
       </View>
+      {deviceAutoParams(track).length > 0 && (
+        <>
+          <Txt style={s.note}>Regler der Geräte dieser Spur:</Txt>
+          <View style={s.chips}>
+            {deviceAutoParams(track).map((d) => (
+              <Chip
+                key={d.param}
+                variant={param === d.param ? 'on' : 'ghost'}
+                accessibilityLabel={`Parameter ${d.label}`}
+                textStyle={{ fontSize: 12 }}
+                onPress={() => {
+                  setParam(d.param);
+                  setSel(null);
+                }}
+              >
+                {`${d.label}${laneOf(track, d.param).length ? ' •' : ''}`}
+              </Chip>
+            ))}
+          </View>
+        </>
+      )}
 
       <View style={s.viewBar}>
         <Btn small accessibilityLabel="Ausschnitt zurück" onPress={() => setStart((v) => Math.max(0, v - span / 2))}>

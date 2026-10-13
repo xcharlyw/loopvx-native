@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { DEVICE_DEFS } from '../audio/devices';
-import { AUTO_PARAMS } from '../lib/automation';
+import { paramDef } from '../lib/automation';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
@@ -127,7 +127,7 @@ export function TrackPanel() {
       <Section title="Automation">
         <Txt style={s.note}>
           {track.automation?.length
-            ? `Kurven für: ${track.automation.map((l) => AUTO_PARAMS[l.param].label).join(', ')}`
+            ? `Kurven für: ${track.automation.map((l) => paramDef(track, l.param).label).join(', ')}`
             : 'Lass Filter, Drive, Hall, Echo, Lautstärke oder Pan über das Arrangement laufen: Filter-Sweeps, Hall-Würfe vor dem Drop, Ausblenden.'}
         </Txt>
         <View style={s.buttons}>

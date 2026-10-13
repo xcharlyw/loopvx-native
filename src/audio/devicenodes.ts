@@ -24,12 +24,17 @@ import { limiterCurve, reverbImpulse } from './fx';
 // gains, oscillators, a convolver. No DynamicsCompressor and no channel splitter exist there, so the compressor
 // builds its own detector (see `buildComp`).
 
-type Param = { setTargetAtTime: (v: number, t: number, c: number) => unknown; setValueAtTime: (v: number, t: number) => unknown };
+type Param = { setTargetAtTime: (v: number, t: number, c: number) => unknown; setValueAtTime: (v: number, t: number) => unknown; linearRampToValueAtTime: (v: number, t: number) => unknown; cancelScheduledValues: (t: number) => unknown };
 
 export interface UpdateEnv {
   bpm: number;
   /** Glide to the new values (live) or jump (offline render). */
   smooth: boolean;
+  /** Automation: set the values at this context time (a jump, or with `ramp` a linear ramp ending there). */
+  at?: number;
+  ramp?: boolean;
+  /** Collects every AudioParam an automation event touched, so the events can be cancelled later. */
+  touched?: Set<Param>;
 }
 
 export interface DeviceNode {
@@ -42,11 +47,19 @@ export interface DeviceNode {
 
 const TIME_CONSTANT = 0.015;
 
-/** Moves an AudioParam to `v`: a short glide while playing, a jump at time 0 when rendering. */
-export function setParam(ctx: BaseAudioContext, param: Param, v: number, smooth: boolean) {
-  if (smooth) param.setTargetAtTime(v, ctx.currentTime, TIME_CONSTANT);
+/** Moves an AudioParam to `v`: a short glide while playing, a jump at time 0 when rendering, or an automation event at `env.at`. */
+export function setParam(ctx: BaseAudioContext, param: Param, v: number, mode: boolean | UpdateEnv) {
+  const env = typeof mode === 'boolean' ? { smooth: mode } : mode;
+  if ('at' in env && env.at !== undefined) {
+    env.touched?.add(param);
+    if (env.ramp) param.linearRampToValueAtTime(v, env.at);
+    else param.setValueAtTime(v, env.at);
+    return;
+  }
+  if (env) param.setTargetAtTime(v, ctx.currentTime, TIME_CONSTANT);
   else param.setValueAtTime(v, 0);
 }
+export type { Param as DeviceParam };
 
 const WAVESHAPER_OVERSAMPLE = '4x' as const;
 
@@ -176,9 +189,9 @@ const buildEq: Builder = (k) => {
     update(p, env) {
       eqBands(p).forEach((b, i) => {
         const f = filters[i];
-        setParam(k.ctx, f.frequency, b.freq, env.smooth);
-        if (b.kind === 'peaking' || b.kind === 'highpass' || b.kind === 'lowpass') setParam(k.ctx, f.Q, b.q, env.smooth);
-        if (b.kind === 'peaking' || b.kind === 'lowshelf' || b.kind === 'highshelf') setParam(k.ctx, f.gain, b.gainDb, env.smooth);
+        setParam(k.ctx, f.frequency, b.freq, env);
+        if (b.kind === 'peaking' || b.kind === 'highpass' || b.kind === 'lowpass') setParam(k.ctx, f.Q, b.q, env);
+        if (b.kind === 'peaking' || b.kind === 'lowshelf' || b.kind === 'highshelf') setParam(k.ctx, f.gain, b.gainDb, env);
       });
     },
   };
@@ -244,11 +257,11 @@ const buildComp: Builder = (k) => {
         shapeKey = key;
         curve.set(compCurve({ threshold: p.threshold, ratio: p.ratio, knee: p.knee }));
       }
-      setParam(k.ctx, attackLp.frequency, followerCutoff(p.attack), env.smooth);
-      setParam(k.ctx, decay.gain, peakDecay(p.release, k.ctx.sampleRate), env.smooth);
-      setParam(k.ctx, makeup.gain, dbToGain(p.makeup), env.smooth);
-      setParam(k.ctx, wet.gain, p.mix, env.smooth);
-      setParam(k.ctx, dry.gain, 1 - p.mix, env.smooth);
+      setParam(k.ctx, attackLp.frequency, followerCutoff(p.attack), env);
+      setParam(k.ctx, decay.gain, peakDecay(p.release, k.ctx.sampleRate), env);
+      setParam(k.ctx, makeup.gain, dbToGain(p.makeup), env);
+      setParam(k.ctx, wet.gain, p.mix, env);
+      setParam(k.ctx, dry.gain, 1 - p.mix, env);
     },
   };
 };
@@ -280,11 +293,11 @@ const buildSat: Builder = (k) => {
         mode = Math.round(p.mode);
         shaper.set(satCurve(mode));
       }
-      setParam(k.ctx, pre.gain, satPreGain(p.drive), env.smooth);
-      setParam(k.ctx, tone.frequency, p.tone >= 19999 ? 30000 : p.tone, env.smooth);
-      setParam(k.ctx, out.gain, dbToGain(p.out), env.smooth);
-      setParam(k.ctx, wet.gain, p.mix, env.smooth);
-      setParam(k.ctx, dry.gain, 1 - p.mix, env.smooth);
+      setParam(k.ctx, pre.gain, satPreGain(p.drive), env);
+      setParam(k.ctx, tone.frequency, p.tone >= 19999 ? 30000 : p.tone, env);
+      setParam(k.ctx, out.gain, dbToGain(p.out), env);
+      setParam(k.ctx, wet.gain, p.mix, env);
+      setParam(k.ctx, dry.gain, 1 - p.mix, env);
     },
   };
 };
@@ -337,17 +350,17 @@ const buildEcho: Builder = (k) => {
     update(p, env) {
       const ping = p.pingpong >= 0.5;
       const seconds = echoSeconds(p as { sync: number; division: number; time: number }, env.bpm);
-      setParam(k.ctx, d1.delayTime, seconds, env.smooth);
-      setParam(k.ctx, d2.delayTime, seconds, env.smooth);
-      setParam(k.ctx, fb1.gain, ping ? 0 : p.feedback, env.smooth);
-      setParam(k.ctx, mid.gain, p.feedback, env.smooth);
-      setParam(k.ctx, fb2.gain, ping ? p.feedback : 0, env.smooth);
-      setParam(k.ctx, tap2.gain, ping ? 1 : 0, env.smooth);
-      setParam(k.ctx, pan1.pan, ping ? -0.85 : 0, env.smooth);
-      setParam(k.ctx, pan2.pan, ping ? 0.85 : 0, env.smooth);
-      setParam(k.ctx, hp.frequency, p.hp <= 20.5 ? 5 : p.hp, env.smooth);
-      setParam(k.ctx, lp.frequency, p.lp >= 19999 ? 30000 : p.lp, env.smooth);
-      setParam(k.ctx, wet.gain, p.mix, env.smooth);
+      setParam(k.ctx, d1.delayTime, seconds, env);
+      setParam(k.ctx, d2.delayTime, seconds, env);
+      setParam(k.ctx, fb1.gain, ping ? 0 : p.feedback, env);
+      setParam(k.ctx, mid.gain, p.feedback, env);
+      setParam(k.ctx, fb2.gain, ping ? p.feedback : 0, env);
+      setParam(k.ctx, tap2.gain, ping ? 1 : 0, env);
+      setParam(k.ctx, pan1.pan, ping ? -0.85 : 0, env);
+      setParam(k.ctx, pan2.pan, ping ? 0.85 : 0, env);
+      setParam(k.ctx, hp.frequency, p.hp <= 20.5 ? 5 : p.hp, env);
+      setParam(k.ctx, lp.frequency, p.lp >= 19999 ? 30000 : p.lp, env);
+      setParam(k.ctx, wet.gain, p.mix, env);
     },
   };
 };
@@ -399,12 +412,12 @@ const buildReverb: Builder = (k) => {
     update(p, env) {
       if (!conv || Math.abs(Math.log(p.size / size)) > 0.03) room(p.size);
       const { dry: d, wet: w } = blend(p.mix);
-      setParam(k.ctx, dry.gain, d, env.smooth);
+      setParam(k.ctx, dry.gain, d, env);
       // The normalised impulse comes back quiet: the same lift as the shared reverb return.
-      setParam(k.ctx, wet.gain, w * 1.6, env.smooth);
-      setParam(k.ctx, pre.delayTime, p.predelay / 1000, env.smooth);
-      setParam(k.ctx, lowCut.frequency, p.lowcut, env.smooth);
-      setParam(k.ctx, damp.frequency, p.damp >= 19999 ? 30000 : p.damp, env.smooth);
+      setParam(k.ctx, wet.gain, w * 1.6, env);
+      setParam(k.ctx, pre.delayTime, p.predelay / 1000, env);
+      setParam(k.ctx, lowCut.frequency, p.lowcut, env);
+      setParam(k.ctx, damp.frequency, p.damp >= 19999 ? 30000 : p.damp, env);
     },
   };
 };
@@ -443,15 +456,15 @@ const buildChorus: Builder = (k) => {
     output,
     update(p, env) {
       const { dry: d, wet: w } = blend(p.mix);
-      setParam(k.ctx, dry.gain, d, env.smooth);
-      setParam(k.ctx, wet.gain, w, env.smooth);
-      setParam(k.ctx, lfo.frequency, p.rate, env.smooth);
+      setParam(k.ctx, dry.gain, d, env);
+      setParam(k.ctx, wet.gain, w, env);
+      setParam(k.ctx, lfo.frequency, p.rate, env);
       const swing = chorusSwing(p.depth, p.delay);
-      setParam(k.ctx, swingA.gain, swing, env.smooth);
-      setParam(k.ctx, swingB.gain, -swing, env.smooth);
+      setParam(k.ctx, swingA.gain, swing, env);
+      setParam(k.ctx, swingB.gain, -swing, env);
       for (const { d: delay, fb } of delays) {
-        setParam(k.ctx, delay.delayTime, p.delay / 1000, env.smooth);
-        setParam(k.ctx, fb.gain, p.feedback, env.smooth);
+        setParam(k.ctx, delay.delayTime, p.delay / 1000, env);
+        setParam(k.ctx, fb.gain, p.feedback, env);
       }
     },
   };
@@ -478,10 +491,10 @@ const buildFilter: Builder = (k) => {
         type = Math.round(p.type);
         f.type = FILTER_KINDS[Math.max(0, Math.min(2, type))];
       }
-      setParam(k.ctx, f.frequency, p.cutoff, env.smooth);
-      setParam(k.ctx, f.Q, filterDeviceQ(p.type, p.res), env.smooth);
-      setParam(k.ctx, lfo.frequency, p.lfoRate, env.smooth);
-      setParam(k.ctx, depth.gain, p.lfoDepth * 1200, env.smooth);
+      setParam(k.ctx, f.frequency, p.cutoff, env);
+      setParam(k.ctx, f.Q, filterDeviceQ(p.type, p.res), env);
+      setParam(k.ctx, lfo.frequency, p.lfoRate, env);
+      setParam(k.ctx, depth.gain, p.lfoDepth * 1200, env);
     },
   };
 };
@@ -502,8 +515,8 @@ const buildLimiter: Builder = (k) => {
     output,
     update(p, env) {
       const g = limiterGains(p.gain, p.ceiling);
-      setParam(k.ctx, pre.gain, g.pre, env.smooth);
-      setParam(k.ctx, post.gain, g.post, env.smooth);
+      setParam(k.ctx, pre.gain, g.pre, env);
+      setParam(k.ctx, post.gain, g.post, env);
     },
   };
 };
@@ -520,8 +533,8 @@ const buildUtility: Builder = (k) => {
     input,
     output,
     update(p, env) {
-      setParam(k.ctx, gain.gain, dbToGain(p.gain) * (p.invert >= 0.5 ? -1 : 1), env.smooth);
-      setParam(k.ctx, pan.pan, p.pan, env.smooth);
+      setParam(k.ctx, gain.gain, dbToGain(p.gain) * (p.invert >= 0.5 ? -1 : 1), env);
+      setParam(k.ctx, pan.pan, p.pan, env);
     },
   };
 };

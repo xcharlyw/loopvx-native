@@ -219,6 +219,12 @@ The filter lane goes through `djFilter`, so it keeps the DJ filter's curve. Meas
 couple of bars, a reverb lane stays dry until its point. UI `AutomationPanel` (TrackPanel "Automation"): parameter chips, a graph of 16/32/64/128 bars (no scrolling:
 the buttons move the window), tap = new point, drag = move (one undo step), buttons nudge/delete, shapes for the visible window. Same curve component (`AutomationCurve`) is used in the arrange view: the "A" button of a track header opens a lane under the track (`LaneRow`, `LANE_H`, all bars at the arrangement's zoom; tap the lane header to cycle the parameter), like Ableton.
 The `volume` lane is a multiplier of the track's fader (0..1), so the mixer fader keeps working under a fade.
+**Device knobs** are automatable too: lane `param` = `dev:<deviceId>:<paramKey>` (`deviceAutoParams`, `parseDeviceParam`, `paramDef` gives label/range/readout for
+any param), values are the **knob position 0..1** (`knobPosition`/`knobValue` through `knobMath`, so frequency sweeps move like the log knob). `MixGraph.scheduleAutomation`
+groups the lanes of one device and sends one `Slot.automate` per moment (otherwise lanes would overwrite each other); `setParam` in `devicenodes.ts` takes the env with
+`at`/`ramp`/`touched` and schedules instead of gliding; an automated slot ignores `apply` updates until `resetAutomation` cancels the touched params. Measured offline: an EQ
+high-cut lane closing over 8 bars cuts hats' zero crossings 13k → 0.8k, a second lane on the same EQ (low-cut opening) works at the same time. Switches and pickers are not
+automatable. The arrange lane header cycles track params, then device knobs; the sheet lists device knobs as their own chips.
 
 ## Multi-selection and Consolidate (Cmd/Ctrl+J)
 

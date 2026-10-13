@@ -1,7 +1,7 @@
 import type { AnalyserNode, AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode, WaveShaperNode } from 'react-native-audio-api';
-import { sampleLane } from '../lib/automation';
+import { knobValue, laneValue, parseDeviceParam, sampleLane } from '../lib/automation';
 import { audibleGain } from '../lib/project';
-import type { AutoParam, Project, Track } from '../types';
+import type { AutoParam, Device, Project, Track } from '../types';
 import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
 import { DeviceBay } from './devicebay';
 import { beatsInWindow, secondsPerBar } from './timing';
@@ -157,7 +157,13 @@ class TrackChain {
   }
 
   /** Drop every automation event and go back to the track's own settings. */
+  /** Automation of device knobs: one update of the device at context time `at` with the automated values on top. */
+  automateDevice(device: Device, override: Record<string, number>, bpm: number, at: number, ramp: boolean) {
+    this.bay.slot(device.id)?.automate(device, override, bpm, at, ramp);
+  }
+
   resetAutomation() {
+    if (this.lastApply) this.bay.resetAutomation(this.lastApply.track.devices, this.lastApply.bpm);
     if (!this.automated.size) return;
     const params: { cancelScheduledValues: (t: number) => unknown }[] = [this.lp.frequency, this.hp.frequency, this.dry.gain, this.pre.gain, this.wet.gain, this.pan.pan, this.fader.gain];
     if (this.reverbSend) params.push(this.reverbSend.gain);
@@ -269,7 +275,23 @@ export class MixGraph {
     for (const t of project.tracks) {
       const chain = t.automation?.some((l) => l.points.length) ? this.chain(t) : null;
       if (!chain) continue;
+      // Device knobs: all lanes of one device go out as one update per moment, or they would overwrite each other.
+      const byDevice = new Map<string, { key: string; points: { bar: number; value: number }[] }[]>();
       for (const lane of t.automation!) {
+        const dev = parseDeviceParam(lane.param);
+        if (dev && lane.points.length) byDevice.set(dev.deviceId, [...(byDevice.get(dev.deviceId) ?? []), { key: dev.key, points: lane.points }]);
+      }
+      for (const [deviceId, lanes] of byDevice) {
+        const device = t.devices?.find((d) => d.id === deviceId);
+        if (!device) continue;
+        const bars = [...new Set(lanes.flatMap((l) => sampleLane(l.points, fromBar, toBar).map((p) => p.bar)))].sort((a, b) => a - b);
+        bars.forEach((bar, i) => {
+          const override = Object.fromEntries(lanes.map((l) => [l.key, knobValue(device, l.key, laneValue(l.points, bar)!)]));
+          chain.automateDevice(device, override, project.bpm, time + (bar - fromBar) * spb, i > 0);
+        });
+      }
+      for (const lane of t.automation!) {
+        if (parseDeviceParam(lane.param)) continue;
         const samples = sampleLane(lane.points, fromBar, toBar);
         samples.forEach((p, i) => chain.automate(lane.param, p.value, time + (p.bar - fromBar) * spb, i === 0 ? 'set' : 'ramp', (v) => audibleGain({ ...t, volume: t.volume * v }, anySolo), this));
       }

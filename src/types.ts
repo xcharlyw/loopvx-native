@@ -110,7 +110,10 @@ export interface TrackFx {
 }
 
 /** A track parameter that can follow a curve over the arrangement. */
-export type AutoParam = 'filter' | 'drive' | 'reverb' | 'delay' | 'pan' | 'volume';
+/** A track parameter that can follow a curve over the arrangement. */
+export type TrackAutoParam = 'filter' | 'drive' | 'reverb' | 'delay' | 'pan' | 'volume';
+/** Track parameters, or a device knob as `dev:<deviceId>:<paramKey>` (its curve holds the knob position 0..1). */
+export type AutoParam = TrackAutoParam | `dev:${string}`;
 
 /** One point of an automation curve: `bar` is the position in bars, `value` is in the parameter's own range. */
 export interface AutoPoint {

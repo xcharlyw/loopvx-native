@@ -1,4 +1,6 @@
-import type { AutoParam, AutoPoint, AutomationLane, Track } from '../types';
+import { DEVICE_DEFS, deviceParams, formatParam } from '../audio/devices';
+import type { AutoParam, AutoPoint, AutomationLane, Device, Track, TrackAutoParam } from '../types';
+import { tToValue, valueToT } from './knobMath';
 
 // Automation lanes: pure maths on curves (value at a bar, sampling for the scheduler, editing points, ready-made
 // shapes). The engine turns the samples into AudioParam events; the editor and the arranger build lanes with these.
@@ -15,7 +17,7 @@ export interface ParamDef {
 
 const pct = (v: number) => `${Math.round(v * 100)} %`;
 
-export const AUTO_PARAMS: Record<AutoParam, ParamDef> = {
+export const AUTO_PARAMS: Record<TrackAutoParam, ParamDef> = {
   filter: { label: 'Filter', min: -1, max: 1, rest: 0, format: (v) => (Math.abs(v) < 0.02 ? 'Aus' : v < 0 ? `Tiefpass ${Math.round(-v * 100)} %` : `Hochpass ${Math.round(v * 100)} %`) },
   drive: { label: 'Drive', min: 0, max: 1, rest: 0, format: pct },
   reverb: { label: 'Hall', min: 0, max: 1, rest: 0, format: pct },
@@ -24,12 +26,60 @@ export const AUTO_PARAMS: Record<AutoParam, ParamDef> = {
   /** A multiplier of the track's fader (1 = as the fader stands), so the mixer fader keeps working under a fade. */
   volume: { label: 'Lautstärke', min: 0, max: 1, rest: 1, format: (v) => `${Math.round(v * 100)} %` },
 };
-export const AUTO_ORDER: AutoParam[] = ['filter', 'drive', 'reverb', 'delay', 'volume', 'pan'];
+export const AUTO_ORDER: TrackAutoParam[] = ['filter', 'drive', 'reverb', 'delay', 'volume', 'pan'];
+
+// ---------------------------------------------------------------- device knobs
+
+export const isDeviceParam = (p: AutoParam): p is `dev:${string}` => p.startsWith('dev:');
+export const deviceParamKey = (deviceId: string, key: string): AutoParam => `dev:${deviceId}:${key}`;
+/** `dev:<id>:<key>` split up; undefined for a track parameter. */
+export function parseDeviceParam(p: AutoParam): { deviceId: string; key: string } | undefined {
+  if (!isDeviceParam(p)) return undefined;
+  const [, deviceId, key] = p.split(':');
+  return deviceId && key ? { deviceId, key } : undefined;
+}
+
+/** A device knob's position (0..1) for a value, and back: lanes of device knobs move like the knob (log for frequencies). */
+export function knobPosition(device: Device, key: string, value: number): number {
+  const def = DEVICE_DEFS[device.type]?.params.find((p) => p.key === key);
+  return def ? valueToT(value, def.min, def.max, def.curve ?? 'linear') : 0;
+}
+export function knobValue(device: Device, key: string, t: number): number {
+  const def = DEVICE_DEFS[device.type]?.params.find((p) => p.key === key);
+  return def ? tToValue(Math.max(0, Math.min(1, t)), def.min, def.max, def.curve ?? 'linear') : 0;
+}
+
+/** The knobs of a track's devices that a lane can drive (continuous ones: switches and pickers stay put). */
+export function deviceAutoParams(track: Pick<Track, 'devices'>): { param: AutoParam; label: string }[] {
+  return (track.devices ?? []).flatMap((d) => {
+    const def = DEVICE_DEFS[d.type];
+    return (def?.params ?? []).filter((p) => p.unit !== 'enum' && p.unit !== 'switch').map((p) => ({ param: deviceParamKey(d.id, p.key), label: `${def.label}: ${p.label}` }));
+  });
+}
+
+/** What the editor shows for any parameter of a track: track parameters from `AUTO_PARAMS`, device knobs as 0..1 with the knob's readout. */
+export function paramDef(track: Pick<Track, 'devices'>, param: AutoParam): ParamDef {
+  const dev = parseDeviceParam(param);
+  if (!dev) return AUTO_PARAMS[param as TrackAutoParam];
+  const device = track.devices?.find((d) => d.id === dev.deviceId);
+  const pdef = device ? DEVICE_DEFS[device.type]?.params.find((p) => p.key === dev.key) : undefined;
+  if (!device || !pdef) return { label: 'Gerät fehlt', min: 0, max: 1, rest: 0, format: () => '–' };
+  return {
+    label: `${DEVICE_DEFS[device.type].label}: ${pdef.label}`,
+    min: 0,
+    max: 1,
+    rest: knobPosition(device, dev.key, deviceParams(device)[dev.key]),
+    format: (t) => formatParam(pdef, knobValue(device, dev.key, t)),
+  };
+}
 
 /** Points sit on a 1/16-bar grid. */
 export const AUTO_GRID = 1 / 16;
 const snap = (bar: number) => Math.round(bar / AUTO_GRID) * AUTO_GRID;
-const clampValue = (param: AutoParam, v: number) => Math.max(AUTO_PARAMS[param].min, Math.min(AUTO_PARAMS[param].max, v));
+const clampValue = (param: AutoParam, v: number) => {
+  const def = isDeviceParam(param) ? { min: 0, max: 1 } : AUTO_PARAMS[param];
+  return Math.max(def.min, Math.min(def.max, v));
+};
 
 /** The curve's value at `bar`: linear between points, held before the first and after the last; undefined without points. */
 export function laneValue(points: AutoPoint[], bar: number): number | undefined {

@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { C, mono } from '../constants/theme';
-import { AUTO_GRID, AUTO_PARAMS, laneOf, setLane, withPoint, withoutPoint } from '../lib/automation';
+import { AUTO_GRID, laneOf, paramDef, setLane, withPoint, withoutPoint } from '../lib/automation';
 import { mapTrack } from '../lib/project';
 import { discardLastHistory, recordHistory, updateProject } from '../lib/store';
 import type { AutoParam, AutoPoint, Track } from '../types';
@@ -19,7 +19,7 @@ const HIT = 18; // px: a touch this close to a point grabs it
 export function AutomationCurve({ track, param, start, span, width, height, selected, onSelect, grid = 2, labels = true }: { track: Track; param: AutoParam; start: number; span: number; width: number; height: number; selected: number | null; onSelect: (i: number | null) => void; grid?: number; labels?: boolean }) {
   const drag = useRef<{ index: number; moved: boolean } | null>(null);
   const trackId = track.id;
-  const def = AUTO_PARAMS[param];
+  const def = paramDef(track, param);
   const points = laneOf(track, param);
   const barAt = (x: number) => start + (Math.max(0, Math.min(width, x)) / width) * span;
   const xOf = (bar: number) => ((bar - start) / span) * width;

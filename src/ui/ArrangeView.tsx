@@ -10,7 +10,7 @@ import { addMarker } from '../lib/markers';
 import { createMidiTrack, createTrack, mapTrack, trackKind, type ClipEdit } from '../lib/project';
 import { getState, selectedClipIds, setClipSelection, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
-import { AUTO_ORDER, AUTO_PARAMS, laneOf } from '../lib/automation';
+import { AUTO_ORDER, deviceAutoParams, laneOf, paramDef } from '../lib/automation';
 import type { AutoParam } from '../types';
 import { AutomationCurve } from './AutomationCurve';
 import { Fader } from './Fader';
@@ -131,7 +131,12 @@ export function ArrangeView() {
       else next[t.id] = t.automation?.[0]?.param ?? 'filter';
       return next;
     });
-  const cycleLane = (t: Track) => setLanes((m) => ({ ...m, [t.id]: AUTO_ORDER[(AUTO_ORDER.indexOf(m[t.id] ?? 'filter') + 1) % AUTO_ORDER.length] }));
+  // Tapping the lane header steps through the track's parameters, then the knobs of its devices.
+  const cycleLane = (t: Track) =>
+    setLanes((m) => {
+      const choices: AutoParam[] = [...AUTO_ORDER, ...deviceAutoParams(t).map((d) => d.param)];
+      return { ...m, [t.id]: choices[(choices.indexOf(m[t.id] ?? 'filter') + 1) % choices.length] };
+    });
 
   const grid = zoom >= 32 ? 0.25 : 1;
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -397,7 +402,7 @@ export function ArrangeView() {
                 </Pressable>
                 {laneParam && (
                   <Pressable accessibilityLabel={`Parameter der Automation von ${track.name}`} onPress={() => cycleLane(track)} style={[s.laneHeader, { height: LANE_H }]}>
-                    <Txt style={s.laneParam}>{`${AUTO_PARAMS[laneParam].label} ▾`}</Txt>
+                    <Txt style={s.laneParam}>{`${paramDef(track, laneParam).label} ▾`}</Txt>
                     <Txt style={s.laneHint}>{laneOf(track, laneParam).length ? `${laneOf(track, laneParam).length} Punkte` : 'tippen: Parameter'}</Txt>
                   </Pressable>
                 )}

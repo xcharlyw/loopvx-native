@@ -1,7 +1,7 @@
 import type { AudioNode, BaseAudioContext, GainNode } from 'react-native-audio-api';
 import type { Device } from '../types';
 import { deviceParams } from './devices';
-import { buildDevice, setParam, type DeviceNode } from './devicenodes';
+import { buildDevice, setParam, type DeviceNode, type DeviceParam } from './devicenodes';
 
 /** One device in the chain: its nodes, plus a bypass path so switching it off is a click-free crossfade. */
 class Slot {
@@ -27,10 +27,29 @@ class Slot {
     this.bypass.connect(this.output);
   }
 
+  /** Params an automation lane drives right now: `update` leaves the device's values alone while set. */
+  private touched = new Set<DeviceParam>();
+  automated = false;
+
   update(device: Device, bpm: number, smooth: boolean) {
     setParam(this.ctx, this.inner.gain, device.on ? 1 : 0, smooth);
     setParam(this.ctx, this.bypass.gain, device.on ? 0 : 1, smooth);
-    this.node.update(deviceParams(device), { bpm, smooth });
+    if (!this.automated) this.node.update(deviceParams(device), { bpm, smooth });
+  }
+
+  /** One automation step: the device's values with `override` on top, at context time `at` (a ramp ending there, or a jump). */
+  automate(device: Device, override: Record<string, number>, bpm: number, at: number, ramp: boolean) {
+    this.automated = true;
+    this.node.update(deviceParams({ type: device.type, params: { ...device.params, ...override } }), { bpm, smooth: false, at, ramp, touched: this.touched });
+  }
+
+  /** Drop the automation events and go back to the device's own values. */
+  resetAutomation(device: Device | undefined, bpm: number) {
+    if (!this.automated) return;
+    for (const p of this.touched) p.cancelScheduledValues(0);
+    this.touched.clear();
+    this.automated = false;
+    if (device) this.node.update(deviceParams(device), { bpm, smooth: true });
   }
 
   dispose() {
@@ -61,6 +80,16 @@ export class DeviceBay {
     const order = list.map((d) => `${d.id}:${d.type}`).join(',');
     if (order !== this.order) this.rebuild(list);
     list.forEach((d, i) => this.slots[i]?.update(d, bpm, smooth));
+  }
+
+  /** The slot of a device, for automation. */
+  slot(id: string): Slot | undefined {
+    return this.slots.find((s) => s.id === id);
+  }
+
+  /** Every automated slot back to its device's values (`devices` = the chain as it is now). */
+  resetAutomation(devices: Device[] | undefined, bpm: number) {
+    for (const s of this.slots) s.resetAutomation(devices?.find((d) => d.id === s.id), bpm);
   }
 
   private rebuild(list: Device[]) {

@@ -1,5 +1,5 @@
 import type { Track } from '../types';
-import { AUTO_PARAMS, hasAutomation, joinPoints, laneOf, laneValue, ramp, sampleLane, setLane, throwAt, withPoint, withoutPoint } from './automation';
+import { AUTO_PARAMS, deviceAutoParams, hasAutomation, joinPoints, knobPosition, knobValue, paramDef, parseDeviceParam, laneOf, laneValue, ramp, sampleLane, setLane, throwAt, withPoint, withoutPoint } from './automation';
 
 const track = { id: 't', name: 't', category: 'synth', color: '#fff', volume: 1, muted: false, solo: false, clips: [], slots: [] } as Track;
 
@@ -70,5 +70,34 @@ describe('shapes', () => {
   });
   it('knows every parameter it can automate', () => {
     expect(Object.keys(AUTO_PARAMS).sort()).toEqual(['delay', 'drive', 'filter', 'pan', 'reverb', 'volume']);
+  });
+});
+
+describe('device knobs', () => {
+  const eq = { id: 'e1', type: 'eq', on: true, params: { lp: 2000 } } as const;
+  const withEq = { ...track, devices: [{ ...eq, params: { ...eq.params } }] } as Track;
+  it('lists the continuous knobs of the track’s devices under their own keys', () => {
+    const list = deviceAutoParams(withEq);
+    expect(list.some((d) => d.param === 'dev:e1:lp' && d.label === 'EQ: High-Cut')).toBe(true);
+    expect(parseDeviceParam('dev:e1:lp')).toEqual({ deviceId: 'e1', key: 'lp' });
+    expect(parseDeviceParam('filter')).toBeUndefined();
+  });
+  it('maps knob positions to values on the knob’s own curve (log for frequencies) and back', () => {
+    const d = withEq.devices![0];
+    const t = knobPosition(d, 'lp', 2000);
+    expect(t).toBeGreaterThan(0.4);
+    expect(t).toBeLessThan(0.8);
+    expect(knobValue(d, 'lp', t)).toBeCloseTo(2000, 0);
+    expect(knobValue(d, 'lp', 2)).toBe(knobValue(d, 'lp', 1));
+  });
+  it('describes a device lane as 0..1 with the knob’s readout and rest at the current value', () => {
+    const def = paramDef(withEq, 'dev:e1:lp');
+    expect(def.min).toBe(0);
+    expect(def.max).toBe(1);
+    expect(def.format(def.rest)).toBe('2,0 kHz');
+    expect(paramDef(withEq, 'dev:gone:lp').label).toBe('Gerät fehlt');
+  });
+  it('clamps device lanes to 0..1', () => {
+    expect(withPoint('dev:e1:lp', [], 0, 3)).toEqual([{ bar: 0, value: 1 }]);
   });
 });

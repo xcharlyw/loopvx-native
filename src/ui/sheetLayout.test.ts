@@ -1,4 +1,4 @@
-import { BAR_HEIGHT, bigger, sheetLayout, smaller } from './sheetLayout';
+import { BAR_HEIGHT, bigger, browserWidth, placementFor, sheetLayout, smaller } from './sheetLayout';
 
 describe('sheet layout', () => {
   it('is a side panel in full size and docked below', () => {
@@ -18,5 +18,23 @@ describe('sheet layout', () => {
     expect(bigger('bar')).toBe('half');
     expect(bigger('half')).toBe('full');
     expect(bigger('full')).toBe('full');
+  });
+});
+
+describe('placement on a wide screen (Live layout)', () => {
+  const win = { width: 1400, height: 900 };
+  it('docks detail panels at the bottom across the width', () => {
+    expect(placementFor('piano', 'full', win, true)).toEqual({ docked: true, width: 1400, height: 414, detail: true });
+    expect(placementFor('devices', 'half', win, true)).toEqual({ docked: true, width: 1400, height: 288, detail: true });
+    expect(placementFor('clip', 'bar', win, true).height).toBe(BAR_HEIGHT);
+  });
+  it('keeps the other panels and every panel on a phone as they were', () => {
+    expect(placementFor('mixer', 'full', win, true)).toEqual({ docked: false, width: 420, detail: false });
+    expect(placementFor('piano', 'full', { width: 390, height: 800 }, false)).toEqual({ docked: false, width: 390, detail: false });
+  });
+  it('sizes the browser column', () => {
+    expect(browserWidth(1400)).toBe(336);
+    expect(browserWidth(800)).toBe(260);
+    expect(browserWidth(3000)).toBe(340);
   });
 });

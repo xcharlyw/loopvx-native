@@ -32,7 +32,10 @@ import { TopBar } from './TopBar';
 import { COMMANDS } from './commands';
 import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
 import { useSmall } from './hooks';
-import { sheetLayout } from './sheetLayout';
+import { browserWidth, placementFor } from './sheetLayout';
+import { SheetPlace } from './Sheet';
+
+const BROWSER_PLACE = { column: true, onClose: () => setState({ browserOpen: false }) };
 
 function Shell() {
   const view = useStore((st) => st.view);
@@ -41,13 +44,21 @@ function Shell() {
   const toasts = useStore((st) => st.toasts);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const [bottomH, setBottomH] = useState(0);
   const small = useSmall();
   const menuBar = Platform.OS === 'web' && !small;
+  const [bottomH, setBottomH] = useState(0);
   const close = () => setState({ panel: 'none' });
   const open = panel !== 'none';
-  const layout = sheetLayout(sheetSize, { width, height });
+  const browserOpen = useStore((st) => st.browserOpen);
+  const browser = menuBar && browserOpen;
+  const browserW = browser ? browserWidth(width) : 0;
+  const layout = placementFor(panel, sheetSize, { width: width - browserW, height }, menuBar);
   const docked = open && layout.docked;
+
+  // Live layout: on a wide screen the Library is the browser column, not a panel.
+  useEffect(() => {
+    if (menuBar && panel === 'library') setState({ panel: 'none', browserOpen: true });
+  }, [menuBar, panel]);
 
   // The Android back button closes the panel (the panel used to be a Modal that did this).
   useEffect(() => {
@@ -64,20 +75,29 @@ function Shell() {
       {menuBar && <MenuBar />}
       <TopBar />
       {/* A docked panel takes its height from the arrangement, so the tracks above stay visible and scrollable. */}
-      <View style={[s.main, docked && { marginBottom: layout.height }]}>
-        {view === 'arrange' ? <ArrangeView /> : <SessionView />}
-        <PromptBar />
+      <View style={s.row}>
+        {browser && (
+          <View style={[s.browser, { width: browserW }]}>
+            <SheetPlace.Provider value={BROWSER_PLACE}>
+              <LibraryPanel />
+            </SheetPlace.Provider>
+          </View>
+        )}
+        <View style={[s.main, docked && { marginBottom: layout.height }]}>
+          {view === 'arrange' ? <ArrangeView /> : <SessionView />}
+          <PromptBar />
+        </View>
       </View>
       <View onLayout={(e) => setBottomH(e.nativeEvent.layout.height)}>
         <BottomBar />
       </View>
 
       {open && (
-        <View style={[s.overlay, docked ? { left: 0, right: 0, bottom: bottomH, height: layout.height } : { top: menuBar ? MENU_BAR_H : 0, left: 0, right: 0, bottom: 0 }]} pointerEvents="box-none">
+        <View style={[s.overlay, docked ? { left: layout.detail ? browserW : 0, right: 0, bottom: bottomH, height: layout.height } : { top: menuBar ? MENU_BAR_H : 0, left: 0, right: 0, bottom: 0 }]} pointerEvents="box-none">
           <View style={docked ? s.dockRow : s.modalRow} pointerEvents="box-none">
             {!docked && <Pressable style={s.backdrop} onPress={close} />}
-            {docked && <View style={{ flex: 1 }} pointerEvents="none" />}
-            <View style={[s.sheet, docked ? s.sheetDocked : { paddingTop: insets.top, paddingBottom: insets.bottom }, { width: layout.width }]}>
+            {docked && !layout.detail && <View style={{ flex: 1 }} pointerEvents="none" />}
+            <View style={[s.sheet, docked ? s.sheetDocked : { paddingTop: insets.top, paddingBottom: insets.bottom }, layout.detail ? { flex: 1, borderTopLeftRadius: 0 } : { width: layout.width }]}>
               {panel === 'library' && <LibraryPanel />}
               {panel === 'mixer' && <MixerPanel />}
               {panel === 'projects' && <ProjectsPanel />}
@@ -176,7 +196,9 @@ export function App() {
 
 const s = StyleSheet.create({
   app: { flex: 1, backgroundColor: C.bg, overflow: 'hidden' },
-  main: { flex: 1, minHeight: 0 },
+  main: { flex: 1, minHeight: 0, minWidth: 0 },
+  row: { flex: 1, flexDirection: 'row', minHeight: 0 },
+  browser: { backgroundColor: C.bg2, borderRightWidth: 1, borderRightColor: C.line },
   overlay: { position: 'absolute', zIndex: 30 },
   modalRow: { flex: 1, flexDirection: 'row' },
   dockRow: { flex: 1, flexDirection: 'row' },

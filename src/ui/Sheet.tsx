@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { font } from '../constants/theme';
 import { setState, useStore } from '../lib/store';
@@ -11,8 +11,13 @@ import { bigger, smaller } from './sheetLayout';
  * arrangement above stays visible and usable) or just a title bar, and bigger again. The body stays mounted when it is hidden,
  * so a panel keeps its state (an open Drive folder, a plan) while it is a bar.
  */
+/** Where the sheet sits: a panel (resizable) or Live's browser column (fixed, its ✕ closes the column). */
+export const SheetPlace = createContext<{ column: boolean; onClose: () => void }>({ column: false, onClose: () => setState({ panel: 'none' }) });
+
 export function Sheet({ title, children }: { title: string; children: ReactNode }) {
-  const size = useStore((st) => st.sheetSize);
+  const place = useContext(SheetPlace);
+  const stored = useStore((st) => st.sheetSize);
+  const size = place.column ? 'full' : stored;
   return (
     <>
       <View style={s.head}>
@@ -21,17 +26,17 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
             {title}
           </Txt>
         </Pressable>
-        {size !== 'bar' && (
+        {!place.column && size !== 'bar' && (
           <IconBtn onPress={() => setState({ sheetSize: smaller(size) })} accessibilityLabel="Fenster verkleinern">
             <ChevronDown />
           </IconBtn>
         )}
-        {size !== 'full' && (
+        {!place.column && size !== 'full' && (
           <IconBtn onPress={() => setState({ sheetSize: bigger(size) })} accessibilityLabel="Fenster vergrößern">
             <ChevronUp />
           </IconBtn>
         )}
-        <IconBtn onPress={() => setState({ panel: 'none' })} accessibilityLabel="Schließen">
+        <IconBtn onPress={place.onClose} accessibilityLabel={place.column ? 'Browser schließen' : 'Schließen'}>
           <Close />
         </IconBtn>
       </View>

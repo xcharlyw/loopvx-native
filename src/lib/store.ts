@@ -33,6 +33,8 @@ export interface AppState {
   view: View;
   panel: Panel;
   sheetSize: SheetSize;
+  /** Wide screens: the Library as Live's browser column on the left (independent of the open panel). */
+  browserOpen: boolean;
   selectedTrackId: string | null;
   selectedClipId: string | null;
   /** More clips selected together with `selectedClipId` (multi-selection: Shift/Cmd/Ctrl-click, or the multi-select mode on touch). */
@@ -65,6 +67,7 @@ let state: AppState = {
   view: 'arrange',
   panel: 'none',
   sheetSize: 'full',
+  browserOpen: false,
   selectedTrackId: null,
   selectedClipId: null,
   extraClipIds: [],

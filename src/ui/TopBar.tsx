@@ -7,6 +7,7 @@ import { formatBarPosition, formatClock, secondsPerBar } from '../audio/timing';
 import { setCursor, togglePlay } from '../lib/actions';
 import { KEYS } from '../lib/project';
 import { setMetronome, setState, updateProject, useStore } from '../lib/store';
+import { toggleBrowser } from './commands';
 import { useEngine, usePlayhead, useSmall } from './hooks';
 import { Export, LibraryIcon, LoopIcon, Metronome, More, Play, Rewind, SelectArrow, Stop } from './icons';
 import { IconBtn, Mono, Pill, PillGroup, Spacer, Txt, iconColor } from './kit';
@@ -147,7 +148,7 @@ export function TopBar() {
             <Export size={16} />
             <Txt>Export</Txt>
           </Pill>
-          <Pill accessibilityLabel="Sample-Library" onPress={() => setState({ panel: 'library' })}>
+          <Pill accessibilityLabel="Sample-Library" onPress={toggleBrowser}>
             <LibraryIcon size={16} />
             <Txt>Library</Txt>
           </Pill>

@@ -106,6 +106,11 @@ The panels are no longer in a `Modal` but in an overlay inside `Shell` (`App.tsx
 `marginBottom` of the sheet's height so the arrangement shrinks instead of being covered and stays scrollable and tappable; **bar** = only the title row. `Sheet.tsx` has the buttons
 "Fenster verkleinern" / "Fenster vergrößern"; in bar mode the title reopens it and the body is `display: none` (stays mounted, so an open Drive folder or a plan survives). Sizes in
 pure `sheetLayout.ts` (tested): half = 42 % of the screen height (240..440 px), width 560 max, on the right on wide screens. The Android back button closes the panel (`BackHandler`).
+**Live layout on wide screens** (web, above the 720 px breakpoint, `menuBar` in `Shell`): the Library is not a panel but Live's **browser column** on the left (`state.browserOpen`,
+`browserWidth`, toggled by `toggleBrowser` = ⌥⌘B / the TopBar "Library" pill; a `panel: 'library'` from anywhere is redirected to it). It renders `LibraryPanel` inside
+`SheetPlace` (`Sheet.tsx` context: no size arrows, its ✕ closes the column). The **detail panels** (`DETAIL_PANELS`: clip, piano, devices, instrument, automation) dock at
+the bottom across the width right of the browser (`placementFor`: full = 46 %, half = 32 % of the height, bar), so the arrangement stays above them; the other panels
+(mixer, export, projects, track …) keep the right side sheet. Phones are unchanged.
 Pitfall: with react-native-web a style `{ top: undefined }` does not override an earlier `top: 0` (that put the docked sheet at the top): build separate style objects.
 
 ## Drive browser = sample browser (audition and insert)

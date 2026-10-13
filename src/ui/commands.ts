@@ -45,6 +45,13 @@ const hasClip = () => arrange() && !!getState().selectedClipId;
 const toggle = (panel: Panel) => setState((st) => ({ panel: st.panel === panel ? 'none' : panel }));
 const selectedTrack = () => getState().project.tracks.find((t) => t.id === getState().selectedTrackId);
 
+/** Same breakpoint as `useSmall`: above it the Library is Live's browser column. */
+const wideScreen = () => Platform.OS === 'web' && typeof window !== 'undefined' && window.innerWidth > 720;
+export function toggleBrowser() {
+  if (wideScreen()) setState((st) => ({ browserOpen: !st.browserOpen, panel: st.panel === 'library' ? 'none' : st.panel }));
+  else toggle('library');
+}
+
 function addTrack(midi: boolean) {
   updateProject((p) => {
     const track = midi ? createMidiTrack(p.sceneCount) : createTrack('other', p.sceneCount);
@@ -116,7 +123,7 @@ export const COMMANDS: Command[] = [
 
   // Ansicht
   { id: 'view', label: 'Session / Arrangement umschalten', group: 'Ansicht', keys: [{ keys: ['Tab'], shift: false }], run: () => { engine.stop(); setState((st) => ({ view: st.view === 'arrange' ? 'session' : 'arrange', armedSampleId: null })); } },
-  { id: 'browser', label: 'Browser (Library)', group: 'Ansicht', separator: true, keys: [{ letter: 'b', mod: true, alt: true }], run: () => toggle('library') },
+  { id: 'browser', label: 'Browser (Library)', group: 'Ansicht', separator: true, keys: [{ letter: 'b', mod: true, alt: true }], run: toggleBrowser },
   { id: 'mixer', label: 'Mixer', group: 'Ansicht', keys: [{ letter: 'm', mod: true, alt: true }], run: () => toggle('mixer') },
   { id: 'devices', label: 'Geräte der Spur', group: 'Ansicht', keys: [{ letter: 'l', mod: true, alt: true }], run: () => selectedTrack() && setState((st) => ({ panel: st.panel === 'devices' ? 'none' : 'devices', devicesFor: 'track' })), enabled: () => !!selectedTrack() },
   { id: 'clipView', label: 'Clip / Piano Roll', group: 'Ansicht', keys: [{ keys: ['Tab'], shift: true }], run: () => getState().selectedClipId && setState((st) => ({ panel: st.panel === 'clip' ? 'piano' : 'clip' })), enabled: hasClip },

@@ -1,10 +1,10 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { C, RULER_H, font, layout, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
-import { loopSelection, placeSample, setCursor } from '../lib/actions';
+import { loadSampleIntoSampler, loopSelection, placeSample, setCursor } from '../lib/actions';
 import { applyGroupEdit, clipsInRange, groupEdit } from '../lib/clipgroup';
 import { addMarker } from '../lib/markers';
 import { createMidiTrack, createTrack, mapTrack, trackKind, type ClipEdit } from '../lib/project';
@@ -18,7 +18,8 @@ import { usePlayhead, useSmall } from './hooks';
 import { Plus } from './icons';
 import { Mono, MsButton, Txt } from './kit';
 import { tapX } from './events';
-import { useDrag, web, type DragPhase } from './drag';
+import { useDrag, web, type DragPhase, type DragPoint } from './drag';
+import { cancelSampleDrag, endSampleDrag, overDropTarget, startSampleDrag, useSampleDropTarget } from './dnd';
 import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
@@ -198,7 +199,21 @@ export function ArrangeView() {
   const trackDelta = (index: number, dy: number) =>
     Math.max(-index, Math.min(project.tracks.length - 1 - index, Math.round(dy / rowH)));
 
-  const onClipDrag = (clip: Clip, index: number, mode: ClipEdit, dx: number, dy: number, phase: DragPhase) => {
+  const onClipDrag = (clip: Clip, index: number, mode: ClipEdit, dx: number, dy: number, phase: DragPhase, at?: DragPoint) => {
+    // An audio clip carried onto a drop target (the sampler) hands it its sample instead of moving.
+    const sample = mode === 'move' && !clip.notes && at ? sampleById.get(clip.sampleId) : undefined;
+    if (sample && at && phase === 'move') {
+      if (overDropTarget(at.x, at.y)) startSampleDrag({ sampleId: sample.id, name: sample.name }, at.x, at.y);
+      else cancelSampleDrag();
+    }
+    if (sample && at && phase === 'end' && overDropTarget(at.x, at.y)) {
+      startSampleDrag({ sampleId: sample.id, name: sample.name }, at.x, at.y);
+      endSampleDrag();
+      setDrag(null);
+      dragEndedAt.current = Date.now();
+      return;
+    }
+    if (phase !== 'move') cancelSampleDrag();
     if (phase === 'move') {
       // Dragging a clip of the selection drags the whole selection; any other clip becomes the selection.
       if (!selection.includes(clip.id)) setClipSelection(clip.id);
@@ -357,6 +372,7 @@ export function ArrangeView() {
               const laneParam = lanes[track.id];
               return (
                 <Fragment key={track.id}>
+                <HeaderDrop track={track}>
                 <Pressable
                   style={[s.trackHeader, { height: rowH }, small && s.trackHeaderSm, selected && s.trackHeaderSelected]}
                   onPress={() => setState({ selectedTrackId: track.id })}
@@ -407,6 +423,7 @@ export function ArrangeView() {
                     )}
                   </View>
                 </Pressable>
+                </HeaderDrop>
                 {laneParam && !autoMode && (
                   <Pressable accessibilityLabel={`Parameter der Automation von ${track.name}`} onPress={() => cycleLane(track)} style={[s.laneHeader, { height: LANE_H }]}>
                     <Txt style={s.laneParam}>{`${paramDef(track, laneParam).label} ▾`}</Txt>
@@ -482,7 +499,7 @@ export function ArrangeView() {
                         dragging={!!dragging}
                         liftY={dragging?.mode === 'move' && preview ? preview.shift * rowH : 0}
                         onTap={(e) => onClipTap(clip, track, e)}
-                        onDrag={(mode, dx, dy, phase) => onClipDrag(clip, index, mode, dx, dy, phase)}
+                        onDrag={(mode, dx, dy, phase, at) => onClipDrag(clip, index, mode, dx, dy, phase, at)}
                       />
                     );
                   })}
@@ -516,6 +533,17 @@ function LaneRow({ track, param, zoom, width, totalBars }: { track: Track; param
   return (
     <View style={[s.lane, { width, height: LANE_H }]}>
       <AutomationCurve track={track} param={param} start={0} span={totalBars} width={width} height={LANE_H - 1} selected={sel} onSelect={setSel} grid={zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8} labels={false} />
+    </View>
+  );
+}
+
+/** A MIDI track's header takes a dragged sample into its sampler (Ableton: a sample dropped on a MIDI track makes a Simpler). */
+function HeaderDrop({ track, children }: { track: Track; children: ReactNode }) {
+  const midi = trackKind(track) === 'midi';
+  const drop = useSampleDropTarget(`header:${track.id}`, (p) => midi && loadSampleIntoSampler(track.id, p.sampleId));
+  return (
+    <View ref={drop.ref} style={drop.dragging && midi ? [s.headerDrop, drop.over && s.headerDropOver] : undefined}>
+      {children}
     </View>
   );
 }
@@ -565,14 +593,14 @@ interface ClipViewProps {
   /** Vertical offset while dragging the clip to another track. */
   liftY: number;
   onTap: (e: GestureResponderEvent) => void;
-  onDrag: (mode: ClipEdit, dx: number, dy: number, phase: DragPhase) => void;
+  onDrag: (mode: ClipEdit, dx: number, dy: number, phase: DragPhase, at?: DragPoint) => void;
 }
 
 function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, selected, dragging, liftY, onTap, onDrag }: ClipViewProps) {
   const w = Math.max(6, clip.length * zoom);
   const fades = clipFades(clip);
   const editable = selected || FINE_POINTER;
-  const body = useDrag('move', editable, (dx, dy, phase) => onDrag('move', dx, dy, phase));
+  const body = useDrag('move', editable, (dx, dy, phase, at) => onDrag('move', dx, dy, phase, at));
   const startEdge = useDrag('start', editable, (dx, dy, phase) => onDrag('start', dx, dy, phase));
   const endEdge = useDrag('start', editable, (dx, dy, phase) => onDrag('end', dx, dy, phase));
   return (
@@ -674,6 +702,8 @@ const s = StyleSheet.create({
   fxText: { ...mono(), fontSize: 9, color: C.muted },
   autoChip: { flexShrink: 1, minWidth: 0, height: 20, paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: C.accent, justifyContent: 'center' },
   autoChipText: { ...font(600), fontSize: 10, color: C.accent },
+  headerDrop: { borderWidth: 1, borderStyle: 'dashed', borderColor: C.accent },
+  headerDropOver: { backgroundColor: 'rgba(198,255,61,0.18)' },
   trackCurve: { position: 'absolute', left: 0, top: 0, zIndex: 5 },
   /** MIDI tracks get a square dot, audio tracks a round one. */
   dotMidi: { borderRadius: 2 },

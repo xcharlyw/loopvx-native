@@ -6,7 +6,7 @@ import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSe
 import { redo, selectedClipIds, setClipSelection, setState, undo, useStore } from '../lib/store';
 import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 import { confirmDestructive } from './confirm';
-import { AutoIcon, Check, Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
+import { AutoIcon, Check, DrawIcon, Copy, GridIcon, Mixer, More, Pencil, Redo, Scissors, TimelineIcon, Trash, Undo, ZoomIn, ZoomOut } from './icons';
 import { useSmall } from './hooks';
 import { IconBtn, PillGroup, Spacer, iconColor } from './kit';
 
@@ -71,7 +71,7 @@ export function BottomBar() {
             <AutoIcon size={16} color={iconColor(autoMode)} />
           </IconBtn>
           <IconBtn accessibilityLabel="Zeichenmodus" accessibilityState={{ selected: drawMode }} onPress={() => setState({ drawMode: !drawMode })}>
-            <Pencil size={16} color={iconColor(drawMode)} />
+            <DrawIcon size={16} color={iconColor(drawMode)} />
           </IconBtn>
         </PillGroup>
       )}

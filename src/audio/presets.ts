@@ -1,6 +1,6 @@
 import { DEFAULT_SYNTH } from '../lib/project';
 import type { SynthSettings, Track, TrackFx } from '../types';
-import { KICK_PRESET, KIT909_PRESET, NOISE_PRESET } from './synth';
+import { KICK_PRESET, KIT909_PRESET, NOISE_PRESET, SAMPLER_PRESET } from './synth';
 
 // The sound library of the oscillator synth, drum voices included: what the sound browser lists.
 // A preset sets the whole instrument (so nothing of the previous sound lingers) and the "sound" effects
@@ -214,6 +214,15 @@ export function applyInstrument(track: Track, synth: SynthSettings, fx: SoundPre
   const next: TrackFx = { ...track.fx, drive: fx.drive ?? 0, reverb: fx.reverb ?? 0, delay: fx.delay ?? 0, pump: fx.pump ?? 0 };
   const clean = Object.values(next).every((v) => !v);
   return { ...track, synth, fx: clean ? undefined : next };
+}
+
+/**
+ * A sample dropped on a track's instrument (Ableton: a sample dropped on Simpler): a sampler keeps its settings and only takes
+ * the new sample; any other instrument is replaced by a fresh sampler playing it.
+ */
+export function withSamplerSample(track: Track, sampleId: string): Track {
+  if (track.synth?.wave === 'sample') return { ...track, synth: { ...track.synth, sampleId } };
+  return applyInstrument(track, { ...DEFAULT_SYNTH, ...SAMPLER_PRESET, sampleId } as SynthSettings);
 }
 
 export const applyPreset = (track: Track, preset: SoundPreset): Track => applyInstrument(track, { ...preset.synth, preset: preset.id }, preset.fx);

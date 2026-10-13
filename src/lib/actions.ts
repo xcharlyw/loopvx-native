@@ -9,6 +9,7 @@ import { db } from '../storage/db';
 import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
+import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
@@ -487,4 +488,17 @@ async function saveFile(data: Uint8Array, name: string, mimeType: string, uti: s
   file.create();
   file.write(data);
   await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: name, UTI: uti });
+}
+
+/** A sample dropped on a MIDI track's instrument: the sampler takes it (or replaces the instrument), one undo step, played once. */
+export function loadSampleIntoSampler(trackId: string, sampleId: string) {
+  const { project, samples } = getState();
+  const track = project.tracks.find((t) => t.id === trackId);
+  const sample = samples.find((x) => x.id === sampleId);
+  if (!track || !sample) return;
+  if (trackKind(track) !== 'midi') return toast('Der Sampler sitzt auf MIDI-Spuren: zieh das Sample auf eine MIDI-Spur.');
+  updateProject((p) => mapTrack(p, trackId, (t) => withSamplerSample(t, sampleId)));
+  const synth = getState().project.tracks.find((t) => t.id === trackId)?.synth;
+  if (synth) void engine.previewNote(synth, synth.sampleRoot ?? 60);
+  toast(`${sample.name.replace(/\.[a-z0-9]+$/i, '')} → Sampler auf ${track.name}`);
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
@@ -19,6 +19,8 @@ import { confirmDestructive } from './confirm';
 import { RecordButton } from './RecordButton';
 import { Btn, Chip, IconBtn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
+import { sampleDragJustEnded, useSampleDragSource } from './dnd';
+import { web } from './drag';
 
 const FILTERS: (SampleCategory | 'all')[] = ['all', 'kick', 'top', 'synth', 'vocal', 'other'];
 
@@ -197,7 +199,7 @@ export function LibraryPanel() {
             <IconBtn onPress={() => void togglePreview(x)} accessibilityLabel="Vorhören">
               {previewing && previewId === x.id ? <Stop size={14} /> : <Play size={14} />}
             </IconBtn>
-            <Pressable style={s.sampleName} onPress={() => (selecting ? toggle(x.id) : setEditing(editing === x.id ? null : x.id))}>
+            <DragName sample={x} disabled={selecting} onPress={() => (selecting ? toggle(x.id) : setEditing(editing === x.id ? null : x.id))}>
               <Txt numberOfLines={1} style={{ fontSize: 13 }}>
                 {x.name.replace(/\.[a-z0-9]+$/i, '')}
               </Txt>
@@ -206,7 +208,7 @@ export function LibraryPanel() {
                 {x.key ? ` · ${x.key}` : ''}
                 {!browsing && x.folder ? ` · ${prettyPath(normPath(x.folder))}` : ''}
               </Txt>
-            </Pressable>
+            </DragName>
             <Btn small onPress={() => add(x)} accessibilityLabel="Hinzufügen">
               <Plus size={14} />
             </Btn>
@@ -320,3 +322,13 @@ const s = StyleSheet.create({
   check: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
   checkOn: { backgroundColor: C.accent, borderColor: C.accent },
 });
+
+/** A sample's name in the list, and the handle to drag it into the sampler (web: mouse drag, or hold then drag on touch). */
+function DragName({ sample, disabled, onPress, children }: { sample: Sample; disabled: boolean; onPress: () => void; children: ReactNode }) {
+  const ref = useSampleDragSource(disabled ? null : { sampleId: sample.id, name: sample.name });
+  return (
+    <View ref={ref} style={[s.sampleName, web({ WebkitTouchCallout: 'none', userSelect: 'none', cursor: 'grab' })]}>
+      <Pressable onPress={() => !sampleDragJustEnded() && onPress()}>{children}</Pressable>
+    </View>
+  );
+}

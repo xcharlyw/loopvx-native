@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { engine } from '../audio/engine';
+import { loadSampleIntoSampler } from '../lib/actions';
 import { applyInstrument, applyPreset, PRESET_CATEGORIES, PRESETS, presetById, type PresetCategory } from '../audio/presets';
 import { KICK_PRESET, KIT909_PRESET, NOISE_PRESET, SAMPLER_PRESET } from '../audio/synth';
 import { trackFx } from '../audio/fx';
@@ -11,6 +12,7 @@ import { updateProject, useStore } from '../lib/store';
 import type { OscWave, SynthSettings, TrackFx } from '../types';
 import { Btn, Chip, Txt } from './kit';
 import { Sheet } from './Sheet';
+import { useSampleDropTarget } from './dnd';
 import { Knob, KnobRow } from './synth/Knob';
 import { Keys } from './synth/Keys';
 import { Pads } from './synth/Pads';
@@ -65,6 +67,7 @@ export function InstrumentPanel() {
   const [category, setCategory] = useState<PresetCategory | null>(null);
   const [width, setWidth] = useState(330);
   const [keysLow, setKeysLow] = useState(48);
+  const drop = useSampleDropTarget('instrument', (p) => track && loadSampleIntoSampler(track.id, p.sampleId));
   if (!track) {
     return (
       <Sheet title="Sound">
@@ -121,7 +124,8 @@ export function InstrumentPanel() {
 
   return (
     <Sheet title="Sound">
-      <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      <View ref={drop.ref} onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={drop.dragging ? [s.dropZone, drop.over && s.dropOver] : undefined}>
+        {drop.dragging && <Txt style={[s.dropHint, drop.over && { color: C.accent }]}>{drop.over ? 'Loslassen: Sample in den Sampler' : 'Hierher ziehen: Sample in den Sampler'}</Txt>}
         {/* preset switcher */}
         <View style={s.switcher}>
           <Btn small accessibilityLabel="Vorheriges Preset" onPress={() => stepPreset(-1)}>
@@ -384,6 +388,9 @@ function WavePick({ value, color, onPick }: { value: OscWave; color: string; onP
 }
 
 const s = StyleSheet.create({
+  dropZone: { borderWidth: 2, borderStyle: 'dashed', borderColor: C.line, borderRadius: 12, padding: 6 },
+  dropOver: { borderColor: C.accent, backgroundColor: 'rgba(198,255,61,0.06)' },
+  dropHint: { ...font(700), fontSize: 13, color: C.muted, textAlign: 'center', paddingVertical: 8 },
   switcher: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   nameBox: { flex: 1, backgroundColor: '#111114', borderWidth: 1, borderColor: C.line, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center' },
   name: { ...font(700), fontSize: 15, color: C.accent },

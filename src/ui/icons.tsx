@@ -168,6 +168,13 @@ export const AutoIcon = (p: P) => (
     <Circle cx="13" cy="14" r="1.6" {...solid} />
   </Icon>
 );
+/** A freehand line with a pen tip (draw mode). */
+export const DrawIcon = (p: P) => (
+  <Icon {...p}>
+    <Path d="M3 19c2.5-5 4.5 1 7-3.5S13 9 15 11" />
+    <Path d="M14 12.5 20.5 6l-2.5-2.5L11.5 10z" />
+  </Icon>
+);
 export const Scissors = (p: P) => (
   <Icon {...p}>
     <Circle cx="6" cy="6" r="3" />

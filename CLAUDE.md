@@ -358,6 +358,16 @@ Levels were balanced by offline renders (peaks 0.3-0.7). UI: the "909" tile in `
 Tune/Decay/Gain), preset `kit-909`, piano roll rows labelled with pad names, grooves `kit-techno`/`kit-rolling`/`kit-minimal` (`KIT_STYLES`, 2-bar phrases, fill in the
 last beat). **Never heard on a phone**; the sounds are synthesized approximations of a 909, not samples.
 
+## Drag samples into the sampler
+
+`src/ui/dnd.tsx` (web only): a module store for one carried sample, `useSampleDragSource` (Library rows: mouse after 6 px; touch after a 350 ms hold, then
+`touchmove` is `preventDefault`ed so the list does not scroll; a swipe before that scrolls as usual), `useSampleDropTarget(id, drop)` (registers the element; the hit
+test reads `getBoundingClientRect`, the smallest target under the pointer wins), `SampleDragGhost` (in `Shell`). Audio clips in the arrangement are sources too: their move
+drag (`useDrag` passes the page point) shows the ghost while over a target, and a release there hands the sample over instead of moving the clip. Targets: the Sound panel
+(`InstrumentPanel`), the device chain's source card and the headers of MIDI tracks (`HeaderDrop`). The drop is `loadSampleIntoSampler` (actions.ts) → pure
+`withSamplerSample` (presets.ts, tested: a sampler keeps its settings, any other instrument becomes a fresh sampler), one undo step, plays the root note.
+On a phone the Library is a panel, so drop on a track header with the Library at half size. Checked with mouse and emulated touch in Chromium; not on a real iPhone.
+
 ## Recording and Library ordering
 
 `RecordButton` (Library, top) records the microphone into the library: folder "Aufnahmen", name `takeName()`, always stored as 16-bit **mono WAV**

@@ -7,9 +7,11 @@ import { presetById } from '../audio/presets';
 import { C, font, mono } from '../constants/theme';
 import { MASTER_ID, addDevice, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
 import { setState, toast, updateProject, useStore } from '../lib/store';
+import { loadSampleIntoSampler } from '../lib/actions';
 import type { Device, DeviceType, Track } from '../types';
 import { Close } from './icons';
 import { Btn, Chip, Txt } from './kit';
+import { useSampleDropTarget } from './dnd';
 import { Sheet } from './Sheet';
 import { PluginFrame, SKIN } from './skin';
 import { SpliceSearch } from './SpliceSearch';
@@ -166,6 +168,7 @@ export function DevicePanel() {
 
 /** The first slot of the chain: what makes the sound (the instrument or the audio clips). */
 function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
+  const drop = useSampleDropTarget(`source:${track.id}`, (p) => kind === 'midi' && loadSampleIntoSampler(track.id, p.sampleId));
   if (kind === 'audio') {
     return (
       <View style={s.source}>
@@ -181,13 +184,15 @@ function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
   const name = preset ? preset.name : synth.wave === 'sample' ? 'Sampler' : synth.wave === 'kick' ? 'Synth-Kick' : synth.wave === 'noise' ? 'Noise / Hat' : track.synth ? 'Eigener Sound' : 'Standard-Synth';
   const type = synth.wave === 'sample' ? 'Sampler' : synth.wave === 'kick' || synth.wave === 'noise' ? 'Drum-Synth' : synth.wave === 'kit909' ? '909 Kit' : 'Synth';
   return (
-    <Pressable accessibilityLabel="Instrument öffnen" onPress={() => setState({ panel: 'instrument' })} style={[s.source, { borderColor: C.accent }]}>
-      <View style={{ flex: 1 }}>
-        <Txt style={[s.sourceName, { color: C.accent }]}>{name}</Txt>
-        <Txt style={s.sourceSub}>{`Instrument · ${type}`}</Txt>
-      </View>
-      <Txt style={s.open}>Öffnen ›</Txt>
-    </Pressable>
+    <View ref={drop.ref}>
+      <Pressable accessibilityLabel="Instrument öffnen" onPress={() => setState({ panel: 'instrument' })} style={[s.source, { borderColor: C.accent }, drop.dragging && { borderStyle: 'dashed' }, drop.over && { backgroundColor: 'rgba(198,255,61,0.12)' }]}>
+        <View style={{ flex: 1 }}>
+          <Txt style={[s.sourceName, { color: C.accent }]}>{name}</Txt>
+          <Txt style={s.sourceSub}>{drop.dragging ? (drop.over ? 'Loslassen: Sample in den Sampler' : 'Sample hierher ziehen') : `Instrument · ${type}`}</Txt>
+        </View>
+        <Txt style={s.open}>Öffnen ›</Txt>
+      </Pressable>
+    </View>
   );
 }
 

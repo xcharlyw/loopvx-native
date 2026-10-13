@@ -30,6 +30,7 @@ import { SessionView } from './SessionView';
 import { TrackPanel } from './TrackPanel';
 import { TopBar } from './TopBar';
 import { COMMANDS } from './commands';
+import { SampleDragGhost } from './dnd';
 import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
 import { useSmall } from './hooks';
 import { browserWidth, placementFor } from './sheetLayout';
@@ -124,6 +125,7 @@ function Shell() {
           </View>
         ))}
       </View>
+      <SampleDragGhost />
     </View>
   );
 }

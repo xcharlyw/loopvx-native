@@ -1,5 +1,5 @@
 import { createProject } from '../lib/project';
-import { applyInstrument, applyPreset, PRESET_CATEGORIES, PRESETS, presetById, SUGGESTED_PRESET } from './presets';
+import { applyInstrument, applyPreset, withSamplerSample, PRESET_CATEGORIES, PRESETS, presetById, SUGGESTED_PRESET } from './presets';
 import { planVoice } from './synth';
 
 describe('sound presets', () => {
@@ -69,5 +69,24 @@ describe('applyInstrument', () => {
     const t = applyInstrument({ ...base, fx: { filter: 0.5, pan: -0.3, reverb: 0.4, delay: 0.2, drive: 0.1, pump: 0.2 } }, { ...base.synth!, wave: 'kick' } as never);
     expect(t.fx).toEqual({ filter: 0.5, pan: -0.3, drive: 0, reverb: 0, delay: 0, pump: 0 });
     expect(applyInstrument({ ...base, fx: { reverb: 0.4 } }, {} as never).fx).toBeUndefined();
+  });
+});
+
+describe('withSamplerSample', () => {
+  it('keeps a sampler and swaps only its sample', () => {
+    const t = createProject().tracks[2];
+    const sampler = { ...t, synth: { ...t.synth!, wave: 'sample' as const, sampleId: 'a', tune: 30, gainDb: -3 }, fx: { reverb: 0.4 } };
+    const next = withSamplerSample(sampler, 'b');
+    expect(next.synth).toEqual({ ...sampler.synth, sampleId: 'b' });
+    expect(next.fx).toEqual({ reverb: 0.4 });
+  });
+
+  it('turns any other instrument into a fresh sampler', () => {
+    const t = createProject().tracks[2];
+    const lead = applyPreset(t, PRESETS.find((p) => p.category === 'Lead')!);
+    const next = withSamplerSample(lead, 'kick');
+    expect(next.synth?.wave).toBe('sample');
+    expect(next.synth?.sampleId).toBe('kick');
+    expect(next.synth?.preset).toBeUndefined();
   });
 });

@@ -220,6 +220,10 @@ header marks MIDI tracks with a square colour dot (audio: round) and has an FX b
 device count); the add row has "+ Audio" and "+ MIDI".
 Track order: `moveTrack(project, id, delta)` (pure, tested), buttons "▲ Nach oben" / "▼ Nach unten" in the TrackPanel (section "Position"); one undo step each, the panel stays open
 (use the half-size sheet to watch the arrangement). No drag-to-reorder in the headers yet (a drag there fights the vertical scroll on touch).
+**Duplicate a track**: `duplicateTrack` (project.ts, tested) puts a deep copy right below ("<Name> Kopie", solo off) with fresh ids for the track, clips and devices;
+device automation lanes (`dev:<id>:<key>`) are remapped to the copy's devices. `duplicateSelectedTrack` selects the copy. Cmd/Ctrl+D = `duplicateSelection`: the
+selected clips, or the selected track when no clip is selected (like Live); also "⧉ Duplizieren" in the TrackPanel, the copy button in the BottomBar's track group and
+Erstellen → Spur duplizieren.
 
 ## Device chain (plugin slots)
 

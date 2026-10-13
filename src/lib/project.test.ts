@@ -1,4 +1,4 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -358,5 +358,51 @@ describe('toggleClipsMuted', () => {
   it('unknown ids change nothing', () => {
     const p = withClips();
     expect(toggleClipsMuted(p, ['nope'])).toBe(p);
+  });
+});
+
+describe('duplicateTrack', () => {
+  const setup = () => {
+    let p = createProject();
+    const id = p.tracks[0].id;
+    p = mapTrack(p, id, (t) => ({ ...t, solo: true, volume: 0.7, clips: [{ id: 'c1', sampleId: 's', start: 0, length: 4, offset: 0, gainDb: -3 }] }));
+    p = addDevice(p, id, 'eq');
+    const dev = p.tracks[0].devices![0].id;
+    p = mapTrack(p, id, (t) => ({ ...t, automation: [{ param: `dev:${dev}:low` as const, points: [{ bar: 0, value: 0.2 }] }, { param: 'volume', points: [{ bar: 4, value: 0.5 }] }] }));
+    return { p, id, dev };
+  };
+
+  it('puts a full copy right below with new ids', () => {
+    const { p, id, dev } = setup();
+    const r = duplicateTrack(p, id);
+    const [orig, copy] = r.project.tracks;
+    expect(r.project.tracks).toHaveLength(p.tracks.length + 1);
+    expect(copy.id).toBe(r.trackId);
+    expect(copy.id).not.toBe(orig.id);
+    expect(copy.name).toBe(`${orig.name} Kopie`);
+    expect(copy.solo).toBe(false);
+    expect(copy.volume).toBe(0.7);
+    expect(copy.clips).toHaveLength(1);
+    expect(copy.clips[0].id).not.toBe('c1');
+    expect(copy.clips[0].gainDb).toBe(-3);
+    expect(copy.devices![0].id).not.toBe(dev);
+    expect(copy.devices![0].type).toBe('eq');
+    // device automation follows the copy's own device, track lanes stay as they are
+    expect(copy.automation!.map((l) => l.param)).toEqual([`dev:${copy.devices![0].id}:low`, 'volume']);
+    expect(r.project.tracks[2]).toBe(p.tracks[1]);
+  });
+
+  it('the copy is independent of the original', () => {
+    const { p, id } = setup();
+    const r = duplicateTrack(p, id);
+    r.project.tracks[1].clips[0].start = 8;
+    r.project.tracks[1].automation![1].points[0].value = 1;
+    expect(r.project.tracks[0].clips[0].start).toBe(0);
+    expect(r.project.tracks[0].automation![1].points[0].value).toBe(0.5);
+  });
+
+  it('an unknown track changes nothing', () => {
+    const { p } = setup();
+    expect(duplicateTrack(p, 'nope').project).toBe(p);
   });
 });

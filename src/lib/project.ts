@@ -1,7 +1,7 @@
 import { snapBars } from '../audio/timing';
 import { MAX_DEVICES, createDevice, deviceParams } from '../audio/devices';
 import type { ScaleName } from './melody';
-import type { Clip, Device, DeviceType, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
+import type { AutomationLane, Clip, Device, DeviceType, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
 
 export const uid = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -145,6 +145,37 @@ export function findClip(project: Project, clipId: string): { track: Track; clip
   }
   return null;
 }
+
+/**
+ * A copy of the track right below it (Live: Cmd+D on a track): clips, instrument, effects, devices, automation and session
+ * slots, with fresh ids for the track, its clips and devices (device automation lanes follow the new device ids). The name
+ * gets " Kopie"; solo is not copied. `trackId` of the copy is returned with the project.
+ */
+export function duplicateTrack(project: Project, trackId: string): { project: Project; trackId: string } {
+  const index = project.tracks.findIndex((t) => t.id === trackId);
+  if (index < 0) return { project, trackId };
+  const t = project.tracks[index];
+  const deviceIds = new Map((t.devices ?? []).map((d) => [d.id, uid()]));
+  const remap = (param: string) => {
+    const m = /^dev:([^:]+):(.+)$/.exec(param);
+    return m && deviceIds.has(m[1]) ? `dev:${deviceIds.get(m[1])}:${m[2]}` : param;
+  };
+  const copy: Track = {
+    ...structuredCloneSafe(t),
+    id: uid(),
+    name: `${t.name} Kopie`,
+    solo: false,
+    clips: t.clips.map((c) => ({ ...structuredCloneSafe(c), id: uid() })),
+    ...(t.devices ? { devices: t.devices.map((d) => ({ ...structuredCloneSafe(d), id: deviceIds.get(d.id)! })) } : {}),
+    ...(t.automation ? { automation: t.automation.map((l) => ({ param: remap(l.param) as AutomationLane['param'], points: l.points.map((p) => ({ ...p })) })) } : {}),
+  };
+  const tracks = [...project.tracks];
+  tracks.splice(index + 1, 0, copy);
+  return { project: { ...project, tracks }, trackId: copy.id };
+}
+
+/** A deep copy of plain project data (JSON-safe by design). */
+const structuredCloneSafe = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** Mutes the clips, or unmutes them when all are muted already (Live's 0 on a selection). */
 export function toggleClipsMuted(project: Project, clipIds: string[]): Project {

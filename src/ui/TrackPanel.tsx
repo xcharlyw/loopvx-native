@@ -6,7 +6,7 @@ import { sidechainSources } from '../lib/sidechain';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
-import { createMidiClipOnTrack, deleteSelectedTrack, importMidiToTrack } from '../lib/actions';
+import { createMidiClipOnTrack, deleteSelectedTrack, duplicateSelectedTrack, importMidiToTrack } from '../lib/actions';
 import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, moveTrack, renameTrack, setTrackKind, trackKind, trackSynth } from '../lib/project';
 import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import type { TrackFx } from '../types';
@@ -84,13 +84,16 @@ export function TrackPanel() {
         <Txt style={s.note}>Tipp: Ein langer Druck auf den Spurnamen öffnet diese Ansicht auch direkt.</Txt>
       </Section>
 
-      <Section title="Position">
+      <Section title="Position und Kopie">
         <View style={s.buttons}>
           <Btn small disabled={trackIndex <= 0} accessibilityLabel="Spur nach oben" onPress={() => updateProject((p) => moveTrack(p, trackId, -1), { reschedule: false })}>
             ▲ Nach oben
           </Btn>
           <Btn small disabled={trackIndex >= project.tracks.length - 1} accessibilityLabel="Spur nach unten" onPress={() => updateProject((p) => moveTrack(p, trackId, 1), { reschedule: false })}>
             ▼ Nach unten
+          </Btn>
+          <Btn small accessibilityLabel="Spur duplizieren" onPress={duplicateSelectedTrack}>
+            ⧉ Duplizieren
           </Btn>
         </View>
         <Txt style={s.note}>{`Spur ${trackIndex + 1} von ${project.tracks.length}. Mit dem Pfeil im Fenster-Kopf (⌄) siehst du die Spuren dabei im Arrangement.`}</Txt>

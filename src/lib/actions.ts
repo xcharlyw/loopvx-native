@@ -13,7 +13,7 @@ import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
-import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, trackForSample, uid, updateClip } from './project';
+import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
@@ -84,6 +84,25 @@ export function toggleMuteSelectedClips() {
   const ids = selectedClipIds();
   if (!ids.length) return toast('Wähle zuerst einen Clip aus.');
   updateProject((p) => toggleClipsMuted(p, ids));
+}
+
+/** Duplicate the selected track right below it and select the copy (Live: Cmd+D on a track). */
+export function duplicateSelectedTrack() {
+  const { selectedTrackId } = getState();
+  if (!selectedTrackId) return toast('Wähle zuerst eine Spur aus.');
+  let copyId = '';
+  updateProject((p) => {
+    const r = duplicateTrack(p, selectedTrackId);
+    copyId = r.trackId;
+    return r.project;
+  });
+  if (copyId && copyId !== selectedTrackId) setState({ selectedTrackId: copyId, selectedClipId: null });
+}
+
+/** Cmd/Ctrl+D: the selected clips, or the selected track when no clip is selected (like Live). */
+export function duplicateSelection() {
+  if (selectedClipIds().length) duplicateSelectedClip();
+  else duplicateSelectedTrack();
 }
 
 /** Remove the selected track (after asking) and select its neighbour. */

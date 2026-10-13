@@ -2,7 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, splitSelectedClip, toggleMuteSelectedClips } from '../lib/actions';
+import { deleteSelectedClip, deleteSelectedTrack, duplicateSelectedClip, duplicateSelectedTrack, splitSelectedClip, toggleMuteSelectedClips } from '../lib/actions';
 import { redo, selectedClipIds, setClipSelection, setState, undo, useStore } from '../lib/store';
 import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 import { confirmDestructive } from './confirm';
@@ -106,6 +106,9 @@ export function BottomBar() {
         <PillGroup>
           <IconBtn accessibilityLabel="Spur bearbeiten" onPress={() => setState({ panel: 'track' })}>
             <Pencil size={16} />
+          </IconBtn>
+          <IconBtn accessibilityLabel="Spur duplizieren" onPress={duplicateSelectedTrack}>
+            <Copy size={16} />
           </IconBtn>
           {/* On a phone the bar is full: delete lives in the track sheet there. */}
           {!small && (

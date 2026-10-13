@@ -9,6 +9,9 @@ import { preparePageAudio } from '../audio/pageAudio';
 import { C } from '../constants/theme';
 import {
   consolidateSelectedClip,
+  copySelectedClips,
+  loopSelection,
+  pasteClipsAtCursor,
   selectAllClipsOfTrack,
   deleteSelectedClip,
   duplicateSelectedClip,
@@ -27,6 +30,7 @@ import { Txt } from './kit';
 import { LibraryPanel } from './LibraryPanel';
 import { MixerPanel } from './MixerPanel';
 import { ArrangerPanel } from './ArrangerPanel';
+import { MarkersPanel } from './MarkersPanel';
 import { AutomationPanel } from './AutomationPanel';
 import { DevicePanel } from './DevicePanel';
 import { InstrumentPanel } from './InstrumentPanel';
@@ -69,6 +73,7 @@ function Shell() {
             {panel === 'devices' && <DevicePanel />}
             {panel === 'automation' && <AutomationPanel />}
             {panel === 'arranger' && <ArrangerPanel />}
+            {panel === 'markers' && <MarkersPanel />}
           </View>
         </View>
       </Modal>
@@ -125,6 +130,15 @@ function useShortcuts() {
       } else if (mod && e.key.toLowerCase() === 'e' && arrange) {
         e.preventDefault();
         splitSelectedClip();
+      } else if (mod && e.key.toLowerCase() === 'c' && arrange && getState().selectedClipId) {
+        e.preventDefault();
+        copySelectedClips();
+      } else if (mod && e.key.toLowerCase() === 'v' && arrange) {
+        e.preventDefault();
+        pasteClipsAtCursor();
+      } else if (mod && e.key.toLowerCase() === 'l' && arrange) {
+        e.preventDefault();
+        loopSelection();
       } else if (mod && e.key.toLowerCase() === 'a' && arrange) {
         e.preventDefault();
         selectAllClipsOfTrack();

@@ -5,7 +5,7 @@ import { DEVICE_DEFS, deviceSummary, GROUP_LABELS, GROUP_ORDER, MAX_DEVICES, dev
 import { DEVICE_PRESETS, presetOf, presetParams } from '../audio/devicepresets';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
-import { addDevice, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
+import { MASTER_ID, addDevice, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
 import { setState, toast, updateProject, useStore } from '../lib/store';
 import type { Device, DeviceType, Track } from '../types';
 import { Close } from './icons';
@@ -48,7 +48,11 @@ const SCOPE_FILTER: FilterKind[] = ['lowpass', 'highpass', 'bandpass'];
  * moved and removed; everything happens on the running mix without restarting playback.
  */
 export function DevicePanel() {
-  const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
+  const forMaster = useStore((st) => st.devicesFor === 'master');
+  const selected = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
+  const masterDevices = useStore((st) => st.project.master?.devices);
+  // The master bus shows as a track without clips: same cards, same functions (MASTER_ID in project.ts).
+  const track: Track | undefined = forMaster ? { id: MASTER_ID, name: 'Master', category: 'other', color: C.accent, volume: 1, muted: false, solo: false, clips: [], slots: [], kind: 'audio', devices: masterDevices } : selected;
   const bpm = useStore((st) => st.project.bpm);
   const [width, setWidth] = useState(330);
   const [adding, setAdding] = useState(false);
@@ -96,9 +100,9 @@ export function DevicePanel() {
   return (
     <Sheet title="Geräte">
       <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-        <Txt style={s.sub}>{`${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : 'Audio-Spur'}`}</Txt>
+        <Txt style={s.sub}>{forMaster ? 'Master · Summe aller Spuren, vor dem Sicherheits-Limiter' : `${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : 'Audio-Spur'}`}</Txt>
 
-        <Source track={track} kind={kind} />
+        {!forMaster && <Source track={track} kind={kind} />}
 
         {devices.length > 1 && (
           <View style={s.foldRow}>
@@ -120,7 +124,7 @@ export function DevicePanel() {
               <View key={g} style={{ marginTop: 6 }}>
                 <Txt style={s.cap}>{GROUP_LABELS[g].toUpperCase()}</Txt>
                 {Object.values(DEVICE_DEFS)
-                  .filter((d) => d.group === g)
+                  .filter((d) => d.group === g && !(forMaster && d.type === 'splice'))
                   .map((d) => (
                     <Pressable key={d.type} accessibilityLabel={`Gerät ${d.label} hinzufügen`} onPress={() => add(d.type)} style={s.pick}>
                       <Txt style={s.pickName}>{d.label}</Txt>
@@ -135,7 +139,11 @@ export function DevicePanel() {
             + Gerät hinzufügen
           </Btn>
         )}
-        <Txt style={[s.note, { marginTop: 12 }]}>Die Geräte arbeiten in dieser Reihenfolge, danach folgen DJ-Filter, Drive, Pan und der Fader der Spur. Sends (Reverb, Delay) hängen hinter dem Fader.</Txt>
+        <Txt style={[s.note, { marginTop: 12 }]}>
+          {forMaster
+            ? 'Die Master-Geräte bearbeiten die ganze Summe (auch Hall und Echo), danach kommt nur noch der Sicherheits-Limiter. Sie stecken auch im Export.'
+            : 'Die Geräte arbeiten in dieser Reihenfolge, danach folgen DJ-Filter, Drive, Pan und der Fader der Spur. Sends (Reverb, Delay) hängen hinter dem Fader.'}
+        </Txt>
       </View>
     </Sheet>
   );

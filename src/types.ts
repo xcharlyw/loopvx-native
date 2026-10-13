@@ -186,6 +186,13 @@ export interface Track {
   slots: (SessionSlot | null)[];
 }
 
+/** A named position in the arrangement (Ableton's locator). */
+export interface Marker {
+  id: string;
+  bar: number;
+  name: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -197,5 +204,9 @@ export interface Project {
   tracks: Track[];
   sceneCount: number;
   loop: { enabled: boolean; start: number; end: number };
+  /** The master bus: a device chain on the sum of all tracks (before the safety limiter). */
+  master?: { devices?: Device[] };
+  /** Locators shown in the ruler (sections like "Drop 1"). */
+  markers?: Marker[];
   updatedAt: number;
 }

@@ -1,4 +1,4 @@
-import type { AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode, WaveShaperNode } from 'react-native-audio-api';
+import type { AnalyserNode, AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode, WaveShaperNode } from 'react-native-audio-api';
 import { sampleLane } from '../lib/automation';
 import { audibleGain } from '../lib/project';
 import type { AutoParam, Project, Track } from '../types';
@@ -180,11 +180,34 @@ export class MixGraph {
   private reverbIn: GainNode | null = null;
   private delayIn: GainNode | null = null;
   private delay: DelayNode | null = null;
+  /** The master bus: every track and return goes into `bus`, through the master devices, into `master` (the limiter). */
+  private bus: GainNode;
+  private masterBay: DeviceBay;
+  private meters = new Map<string, AnalyserNode>();
+  private out: AudioNode;
 
   constructor(
     private ctx: BaseAudioContext,
-    private out: AudioNode,
-  ) {}
+    master: AudioNode,
+  ) {
+    this.bus = ctx.createGain();
+    this.masterBay = new DeviceBay(ctx, this.bus, master);
+    this.out = this.bus;
+  }
+
+  /** A level probe on a track's output (after its fader), made on first use; live context only. */
+  meter(trackId: string): AnalyserNode | null {
+    const chain = this.chains.get(trackId);
+    if (!chain) return null;
+    let m = this.meters.get(trackId);
+    if (!m) {
+      m = this.ctx.createAnalyser();
+      m.fftSize = 512;
+      chain.fader.connect(m);
+      this.meters.set(trackId, m);
+    }
+    return m;
+  }
 
   /** Where a track's voices connect. */
   input(track: Track): AudioNode {
@@ -204,6 +227,7 @@ export class MixGraph {
   apply(project: Project, smooth = true) {
     const anySolo = project.tracks.some((t) => t.solo);
     for (const t of project.tracks) this.chain(t).apply(this.ctx, t, audibleGain(t, anySolo), this, smooth, project.bpm);
+    this.masterBay.sync(project.master?.devices, project.bpm, smooth);
     if (this.delay) {
       const seconds = delaySeconds(project.bpm);
       if (smooth) this.delay.delayTime.setTargetAtTime(seconds, this.ctx.currentTime, 0.05);

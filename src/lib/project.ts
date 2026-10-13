@@ -88,8 +88,16 @@ export function mapTrack(project: Project, trackId: string, fn: (t: Track) => Tr
 
 // ---------------------------------------------------------------- device chain
 
+/** Pseudo track id of the master bus in the device functions. */
+export const MASTER_ID = '__master';
+
 const mapDevices = (project: Project, trackId: string, fn: (devices: Device[]) => Device[]): Project =>
-  mapTrack(project, trackId, (t) => {
+  trackId === MASTER_ID
+    ? (() => {
+        const devices = fn(project.master?.devices ?? []);
+        return { ...project, master: devices.length ? { ...project.master, devices } : undefined };
+      })()
+    : mapTrack(project, trackId, (t) => {
     const devices = fn(t.devices ?? []);
     return { ...t, devices: devices.length ? devices : undefined };
   });

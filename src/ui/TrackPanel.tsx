@@ -118,7 +118,7 @@ export function TrackPanel() {
             : 'Steckplätze für Effekte: EQ, Compressor, Saturator, Echo, Reverb, Chorus, Filter, Limiter, Utility.'}
         </Txt>
         <View style={s.buttons}>
-          <Btn kind={devices.length ? 'default' : 'primary'} accessibilityLabel="Geräte öffnen" onPress={() => setState({ panel: 'devices' })}>
+          <Btn kind={devices.length ? 'default' : 'primary'} accessibilityLabel="Geräte öffnen" onPress={() => setState({ devicesFor: 'track', panel: 'devices' })}>
             {devices.length ? `Geräte (${devices.length})` : 'Geräte öffnen'}
           </Btn>
         </View>

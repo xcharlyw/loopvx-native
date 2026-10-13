@@ -1,11 +1,12 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { C, RULER_H, font, layout, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
-import { placeSample, setCursor } from '../lib/actions';
-import { applyGroupEdit, groupEdit } from '../lib/clipgroup';
+import { loopSelection, placeSample, setCursor } from '../lib/actions';
+import { applyGroupEdit, clipsInRange, groupEdit } from '../lib/clipgroup';
+import { addMarker } from '../lib/markers';
 import { createMidiTrack, createTrack, mapTrack, trackKind, type ClipEdit } from '../lib/project';
 import { getState, selectedClipIds, setClipSelection, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
@@ -21,6 +22,7 @@ import { useDrag, web, type DragPhase } from './drag';
 import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
+const MARKER_H = 20;
 /** Height of an open automation lane under a track (Ableton-style: the curve sits right below the clips). */
 const LANE_H = 76;
 const BOTTOM_PAD = 170;
@@ -135,6 +137,56 @@ export function ArrangeView() {
   const [drag, setDrag] = useState<Drag | null>(null);
   // The release of a drag also arrives as a press: it must not shrink a multi-selection to the dragged clip.
   const dragEndedAt = useRef(0);
+  const lastTap = useRef<{ id: string; at: number }>({ id: '', at: 0 });
+
+  // Rubber band: dragging on empty timeline selects the clips it touches (mouse always; touch in multi-select mode,
+  // where the finger would otherwise scroll). Coordinates are in the timeline content (bars x track rows).
+  const contentRef = useRef<View>(null);
+  const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const bandOrigin = useRef<{ px: number; py: number } | null>(null);
+  const live = useRef({ zoom, rowH, project, lanes, on: FINE_POINTER || multiSelect });
+  live.current = { zoom, rowH, project, lanes, on: FINE_POINTER || multiSelect };
+  const rowAt = (y: number) => {
+    const { project: p, rowH: h, lanes: open } = live.current;
+    let top = 0;
+    for (let i = 0; i < p.tracks.length; i++) {
+      const bottom = top + h + (open[p.tracks[i].id] ? LANE_H : 0);
+      if (y < bottom) return i;
+      top = bottom;
+    }
+    return p.tracks.length - 1;
+  };
+  const bandHandlers = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) => live.current.on && (Math.abs(g.dx) > 6 || Math.abs(g.dy) > 6),
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (_, g) => {
+          bandOrigin.current = null;
+          contentRef.current?.measure((_x, _y, _w, _h, px, py) => {
+            bandOrigin.current = { px, py };
+            setBand({ x0: g.x0 - px, y0: g.y0 - py, x1: g.x0 - px, y1: g.y0 - py });
+          });
+        },
+        onPanResponderMove: (_, g) => {
+          const o = bandOrigin.current;
+          if (o) setBand((b) => (b ? { ...b, x1: g.moveX - o.px, y1: g.moveY - o.py } : b));
+        },
+        onPanResponderRelease: () => {
+          setBand((b) => {
+            if (b) {
+              const z = live.current.zoom;
+              const ids = clipsInRange(live.current.project, b.x0 / z, b.x1 / z, rowAt(b.y0), rowAt(b.y1));
+              setClipSelection(ids[0] ?? null, ids.slice(1));
+            }
+            return null;
+          });
+          dragEndedAt.current = Date.now();
+        },
+        onPanResponderTerminate: () => setBand(null),
+      }).panHandlers,
+    [],
+  );
   const trackDelta = (index: number, dy: number) =>
     Math.max(-index, Math.min(project.tracks.length - 1 - index, Math.round(dy / rowH)));
 
@@ -159,6 +211,14 @@ export function ArrangeView() {
 
   const onClipTap = (clip: Clip, track: Track, e: GestureResponderEvent) => {
     if (Date.now() - dragEndedAt.current < 350) return;
+    // A quick double tap loops the clip (or the selection it belongs to), like Ctrl/Cmd+L.
+    const last = lastTap.current;
+    lastTap.current = { id: clip.id, at: Date.now() };
+    if (last.id === clip.id && Date.now() - last.at < 320) {
+      if (!selection.includes(clip.id)) setClipSelection(clip.id);
+      loopSelection();
+      return;
+    }
     // Multi-selection: Shift/Cmd/Ctrl-click, or the multi-select mode (touch): a tap adds or removes the clip.
     const ne = e.nativeEvent as unknown as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean };
     if (multiSelect || ne.shiftKey || ne.metaKey || ne.ctrlKey) {
@@ -246,6 +306,34 @@ export function ArrangeView() {
         </View>
       </View>
 
+      {/* Markers (locators): tap = jump there, long press = edit; long press on the empty strip = a new marker there. */}
+      <View style={s.markerRow}>
+        <Pressable accessibilityLabel="Marker an der Abspielposition setzen" onPress={() => updateProject((p) => addMarker(p, getState().cursor), { reschedule: false })} style={[s.corner, s.markerCorner, { width: headerW }]}>
+          <Txt style={s.markerAdd}>+ Marker</Txt>
+        </Pressable>
+        <View style={s.rulerClip}>
+          <Animated.View style={{ width, height: MARKER_H, transform: [{ translateX: Animated.multiply(scrollX, -1) }] }}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onLongPress={(e) => updateProject((p) => addMarker(p, Math.floor(Math.max(0, tapX(e) / zoom))), { reschedule: false })}
+            />
+            {(project.markers ?? []).map((m) => (
+              <Pressable
+                key={m.id}
+                accessibilityLabel={`Marker ${m.name}`}
+                onPress={() => setCursor(m.bar)}
+                onLongPress={() => setState({ panel: 'markers' })}
+                style={[s.marker, { left: m.bar * zoom }]}
+              >
+                <Txt numberOfLines={1} style={s.markerText}>
+                  {m.name}
+                </Txt>
+              </Pressable>
+            ))}
+          </Animated.View>
+        </View>
+      </View>
+
       <View
         style={[{ flex: 1 }, web({ touchAction: 'pan-x pan-y' })]} // the browser must not zoom the page on a pinch
         onLayout={(e) => setViewportH(e.nativeEvent.layout.height)}
@@ -285,7 +373,7 @@ export function ArrangeView() {
                     />
                     <Pressable
                       accessibilityLabel={`Geräte von ${track.name}`}
-                      onPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'devices' })}
+                      onPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, devicesFor: 'track', panel: 'devices' })}
                       style={[s.fxBtn, !!track.devices?.length && s.fxBtnOn]}
                     >
                       <Txt style={[s.fxText, !!track.devices?.length && { color: C.accentInk }]}>{track.devices?.length ? `FX${track.devices.length}` : 'FX'}</Txt>
@@ -344,8 +432,14 @@ export function ArrangeView() {
             scrollEventThrottle={16}
             onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: Platform.OS !== 'web' })}
           >
-            <View style={{ width, height: bodyH }}>
+            <View ref={contentRef} {...bandHandlers} style={{ width, height: bodyH }}>
               <Grid zoom={zoom} totalBars={totalBars} height={bodyH} />
+              {band && (
+                <View
+                  pointerEvents="none"
+                  style={[s.band, { left: Math.min(band.x0, band.x1), top: Math.min(band.y0, band.y1), width: Math.abs(band.x1 - band.x0), height: Math.abs(band.y1 - band.y0) }]}
+                />
+              )}
               {project.tracks.map((track, index) => (
                 <Fragment key={track.id}>
                 <Pressable
@@ -510,6 +604,12 @@ function ClipView({ clip, color, name, zoom, height, projectBpm, sampleBpm, sele
 
 const s = StyleSheet.create({
   arrange: { flex: 1, minHeight: 0, backgroundColor: C.bg2 },
+  band: { position: 'absolute', zIndex: 8, borderWidth: 1, borderColor: C.accent, backgroundColor: 'rgba(198,255,61,0.10)' },
+  markerRow: { flexDirection: 'row', height: MARKER_H, zIndex: 5 },
+  markerCorner: { justifyContent: 'center', paddingLeft: 10 },
+  markerAdd: { ...font(600), fontSize: 10, color: C.muted },
+  marker: { position: 'absolute', top: 2, height: MARKER_H - 4, maxWidth: 140, paddingHorizontal: 5, borderLeftWidth: 2, borderLeftColor: C.accent, backgroundColor: 'rgba(198,255,61,0.12)', borderTopRightRadius: 4, borderBottomRightRadius: 4, justifyContent: 'center' },
+  markerText: { ...font(600), fontSize: 10, color: C.accent },
   rulerRow: { flexDirection: 'row', height: RULER_H, zIndex: 5 },
   corner: { backgroundColor: C.bg, borderRightWidth: 1, borderBottomWidth: 1, borderColor: C.lineSoft },
   rulerClip: { flex: 1, overflow: 'hidden', backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.lineSoft },

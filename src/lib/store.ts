@@ -6,7 +6,7 @@ import { History } from './history';
 import { createProject, isProject, repairProject } from './project';
 
 export type View = 'arrange' | 'session';
-export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'automation' | 'arranger';
+export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'automation' | 'arranger' | 'markers';
 
 export interface Toast {
   id: number;
@@ -38,6 +38,8 @@ export interface AppState {
   extraHead: string | null;
   /** Taps on clips add to / remove from the selection instead of replacing it. */
   multiSelect: boolean;
+  /** What the device panel shows: the selected track's chain or the master bus. */
+  devicesFor: 'track' | 'master';
   /** Playhead when stopped (bars). */
   cursor: number;
   /** Timeline zoom: pixels per bar. */
@@ -64,6 +66,7 @@ let state: AppState = {
   extraClipIds: [],
   extraHead: null,
   multiSelect: false,
+  devicesFor: 'track',
   cursor: 0,
   zoom: 56,
   armedSampleId: null,

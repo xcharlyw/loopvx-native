@@ -84,6 +84,9 @@ describe('arrange without a library', () => {
     expect(laneValue(vol, 128)).toBe(0);
     expect(laneValue(vol, 100)).toBe(1);
   });
+  it('names the sections as markers', () => {
+    expect(r.project.markers!.map((m) => [m.bar, m.name])).toEqual(r.sections.map((s) => [s.start, s.label]));
+  });
   it('can skip the automation and the extra tracks', () => {
     const plain = arrange(base(), [], { ...opts, automation: false, addMissingTracks: false });
     expect(plain.added).toEqual([]);

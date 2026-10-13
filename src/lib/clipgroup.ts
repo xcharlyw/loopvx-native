@@ -82,3 +82,48 @@ export function splitClips(project: Project, ids: string[], bar: number): { proj
   }
   return { project: next, ids: rights };
 }
+
+/** Copied clips with the index of the track each came from. */
+export interface ClipboardItem {
+  clip: Clip;
+  track: number;
+}
+
+export function copyClips(project: Project, ids: string[]): ClipboardItem[] {
+  const wanted = new Set(ids);
+  return project.tracks.flatMap((t, track) => t.clips.filter((c) => wanted.has(c.id)).map((clip) => ({ clip, track })));
+}
+
+/**
+ * Pastes copied clips with their first one at `bar`. With `targetTrack` the block moves so its top track lands there
+ * (if every clip fits a track of its kind; otherwise each goes back to its own track). Returns the new clips' ids.
+ */
+export function pasteClips(project: Project, items: ClipboardItem[], bar: number, targetTrack?: number): { project: Project; ids: string[] } {
+  if (!items.length) return { project, ids: [] };
+  const earliest = Math.min(...items.map((i) => i.clip.start));
+  const top = Math.min(...items.map((i) => i.track));
+  let shift = targetTrack === undefined ? 0 : targetTrack - top;
+  if (!items.every((i) => project.tracks[i.track + shift] && canHoldClip(project.tracks[i.track + shift], i.clip))) shift = 0;
+  const made: { track: number; clip: Clip }[] = items
+    .filter((i) => project.tracks[i.track + shift])
+    .map((i) => ({ track: i.track + shift, clip: { ...i.clip, id: uid(), start: Math.max(0, i.clip.start - earliest + bar) } }));
+  const tracks = project.tracks.map((t, index) => {
+    const add = made.filter((m) => m.track === index).map((m) => m.clip);
+    return add.length ? { ...t, clips: [...t.clips, ...add] } : t;
+  });
+  return { project: { ...project, tracks }, ids: made.map((m) => m.clip.id) };
+}
+
+/** The bars a set of clips covers (for "loop the selection"). */
+export function clipsSpan(project: Project, ids: string[]): { start: number; end: number } | null {
+  const picked = copyClips(project, ids).map((i) => i.clip);
+  if (!picked.length) return null;
+  return { start: Math.min(...picked.map((c) => c.start)), end: Math.max(...picked.map((c) => c.start + c.length)) };
+}
+
+/** Clips on tracks [fromTrack, toTrack] that overlap the bars [fromBar, toBar] (a rubber-band selection). */
+export function clipsInRange(project: Project, fromBar: number, toBar: number, fromTrack: number, toTrack: number): string[] {
+  const [b0, b1] = fromBar <= toBar ? [fromBar, toBar] : [toBar, fromBar];
+  const [t0, t1] = fromTrack <= toTrack ? [fromTrack, toTrack] : [toTrack, fromTrack];
+  return project.tracks.flatMap((t, i) => (i < t0 || i > t1 ? [] : t.clips.filter((c) => c.start < b1 && c.start + c.length > b0).map((c) => c.id)));
+}

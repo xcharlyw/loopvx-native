@@ -230,6 +230,19 @@ one selected clip = it plus the clips touching it; several = per track the range
 MIDI: notes merged (each cut at its own clip's end). Audio: rendered with `renderWav` on a bare copy of the track (no fx/devices/automation, volume 1; clip gain, fades and
 looping included) into a new sample `cons:<id>` (bpm = project bpm, folder "Konsolidiert"); one undo step. Shortcut in `useShortcuts` (App.tsx), button in the clip sheet.
 
+## Markers, clipboard, rubber band, master bus, meters
+
+- **Markers** (`project.markers`, pure `lib/markers.ts`): a strip under the ruler (`MARKER_H`); tap = jump, long press on a marker = `MarkersPanel` (rename/nudge/delete),
+  long press on the empty strip or "+ Marker" in the corner = new marker. The arranger names its sections as markers (`withMarkers`).
+- **Clipboard** (`clipgroup.ts`: `copyClips`/`pasteClips`/`clipsSpan`/`clipsInRange`): Ctrl/Cmd+C/V paste at the playhead, the block's top on the selected track if every
+  clip fits; Ctrl/Cmd+L or a quick double tap on a clip = loop region on the selection (`loopSelection`). Buttons for touch in the clip sheet.
+- **Rubber band** in `ArrangeView`: a `PanResponder` on the timeline content (bubbling `onMoveShouldSetPanResponder`, so clips and their drags win), on with a mouse
+  (`FINE_POINTER`) or in multi-select mode (on touch it would block scrolling otherwise); rows are mapped with the open automation lanes counted (`rowAt`).
+- **Master bus**: `project.master.devices`, `MixGraph` routes every chain and return into `bus` → `masterBay` (a `DeviceBay`) → the limiter; the device functions in
+  `project.ts` take `MASTER_ID`, `DevicePanel` shows the master when `devicesFor === 'master'` (no source slot, no Splice). Measured: a master EQ lowpass at 400 Hz cuts
+  hats' zero crossings 15x, bypassed it is transparent.
+- **Track meters**: `MixGraph.meter(trackId)` (an analyser after the fader, live context only, made on first use), `engine.trackPeak`, `StripMeter` in the mixer.
+
 ## Arranger
 
 `lib/arranger.ts` (pure, tested) lays out a whole track on the project: `sectionsFor(64|128)` = intro, build-up, drop, break, build-up 2, drop 2, outro; `roleOf(track)` reads

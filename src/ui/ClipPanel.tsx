@@ -4,7 +4,7 @@ import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { BEATS_PER_BAR } from '../config';
 import { C, font, mono } from '../constants/theme';
-import { consolidateSelectedClip, detectSampleTempo, exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
+import { consolidateSelectedClip, copySelectedClips, loopSelection, pasteClipsAtCursor, detectSampleTempo, exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
 import { findClip, updateClip } from '../lib/project';
 import { errorText, setState, toast, updateProject, useStore } from '../lib/store';
 import type { Clip } from '../types';
@@ -189,6 +189,17 @@ function LengthSection({ clip }: { clip: Clip }) {
       <View style={[s.row, { marginTop: 8 }]}>
         <Btn small accessibilityLabel="Konsolidieren" onPress={() => void consolidateSelectedClip()}>
           Konsolidieren (Strg/Cmd + J)
+        </Btn>
+      </View>
+      <View style={[s.row, { marginTop: 8, flexWrap: 'wrap' }]}>
+        <Btn small accessibilityLabel="Kopieren" onPress={copySelectedClips}>
+          Kopieren
+        </Btn>
+        <Btn small accessibilityLabel="Einfügen" onPress={pasteClipsAtCursor}>
+          Einfügen an Abspielposition
+        </Btn>
+        <Btn small accessibilityLabel="Loop auf Auswahl" onPress={loopSelection}>
+          Loop hierauf
         </Btn>
       </View>
       <Txt style={s.note}>Fasst den Clip mit den direkt anschließenden Clips der Spur zu einem zusammen. Audio wird zu einem neuen Sample gerendert (Ordner „Konsolidiert“), MIDI-Noten werden zusammengeführt.</Txt>

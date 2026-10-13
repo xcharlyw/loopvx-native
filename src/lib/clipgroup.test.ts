@@ -1,5 +1,5 @@
 import type { Clip, Project, Track } from '../types';
-import { applyGroupEdit, duplicateClips, groupEdit, splitClips } from './clipgroup';
+import { applyGroupEdit, clipsInRange, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips } from './clipgroup';
 import { createProject } from './project';
 
 const clip = (id: string, start: number, length = 2, midi = false): Clip => ({ id, sampleId: midi ? '' : 's', start, length, offset: 0, ...(midi ? { notes: [{ pitch: 36, start: 0, length: 0.25, velocity: 1 }] } : {}) });
@@ -57,5 +57,39 @@ describe('duplicateClips and splitClips', () => {
     const r = splitClips(project(), ['a', 'c', 'b'], 5);
     expect(r.ids).toHaveLength(1);
     expect(where(r.project)).toMatchObject({ a: '0@4+1', b: '0@8+2', c: '1@6+2' });
+  });
+});
+
+describe('copy and paste', () => {
+  it('pastes the copied block at the playhead on the same tracks', () => {
+    const p = project();
+    const items = copyClips(p, ['a', 'c']);
+    const r = pasteClips(p, items, 20);
+    expect(r.ids).toHaveLength(2);
+    const starts = r.project.tracks.map((t) => t.clips.map((c) => c.start).sort((x, y) => x - y));
+    expect(starts[0]).toEqual([4, 8, 20]);
+    expect(starts[1]).toEqual([6, 22]);
+  });
+  it('moves the block to the selected track when every clip fits, else keeps the tracks', () => {
+    const p = project();
+    const one = pasteClips(p, copyClips(p, ['c']), 0, 3);
+    expect(one.project.tracks[3].clips).toHaveLength(1);
+    const midi = pasteClips(p, copyClips(p, ['c']), 0, 2); // an audio clip on the MIDI track: stays on its own track
+    expect(midi.project.tracks[2].clips).toHaveLength(1);
+    expect(midi.project.tracks[1].clips).toHaveLength(2);
+  });
+  it('gives the span of a selection', () => {
+    expect(clipsSpan(project(), ['a', 'c'])).toEqual({ start: 4, end: 8 });
+    expect(clipsSpan(project(), [])).toBeNull();
+  });
+});
+
+describe('clipsInRange', () => {
+  it('takes the clips the band touches on the tracks it spans, in any drag direction', () => {
+    const p = project();
+    expect(clipsInRange(p, 5, 7, 0, 1).sort()).toEqual(['a', 'c']);
+    expect(clipsInRange(p, 7, 5, 1, 0).sort()).toEqual(['a', 'c']);
+    expect(clipsInRange(p, 0, 20, 2, 3)).toEqual(['m']);
+    expect(clipsInRange(p, 6, 8, 0, 0)).toEqual([]); // a ends at 6, b starts at 8
   });
 });

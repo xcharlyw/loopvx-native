@@ -426,6 +426,17 @@ export class AudioEngine {
   ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   analyser: AnalyserNode | null = null;
+  private meterData = new Float32Array(512);
+
+  /** Peak level (linear) of a track's output right now, for the mixer meters; 0 while nothing plays. */
+  trackPeak(trackId: string): number {
+    const m = this.mix?.meter(trackId);
+    if (!m) return 0;
+    m.getFloatTimeDomainData(this.meterData);
+    let peak = 0;
+    for (const v of this.meterData) peak = Math.max(peak, Math.abs(v));
+    return peak;
+  }
   /** Track strips (effects, faders) and the reverb/delay returns of the live context. */
   private mix: MixGraph | null = null;
   private buffers = new Map<string, AudioBuffer>();

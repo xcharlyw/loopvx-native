@@ -2,6 +2,7 @@ import { SUGGESTED_PRESET, applyPreset, presetById } from '../audio/presets';
 import type { AutoPoint, Clip, Note, Project, Sample, Track } from '../types';
 import { joinPoints, ramp, setLane, throwAt } from './automation';
 import { keysFit } from './libraryFilter';
+import { withMarkers } from './markers';
 import { generatePattern, seededRandom, type PatternStyle } from './patterns';
 import { createMidiClip, createTrack, projectHarmony, trackKind, trackSynth, uid } from './project';
 
@@ -233,6 +234,8 @@ export function arrange(project: Project, samples: Sample[], opts: ArrangeOption
     return next;
   });
 
-  return { project: { ...project, tracks, loop: { enabled: false, start: 0, end } }, sections, added, missingSamples };
+  // The sections become markers in the ruler, so the structure stays visible.
+  const marked = withMarkers({ ...project, tracks, loop: { enabled: false, start: 0, end } }, sections.map((s) => ({ bar: s.start, name: s.label })));
+  return { project: marked, sections, added, missingSamples };
 }
 

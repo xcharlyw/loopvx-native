@@ -10,7 +10,7 @@ import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { detectTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { readMidiFile, writeMidiFile } from './midi';
-import { applyGroupEdit, duplicateClips, groupEdit, splitClips } from './clipgroup';
+import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
 import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
@@ -90,6 +90,35 @@ export async function deleteSelectedTrack(confirm: (title: string, message?: str
   updateProject((p) => removeTrack(p, track.id));
   const rest = getState().project.tracks;
   setState({ selectedTrackId: rest[Math.min(index, rest.length - 1)]?.id ?? null, selectedClipId: null });
+}
+
+let clipboard: ClipboardItem[] = [];
+
+/** Copy the selected clips (Ctrl/Cmd+C). */
+export function copySelectedClips() {
+  clipboard = copyClips(getState().project, selectedClipIds());
+  if (clipboard.length) toast(`${clipboard.length} ${clipboard.length === 1 ? 'Clip' : 'Clips'} kopiert`);
+}
+
+/** Paste the copied clips at the playhead (Ctrl/Cmd+V), the block's top on the selected track when it fits. */
+export function pasteClipsAtCursor() {
+  if (!clipboard.length) {
+    toast('Nichts kopiert: Clips auswählen und Strg/Cmd + C.');
+    return;
+  }
+  const { project, cursor, selectedTrackId } = getState();
+  const target = project.tracks.findIndex((t) => t.id === selectedTrackId);
+  const r = pasteClips(project, clipboard, cursor, target >= 0 ? target : undefined);
+  if (!r.ids.length) return;
+  updateProject(() => r.project);
+  setClipSelection(r.ids[0], r.ids.slice(1));
+}
+
+/** Loop region = the bars of the selected clips (Ctrl/Cmd+L, or a double tap on a clip). */
+export function loopSelection() {
+  const span = clipsSpan(getState().project, selectedClipIds());
+  if (!span) return;
+  updateProject((p) => ({ ...p, loop: { enabled: true, start: Math.floor(span.start), end: Math.max(Math.floor(span.start) + 1, Math.ceil(span.end)) } }), { reschedule: true });
 }
 
 /** Copies of the selected clips right after them (Ableton: Cmd+D); the copies become the selection. */

@@ -263,7 +263,7 @@ bar of a build and a crash on each drop; no 909 kick when a kick loop carries it
 tempo first, one of the best three picked by the seed) looped over the whole span. `automationFor` adds filter openings, a reverb throw before each drop, drive build-ups on the
 bass and a fade-out; bass/lead/pad get a pump when they have none. Missing roles are added as MIDI tracks (909 Drums, Rumble Bass, Lead, Pad with tuned faders). It **replaces** the
 clips (undoable). Rule based with seeded randomness. **AI plan (Gemini)**: the sheet's text field sends the text, tempo, key, track roles and fitting
-library counts to `api/arrange.ts` (`GEMINI_API_KEY`, model `GEMINI_MODEL` or `gemini-3.6-flash`, JSON answer, `extractJson`); the model only picks the structure
+library counts to `api/arrange.ts` (`GEMINI_API_KEY`, model `GEMINI_MODEL` or `gemini-3.6-flash`, on 429/5xx one retry and a lighter `GEMINI_FALLBACK_MODEL` (`gemini-3.5-flash-lite`), JSON answer, `extractJson`); the model only picks the structure
 (sections with bars and `mute` roles, names = markers), styles (bass/lead/drop drums), roles to add, automation on/off, optional tempo/key and a German summary.
 `lib/arrangePlan.ts` (`parsePlan`, tested) checks every field (bars snap to 4, 4..64, total <= 256, needs a drop, keys normalised) and `planSections` turns it into
 `ArrangeOptions.sections` (a second drop/build plays as drop2/build2); the notes and clips are still built by the rules. Never tested against the real Gemini API

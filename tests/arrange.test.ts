@@ -71,4 +71,29 @@ describe('POST /api/arrange', () => {
     setup('sorry');
     expect((await POST(request({ prompt: 'x' }))).status).toBe(502);
   });
+
+  it('retries on a busy model and falls back to the lighter one', async () => {
+    const calls = setup('{"sections":[{"type":"drop","bars":32}]}');
+    process.env.GEMINI_RETRY_MS = '0';
+    const inner = globalThis.fetch;
+    let n = 0;
+    globalThis.fetch = jest.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes(':generateContent') && n++ < 1) return new Response('{"error":{"code":503}}', { status: 503 });
+      return inner(url, init);
+    }) as unknown as typeof fetch;
+    const res = await POST(request({ prompt: 'x' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).model).toBe('gemini-3.5-flash-lite');
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  it('says so in German when every model is busy', async () => {
+    setup('x');
+    process.env.GEMINI_RETRY_MS = '0';
+    const inner = globalThis.fetch;
+    globalThis.fetch = jest.fn(async (url: string, init?: RequestInit) => (url.includes(':generateContent') ? new Response('busy', { status: 503 }) : inner(url, init))) as unknown as typeof fetch;
+    const res = await POST(request({ prompt: 'x' }));
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain('überlastet');
+  });
 });

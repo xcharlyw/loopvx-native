@@ -66,37 +66,34 @@ export function notYetImported<T extends { file: DriveEntry }>(items: T[], sampl
 const STRUCTURE_NAMES = new Set(['loops', 'drumloops', 'drumgrooves', 'musicloops', 'oneshots', 'oneshot', 'samples', 'audio', 'wav', 'wavs', 'stems', 'midi', 'fx', 'sounds']);
 export const isStructureFolder = (name: string) => STRUCTURE_NAMES.has(name.toLowerCase().replace(/[\s_-]+/g, ''));
 
-/** The library folder for a Drive folder path: the last folder that names a pack, skipping "loops", "drum_loops" ... (all of them: the last part). */
-export function libraryFolderOf(path: string): string | undefined {
+/**
+ * The library folder for a Drive folder path. `root` is the path of the folder the user chose to import: it is the main (pack)
+ * folder, and the folders below it are kept as sub folders ("Pack/06 Impact Shots"), minus pure structure names like "loops" or
+ * "drum_loops". Without a root (single files picked in the browser) it is the last real folder ("Pack/loops/drum_loops" is "Pack").
+ */
+export function libraryFolderOf(path: string, root?: string): string | undefined {
   const parts = path.split('/').filter(Boolean);
-  return [...parts].reverse().find((p) => !isStructureFolder(p)) ?? parts[parts.length - 1];
-}
-
-/** Walks up from a Drive folder (id) to the first folder that names a pack; `get` reads one folder's name and parent. Gives up after `maxUp` levels. */
-export async function packFolderFrom(get: (id: string) => Promise<{ name: string; parent?: string } | null>, folderId: string | undefined, maxUp = 8): Promise<string | undefined> {
-  let id = folderId;
-  let first: string | undefined;
-  for (let i = 0; id && i < maxUp; i++) {
-    const f = await get(id);
-    if (!f) break;
-    first ??= f.name;
-    if (!isStructureFolder(f.name)) return f.name;
-    id = f.parent;
+  const rootParts = (root ?? '').split('/').filter(Boolean);
+  if (rootParts.length && rootParts.every((p, i) => parts[i] === p)) {
+    // The chosen folder names the pack (or the nearest real folder above it when it is itself a structure name like "loops").
+    const main = [...rootParts].reverse().find((p) => !isStructureFolder(p)) ?? rootParts[rootParts.length - 1];
+    return [main, ...parts.slice(rootParts.length).filter((p) => !isStructureFolder(p))].join('/');
   }
-  return first;
+  // No import root (single files picked in the browser): the last real folder, since the path may start with containers ("Computer/My Mac").
+  return [...parts].reverse().find((p) => !isStructureFolder(p)) ?? parts[parts.length - 1];
 }
 
 /**
  * A library entry for a Drive file. `folder` is its path below the folder the user chose; the file name and that whole
- * path decide the category, but the library folder is a single name: the pack the file belongs to (see `libraryFolderOf`).
+ * path decide the category; the library folder is the pack (the folder that was imported) and its sub folders (see `libraryFolderOf`).
  */
-export function sampleFromDriveFile(file: DriveEntry, folder: string, now = Date.now()): Sample {
+export function sampleFromDriveFile(file: DriveEntry, folder: string, now = Date.now(), root?: string): Sample {
   const size = Number(file.size);
   return {
     ...parseSampleName(file.name, folder),
     id: driveSampleId(file.id),
     name: file.name,
-    folder: libraryFolderOf(folder),
+    folder: libraryFolderOf(folder, root),
     driveId: file.id,
     driveModified: file.modifiedTime,
     size: Number.isFinite(size) && size > 0 ? size : undefined,
@@ -122,8 +119,8 @@ export async function collectAudio(
   rootName: string,
   limits: CollectLimits = DEFAULT_LIMITS,
   hooks: { onFile?: (count: number) => void; cancelled?: () => boolean } = {},
-): Promise<{ items: { file: DriveEntry; folder: string }[]; truncated: boolean }> {
-  const items: { file: DriveEntry; folder: string }[] = [];
+): Promise<{ items: { file: DriveEntry; folder: string; root: string }[]; truncated: boolean }> {
+  const items: { file: DriveEntry; folder: string; root: string }[] = [];
   let truncated = false;
   const walk = async (id: string, path: string, depth: number) => {
     if (hooks.cancelled?.()) {
@@ -136,7 +133,7 @@ export async function collectAudio(
         truncated = true;
         return;
       }
-      items.push({ file, folder: path });
+      items.push({ file, folder: path, root: rootName });
     }
     hooks.onFile?.(items.length);
     if (depth >= limits.maxDepth) {
@@ -159,6 +156,8 @@ export interface ImportSummary {
   total: number;
   fresh: number;
   existing: number;
+  /** Files already in the library whose library folder would change (they are only moved, not downloaded again). */
+  regroup: number;
   /** Bytes of the files that are not in the library yet. */
   bytes: number;
   /** Library folders the new files would land in, biggest first. */
@@ -166,17 +165,23 @@ export interface ImportSummary {
 }
 
 /** What an import would do, shown before it starts: how many files are new, how big, and into which library folders. */
-export function summarizeImport(items: { file: DriveEntry; folder: string }[], samples: Pick<Sample, 'driveId'>[]): ImportSummary {
+export function summarizeImport(items: { file: DriveEntry; folder: string; root?: string }[], samples: Pick<Sample, 'driveId' | 'folder'>[]): ImportSummary {
   const fresh = notYetImported(items, samples);
   const counts = new Map<string, number>();
   let bytes = 0;
-  for (const { file, folder } of fresh) {
-    const name = libraryFolderOf(folder) ?? 'Hauptebene';
+  for (const { file, folder, root } of fresh) {
+    const name = libraryFolderOf(folder, root) ?? 'Hauptebene';
     counts.set(name, (counts.get(name) ?? 0) + 1);
     bytes += Number(file.size) || 0;
   }
+  const have = new Map(samples.filter((x) => x.driveId).map((x) => [x.driveId!, x]));
+  const regroup = items.filter((i) => {
+    const sample = have.get(i.file.id);
+    const target = libraryFolderOf(i.folder, i.root);
+    return !!sample && !!target && sample.folder !== target;
+  }).length;
   const packs = [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  return { total: items.length, fresh: fresh.length, existing: items.length - fresh.length, bytes, packs };
+  return { total: items.length, fresh: fresh.length, existing: items.length - fresh.length, regroup, bytes, packs };
 }
 
 /** "12,3 MB" for a Drive size string. */

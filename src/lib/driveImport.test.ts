@@ -1,4 +1,4 @@
-import { COMPUTERS_ID, summarizeImport, isStructureFolder, libraryFolderOf, packFolderFrom, SHARED_ID, VIRTUAL_ROOTS, computerFolders, isVirtualId, browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
+import { COMPUTERS_ID, summarizeImport, isStructureFolder, libraryFolderOf, SHARED_ID, VIRTUAL_ROOTS, computerFolders, isVirtualId, browserEntries, collectAudio, driveSampleId, isAudio, notYetImported, sampleFromDriveFile, sizeText, type DriveEntry } from './driveImport';
 
 const folder = (id: string, name: string): DriveEntry => ({ id, name, mimeType: 'application/vnd.google-apps.folder' });
 const file = (id: string, name: string, mimeType = 'audio/wav', size?: string): DriveEntry => ({ id, name, mimeType, size });
@@ -111,28 +111,23 @@ describe('pack folders', () => {
     expect(['loops', 'drum_loops', 'Drum_Loops', 'music loops', 'One-Shots', 'drum_grooves'].every(isStructureFolder)).toBe(true);
     expect(['Kicks', 'Bonus Kicks', 'ff_tt_130_kit_loop_full_crave_Gmin'].some(isStructureFolder)).toBe(false);
   });
+  it('keeps the imported main folder as the pack and its sub folders below it', () => {
+    expect(libraryFolderOf('Meine Packs/SSE Pack/06 Impact Shots', 'Meine Packs/SSE Pack')).toBe('SSE Pack/06 Impact Shots');
+    expect(libraryFolderOf('Meine Packs/SSE Pack/Drums/Kicks/Hard', 'Meine Packs/SSE Pack')).toBe('SSE Pack/Drums/Kicks/Hard');
+    expect(libraryFolderOf('Meine Packs/SSE Pack/loops/drum_loops', 'Meine Packs/SSE Pack')).toBe('SSE Pack');
+    expect(libraryFolderOf('Meine Packs/SSE Pack', 'Meine Packs/SSE Pack')).toBe('SSE Pack');
+    // the chosen folder is itself a structure name: the real folder above it is the pack
+    expect(libraryFolderOf('Pack/loops/drum_loops', 'Pack/loops')).toBe('Pack');
+    expect(sampleFromDriveFile(file('z', 'a.wav'), 'X/SSE Pack/06 Impact Shots', 1, 'X/SSE Pack').folder).toBe('SSE Pack/06 Impact Shots');
+  });
   it('names the library folder after the pack, not the inner folder', () => {
     expect(libraryFolderOf('Zenhiser Pummel - Hard Techno/loops/drum_loops')).toBe('Zenhiser Pummel - Hard Techno');
+    // single picked files (no import root): the last real folder
     expect(libraryFolderOf('Four4 - 90s Techno & Trance/loops/music_loops/ff_tt_130_kit')).toBe('ff_tt_130_kit');
     expect(libraryFolderOf('Pack/loops')).toBe('Pack');
     expect(libraryFolderOf('loops')).toBe('loops');
     expect(libraryFolderOf('')).toBeUndefined();
     expect(sampleFromDriveFile(file('z', 'a.wav'), 'Pack/loops/drum_loops').folder).toBe('Pack');
-  });
-  it('finds the pack from a Drive folder id by walking up', async () => {
-    const tree: Record<string, { name: string; parent?: string }> = {
-      a: { name: 'drum_loops', parent: 'b' },
-      b: { name: 'loops', parent: 'c' },
-      c: { name: 'Zenhiser Pummel', parent: 'd' },
-      d: { name: 'Packs' },
-      x: { name: 'drum_loops' },
-    };
-    const get = async (id: string) => tree[id] ?? null;
-    expect(await packFolderFrom(get, 'a')).toBe('Zenhiser Pummel');
-    expect(await packFolderFrom(get, 'c')).toBe('Zenhiser Pummel');
-    expect(await packFolderFrom(get, 'x')).toBe('drum_loops');
-    expect(await packFolderFrom(get, 'missing')).toBeUndefined();
-    expect(await packFolderFrom(get, undefined)).toBeUndefined();
   });
 });
 
@@ -145,7 +140,7 @@ describe('summarizeImport', () => {
   ];
   it('counts new files, size and library folders, biggest first', () => {
     const s = summarizeImport(items, [{ driveId: '4' }]);
-    expect(s).toMatchObject({ total: 4, fresh: 3, existing: 1, bytes: 4500 });
+    expect(s).toMatchObject({ total: 4, fresh: 3, existing: 1, regroup: 0, bytes: 4500 });
     expect(s.packs).toEqual([{ name: 'Pack A', count: 2 }, { name: 'Pack B', count: 1 }]);
   });
   it('puts files from the top level on the Hauptebene', () => {
@@ -165,5 +160,21 @@ describe('collectAudio hooks', () => {
     const cut = await collectAudio(list, 'root', 'P', undefined, { onFile: () => (stop = true), cancelled: () => stop });
     expect(cut.items).toHaveLength(1);
     expect(cut.truncated).toBe(true);
+  });
+});
+
+describe('regrouping known samples', () => {
+  const items = [
+    { file: file('1', 'a.wav'), folder: 'Packs/SSE Pack/06 Impact Shots', root: 'Packs/SSE Pack' },
+    { file: file('2', 'b.wav'), folder: 'Packs/SSE Pack/loops', root: 'Packs/SSE Pack' },
+    { file: file('3', 'c.wav'), folder: 'Packs/SSE Pack/07 Kicks', root: 'Packs/SSE Pack' },
+  ];
+  it('counts files that are in the library but in another folder', () => {
+    const s = summarizeImport(items, [
+      { driveId: '1', folder: '06 Impact Shots' }, // the old rule lost the main folder
+      { driveId: '2', folder: 'SSE Pack' }, // already right
+    ]);
+    expect(s).toMatchObject({ fresh: 1, existing: 2, regroup: 1 });
+    expect(s.packs).toEqual([{ name: 'SSE Pack/07 Kicks', count: 1 }]);
   });
 });

@@ -94,7 +94,7 @@ export function DriveImport() {
   const pickedCount = Object.keys(picked).length;
   const importing = progress !== null || scanning !== null;
 
-  const run = async (items: { file: DriveFile; folder: string }[], truncated = false) => {
+  const run = async (items: { file: DriveFile; folder: string; root?: string }[], truncated = false) => {
     if (!items.length) {
       toast('Keine Audiodateien gefunden.');
       return;
@@ -105,7 +105,8 @@ export function DriveImport() {
       const result = await importDriveItems(items, (done, total, name) => setProgress({ done, total, name }), () => stopRef.current);
       const parts = [`${result.added.length} Datei(en) importiert`];
       if (result.stopped) parts.push('abgebrochen, ein erneuter Import macht dort weiter');
-      if (result.skipped) parts.push(`${result.skipped} schon vorhanden`);
+      if (result.regrouped) parts.push(`${result.regrouped} schon vorhandene in den Pack-Ordner einsortiert`);
+      else if (result.skipped) parts.push(`${result.skipped} schon vorhanden`);
       if (result.failed.length) parts.push(`${result.failed.length} fehlgeschlagen`);
       const tops = [...new Set(result.added.map((x) => x.folder).filter(Boolean))];
       if (tops.length) parts.push(`Library-Ordner: ${tops.slice(0, 3).join(', ')}`);
@@ -337,7 +338,7 @@ export function DriveImport() {
           <Txt style={s.planTitle}>{`„${plan.name}“: ${plan.summary.fresh} neue Datei(en)`}</Txt>
           <Txt style={s.note}>
             {[
-              plan.summary.existing ? `${plan.summary.existing} schon in der Library` : null,
+              plan.summary.existing ? `${plan.summary.existing} schon in der Library${plan.summary.regroup ? `, ${plan.summary.regroup} davon kommen in den Pack-Ordner (kein neuer Download)` : ''}` : null,
               plan.summary.bytes ? `${sizeText(String(plan.summary.bytes))} zu laden` : null,
               plan.truncated ? 'Limit erreicht, der Rest folgt im zweiten Durchgang' : null,
             ]
@@ -353,8 +354,8 @@ export function DriveImport() {
             </Txt>
           )}
           <View style={s.row}>
-            <Btn kind="primary" small disabled={!plan.summary.fresh} accessibilityLabel="Import starten" onPress={startPlan}>
-              {plan.summary.fresh ? `${plan.summary.fresh} importieren` : 'Nichts Neues'}
+            <Btn kind="primary" small disabled={!plan.summary.fresh && !plan.summary.regroup} accessibilityLabel="Import starten" onPress={startPlan}>
+              {plan.summary.fresh ? `${plan.summary.fresh} importieren${plan.summary.regroup ? ` · ${plan.summary.regroup} einsortieren` : ''}` : plan.summary.regroup ? `${plan.summary.regroup} in Pack-Ordner einsortieren` : 'Nichts Neues'}
             </Btn>
             <Btn small accessibilityLabel="Import verwerfen" onPress={() => setPlan(null)}>
               Verwerfen

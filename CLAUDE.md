@@ -56,7 +56,7 @@ src/lib/            store.ts (state, undo, autosave), project.ts (pure project m
                     melody.ts (scales, chord progressions, trance/reese/hypnotic/pad/stab generators),
                     samples(.web).ts, sync*.ts + drive.ts (Google Drive sync), supabase.ts, vocals.ts
 src/storage/db.ts   AsyncStorage persistence; emits change events (Drive sync listens)
-api/                Vercel Functions (vocals.ts, drive-token.ts, splice.ts, arrange.ts); api/_lib is shared, not deployed
+api/                Vercel Functions (vocals.ts, drive-token.ts, splice.ts, arrange.ts, stems.ts); api/_lib is shared, not deployed
 tests/              server tests (anything in api/ is deployed as a function)
 ```
 
@@ -149,6 +149,17 @@ and "Wie Spur: <track>", which sets it to the fader level of the track the sampl
 (`splitDuplicates` in `summarizeImport`/`importDriveItems`: against the library under another Drive id, and repeats inside one scan, e.g. "Version 34 - Hard Kick Pack"
 vs "Version 34 - Mini Hard Techno Kick Pack"); the plan card says "n Duplikat(e) ... übersprungen". Library → folder bar "Duplikate" (`libraryDuplicates`): keeps the copy a
 project uses (else the oldest) and removes only copies that no stored project/slot/sample instrument plays (`usedSampleIds`), after a confirm; Drive originals are never touched.
+
+## Stem separation
+
+Library → "Stems trennen": pick a tune (`pickFile`), confirm (costs ElevenLabs credits), `separateTune` (`lib/stems.ts`): the tune is uploaded (`uploadLarge`, resumable,
+no 5 MB limit) to Drive **LOOPVX/Stems Export/<tune>/**, then `api/stems.ts` reads it there with the caller's Drive token (`driveAccessToken`, drive.file scope), sends it
+to ElevenLabs `POST /v1/music/stem-separation` (`stem_variation_id` `six_stems_v1`, env `ELEVENLABS_STEM_VARIATION`; the answer is a ZIP), and writes each stem as
+"<tune> - <Stem>.mp3" next to the tune (`api/_lib/drive.ts`, resumable). Reason for the Drive round trip: a Vercel function's request and answer stop at 4.5 MB, a tune and
+its stems are far bigger. The app then downloads the stems into the library folder **"Stems Export/<tune>"** (`stemNames.ts`, tested: ids `drive:<fileId>`, category Drums/Bass →
+kick, Synth + FX/Keys/Gitarre → synth, Vocal → vocal), all with the tune's tempo/key (from the name, else measured on the drums and copied to every stem). Stems: Drums, Bass,
+Synth + FX (ElevenLabs "other"), Keys, Gitarre, Vocal: **there is no separate FX stem** in the six-stem model. `maxDuration` 300 s in `vercel.json`. Tested with mocks only
+(no ElevenLabs/Drive in the sandbox); never run against the real APIs.
 
 ## Library folders
 

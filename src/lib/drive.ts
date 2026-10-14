@@ -41,6 +41,9 @@ export function forgetDriveToken() {
   cached = null;
 }
 
+/** A short-lived Drive access token (a server function that works in the user's Drive gets it). */
+export const driveAccessToken = () => accessToken();
+
 async function accessToken(): Promise<string> {
   if (cached && cached.expires > Date.now() + 60_000) return cached.token;
   const [refreshToken, session] = await Promise.all([getGoogleRefreshToken(), getSession()]);
@@ -170,6 +173,20 @@ export async function copyFile(fileId: string, meta: DriveMeta): Promise<DriveFi
     body: JSON.stringify(meta),
   });
   return (await res.json()) as DriveFile;
+}
+
+/** A file of any size (multipart stops at 5 MB): a resumable session, then the bytes in one go. */
+export async function uploadLarge(meta: DriveMeta, data: Uint8Array, mimeType: string): Promise<DriveFile> {
+  const start = await call(`${UPLOAD}/files?uploadType=resumable&fields=id,name`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': mimeType },
+    body: JSON.stringify(meta),
+  });
+  const session = start.headers.get('location');
+  if (!session) throw new Error('Google Drive hat keine Upload-Adresse geliefert');
+  const put = await fetch(session, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: data as unknown as BodyInit });
+  if (!put.ok) throw new Error(`Google Drive ${put.status}: ${(await put.text()).slice(0, 200)}`);
+  return (await put.json()) as DriveFile;
 }
 
 /** Change metadata, and the content too when `data` is given. */

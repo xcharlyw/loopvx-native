@@ -6,6 +6,9 @@
   "functions": {
     "api/vocals.ts": {
       "maxDuration": 300
+    },
+    "api/stems.ts": {
+      "maxDuration": 300
     }
   }
 }

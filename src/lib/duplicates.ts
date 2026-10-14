@@ -51,22 +51,42 @@ export interface DuplicateGroup {
   pinned: Sample[];
 }
 
+const nameKey = (name: string) => name.trim().toLowerCase();
+
+/**
+ * Two library entries are the same file when the name matches and nothing contradicts it: same size, a size missing on one side
+ * (older imports), the same folder, or the same length. Only a different size AND folder AND length says "different file, same name".
+ */
+export function sameSample(a: Sample, b: Sample): boolean {
+  if (nameKey(a.name) !== nameKey(b.name)) return false;
+  if (!a.size || !b.size || a.size === b.size) return true;
+  if ((a.folder ?? '') === (b.folder ?? '')) return true;
+  return a.duration !== undefined && b.duration !== undefined && Math.abs(a.duration - b.duration) < 0.005;
+}
+
 /**
  * Duplicate groups in the library. The copy to keep is one a project uses (else the oldest); the other copies are only
  * offered for removal when no project uses them, so a clip never goes silent.
  */
 export function libraryDuplicates(samples: Sample[], usedIds: Set<string>): DuplicateGroup[] {
-  const groups = new Map<string, Sample[]>();
-  for (const s of samples) {
-    const k = dupKey(s.name, s.size);
-    if (k) groups.set(k, [...(groups.get(k) ?? []), s]);
-  }
+  const byName = new Map<string, Sample[]>();
+  for (const s of samples) byName.set(nameKey(s.name), [...(byName.get(nameKey(s.name)) ?? []), s]);
   const out: DuplicateGroup[] = [];
-  for (const list of groups.values()) {
+  for (const list of byName.values()) {
     if (list.length < 2) continue;
-    const sorted = [...list].sort((a, b) => Number(usedIds.has(b.id)) - Number(usedIds.has(a.id)) || a.addedAt - b.addedAt);
-    const [keep, ...rest] = sorted;
-    out.push({ keep, drop: rest.filter((s) => !usedIds.has(s.id)), pinned: rest.filter((s) => usedIds.has(s.id)) });
+    // Split a same-name list into groups of really identical files.
+    const groups: Sample[][] = [];
+    for (const s of list) {
+      const g = groups.find((x) => sameSample(x[0], s));
+      if (g) g.push(s);
+      else groups.push([s]);
+    }
+    for (const g of groups) {
+      if (g.length < 2) continue;
+      const sorted = [...g].sort((a, b) => Number(usedIds.has(b.id)) - Number(usedIds.has(a.id)) || a.addedAt - b.addedAt);
+      const [keep, ...rest] = sorted;
+      out.push({ keep, drop: rest.filter((x) => !usedIds.has(x.id)), pinned: rest.filter((x) => usedIds.has(x.id)) });
+    }
   }
   return out.filter((g) => g.drop.length || g.pinned.length).sort((a, b) => a.keep.name.localeCompare(b.keep.name));
 }

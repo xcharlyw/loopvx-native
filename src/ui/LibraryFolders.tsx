@@ -47,7 +47,7 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
     const groups = libraryDuplicates(samples, usedSampleIds([...projects, getState().project]));
     const drop = groups.flatMap((g) => g.drop);
     if (!groups.length) {
-      toast('Keine Duplikate gefunden (gleicher Name und gleiche Größe).');
+      toast('Keine Duplikate gefunden (gleicher Dateiname).');
       return;
     }
     const pinned = groups.reduce((n, g) => n + g.pinned.length, 0);
@@ -58,7 +58,7 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
     const names = groups.slice(0, 4).map((g) => g.keep.name).join(', ');
     const ok = await confirmDestructive(
       `${drop.length} Duplikat(e) entfernen?`,
-      `Gleicher Dateiname und gleiche Größe, z. B. ${names}. Je Datei bleibt eine Kopie (die, die ein Projekt benutzt, sonst die älteste). Entfernt werden nur Kopien, die kein Projekt spielt${pinned ? `; ${pinned} benutzte Kopie(n) bleiben` : ''}. Die Kopien verschwinden auch aus deinem Drive-Ordner LOOPVX, die Originaldateien in deinen Drive-Sample-Ordnern bleiben unangetastet.`,
+      `Gleicher Dateiname, z. B. ${names}. Je Datei bleibt eine Kopie (die, die ein Projekt benutzt, sonst die älteste). Entfernt werden nur Kopien, die kein Projekt spielt${pinned ? `; ${pinned} benutzte Kopie(n) bleiben` : ''}. Die Kopien verschwinden auch aus deinem Drive-Ordner LOOPVX, die Originaldateien in deinen Drive-Sample-Ordnern bleiben unangetastet.`,
       'Entfernen',
     );
     if (!ok) return;

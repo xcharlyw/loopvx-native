@@ -36,4 +36,14 @@ describe('duplicates', () => {
     const ids = usedSampleIds([{ tracks: [{ clips: [{ sampleId: 'a' }, { sampleId: '' }], slots: [null, { sampleId: 'b' }], synth: { sampleId: 'c' } }] }]);
     expect([...ids].sort()).toEqual(['a', 'b', 'c']);
   });
+
+  it('finds same-name entries when a size is missing or they share a folder', () => {
+    const a = { ...smp('1', 'Version 34 Hard Kicks 01 (F) (160BPM).wav', undefined, 1), folder: 'V34' };
+    const b = { ...smp('2', 'version 34 hard kicks 01 (F) (160BPM).wav', 5000, 2), folder: 'V34' };
+    const c = { ...smp('3', 'Kick.wav', 10, 1), folder: 'A' };
+    const d = { ...smp('4', 'Kick.wav', 20, 2), folder: 'B' };
+    const g = libraryDuplicates([a, b, c, d], new Set());
+    expect(g).toHaveLength(1);
+    expect(g[0].drop.map((x) => x.id)).toEqual(['2']);
+  });
 });

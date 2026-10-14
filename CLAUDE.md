@@ -396,6 +396,16 @@ The prompt says "when in doubt fx_only"; `parsePlan` turns an `fx_only` answer i
 tracks come only from `addRoles` and automation only when `plan.automation` is true: **what the plan does not mention is not done**. After a run the panel offers "Anderes Ergebnis"
 (`Anderes Sample` for fx_only; same plan, new seed, no AI call) and "Anhören"; everything is one undo step. `arrange()` itself still works without `sections` (default `sectionsFor(128)`), tests rely on it. Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
 
+## Rebuild a tune's structure from its stems
+
+Arrangement panel → "Aufbau von einem Tune nachbauen" (`ReferenceRebuild.tsx`): one chip per tune with stems in the library (`stemTunes`: folders "Stems Export/<tune>",
+stem files by name `stemKindOf`). `rebuildFromStems` (`referenceRun.ts`) decodes each stem (`engine.loadBuffer`), measures the RMS of every bar at the tune's tempo
+(`barLevels`; the stems' `bpm`, required), and `structureFromStems` (pure, `referenceArrange.ts`, tested) builds the sections: phrases of 8 bars, a stem plays in a phrase
+when it is louder than 25 % of its own 90th percentile in at least half the bars, equal neighbours merge, then drums + bass = drop, no drums = break (intro/outro at the
+ends), drums without bass = build-up before a drop; silent stems become the section's `mute` roles; > 64 bars split. Then the normal `arrange` with `planSections`
+(markers named after the sections), automation on, new tracks only for roles the tune has, and **never the tune's own stems** as library material (only the project's
+tracks and the user's samples). Confirm before replacing clips; one undo step. The tune's tempo is not taken over. Tested on synthetic levels only (no real tune in the sandbox).
+
 ## 909 drum machine (issue #4)
 
 `wave: 'kit909'` is a whole drum kit as one instrument (`src/audio/drum909.ts`, pure): 12 pads on drum-rack/GM notes (kick C1 = 36, rim 37, snare 38,

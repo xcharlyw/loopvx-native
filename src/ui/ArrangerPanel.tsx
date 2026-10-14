@@ -11,6 +11,7 @@ import { planSections, type ArrangePlan } from '../lib/arrangePlan';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Section, Txt } from './kit';
+import { ReferenceRebuild } from './ReferenceRebuild';
 import { Sheet } from './Sheet';
 
 // Where the AI may take sounds from; kept while the app runs. Splice is off by default (the first download costs a credit).
@@ -170,6 +171,7 @@ export function ArrangerPanel() {
           {plan.model ? <Txt style={[s.note, { color: C.dim }]}>{`Geplant mit ${plan.model}${/lite/i.test(plan.model) ? ' (Leichtmodell, weil das große gerade ausgelastet war: nochmal „Ausführen“ versucht es erneut)' : ''}.`}</Txt> : null}
         </Section>
       )}
+      <ReferenceRebuild />
     </Sheet>
   );
 }

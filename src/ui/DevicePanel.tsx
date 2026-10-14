@@ -5,8 +5,8 @@ import { DEVICE_DEFS, deviceSummary, GROUP_LABELS, GROUP_ORDER, MAX_DEVICES, dev
 import { DEVICE_PRESETS, presetOf, presetParams } from '../audio/devicepresets';
 import { presetById } from '../audio/presets';
 import { C, font, mono } from '../constants/theme';
-import { MASTER_ID, addDevice, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
-import { setState, toast, updateProject, useStore } from '../lib/store';
+import { MASTER_ID, addDevice, copyDevices, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
+import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { loadSampleIntoSampler } from '../lib/actions';
 import type { Device, DeviceType, Track } from '../types';
 import { Close } from './icons';
@@ -62,6 +62,9 @@ export function DevicePanel() {
   const bpm = useStore((st) => st.project.bpm);
   const [width, setWidth] = useState(330);
   const [adding, setAdding] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [replace, setReplace] = useState(false);
+  const allTracks = useStore((st) => st.project.tracks);
   const [folded, setFoldedState] = useState<ReadonlySet<string>>(persistedFolded);
   const setFolded = (next: Set<string>) => {
     persistedFolded = next;
@@ -93,6 +96,13 @@ export function DevicePanel() {
     }
     setFolded(next);
   };
+  const copyTo = (toId: string, name: string) => {
+    const had = (toId === MASTER_ID ? getState().project.master?.devices?.length : getState().project.tracks.find((t) => t.id === toId)?.devices?.length) ?? 0;
+    updateProject((p) => copyDevices(p, trackId, toId, replace ? 'replace' : 'append'), { reschedule: false });
+    const now = (toId === MASTER_ID ? getState().project.master?.devices?.length : getState().project.tracks.find((t) => t.id === toId)?.devices?.length) ?? 0;
+    toast(now === had && !replace ? `„${name}“ hat schon ${MAX_DEVICES} Geräte, nichts kopiert.` : `Effektkette auf „${name}“ kopiert (${devices.length} Gerät${devices.length === 1 ? '' : 'e'}${replace ? ', ersetzt' : ', angehängt'}).`);
+    setCopying(false);
+  };
   const allFolded = devices.length > 0 && devices.every((d) => folded.has(d.id));
 
   const change = (id: string, patch: { on?: boolean; params?: Record<string, number> }) => updateProject((p) => updateDevice(p, trackId, id, patch), { reschedule: false });
@@ -111,6 +121,34 @@ export function DevicePanel() {
         <Txt style={s.sub}>{forMaster ? 'Master · Summe aller Spuren, vor dem Sicherheits-Limiter' : `${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : 'Audio-Spur'}`}</Txt>
 
         {!forMaster && !chain && <Source track={track} kind={kind} />}
+
+        {devices.length > 0 && (
+          <View style={s.foldRow}>
+            <Chip variant={copying ? 'on' : 'ghost'} onPress={() => setCopying(!copying)} textStyle={{ fontSize: 12 }} accessibilityLabel="Effektkette kopieren">
+              Kette kopieren auf …
+            </Chip>
+          </View>
+        )}
+        {copying && (
+          <View style={[s.foldRow, { flexWrap: 'wrap' }]}>
+            <Chip variant={!replace ? 'on' : 'ghost'} onPress={() => setReplace(false)} textStyle={{ fontSize: 12 }}>
+              Anhängen
+            </Chip>
+            <Chip variant={replace ? 'on' : 'ghost'} onPress={() => setReplace(true)} textStyle={{ fontSize: 12 }}>
+              Ersetzen
+            </Chip>
+            {allTracks.filter((t) => t.id !== trackId).map((t) => (
+              <Chip key={t.id} onPress={() => copyTo(t.id, t.name)} textStyle={{ fontSize: 12 }} accessibilityLabel={`Kette auf ${t.name} kopieren`}>
+                {t.name}
+              </Chip>
+            ))}
+            {!forMaster && (
+              <Chip onPress={() => copyTo(MASTER_ID, 'Master')} textStyle={{ fontSize: 12 }}>
+                Master
+              </Chip>
+            )}
+          </View>
+        )}
 
         {devices.length > 1 && (
           <View style={s.foldRow}>

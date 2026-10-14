@@ -1,4 +1,4 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject, copyDevices, MASTER_ID } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -417,5 +417,36 @@ describe('copyProject', () => {
     expect(c.tracks).toEqual(p.tracks);
     c.tracks[0].volume = 0.1;
     expect(p.tracks[0].volume).not.toBe(0.1);
+  });
+});
+
+describe('copyDevices', () => {
+  const setup = () => {
+    let p = createProject('x');
+    const [a, b] = [p.tracks[0].id, p.tracks[1].id];
+    p = addDevice(p, a, 'eq');
+    p = addDevice(p, a, 'comp');
+    p = addDevice(p, b, 'reverb');
+    return { p, a, b };
+  };
+  it('appends copies with fresh ids and the same settings', () => {
+    const { p, a, b } = setup();
+    const q = copyDevices(p, a, b, 'append');
+    const from = q.tracks.find((t) => t.id === a)!.devices!;
+    const to = q.tracks.find((t) => t.id === b)!.devices!;
+    expect(to.map((d) => d.type)).toEqual(['reverb', 'eq', 'comp']);
+    expect(to[1].params).toEqual(from[0].params);
+    expect(to[1].id).not.toBe(from[0].id);
+  });
+  it('replaces the target chain, can go to the master, and ignores itself', () => {
+    const { p, a, b } = setup();
+    expect(copyDevices(p, a, b, 'replace').tracks.find((t) => t.id === b)!.devices!.map((d) => d.type)).toEqual(['eq', 'comp']);
+    expect(copyDevices(p, a, MASTER_ID).master?.devices).toHaveLength(2);
+    expect(copyDevices(p, a, a)).toBe(p);
+  });
+  it('is a no-op for an empty source', () => {
+    const { p, b } = setup();
+    const empty = p.tracks[2].id;
+    expect(copyDevices(p, empty, b)).toBe(p);
   });
 });

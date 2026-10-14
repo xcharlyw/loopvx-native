@@ -346,6 +346,7 @@ them, consolidate drops their notes. Shown grey with "⊘". Measured offline: th
   clip fits; Ctrl/Cmd+L or a quick double tap on a clip = loop region on the selection (`loopSelection`). Buttons for touch in the clip sheet.
 - **Rubber band** in `ArrangeView`: a `PanResponder` on the timeline content (bubbling `onMoveShouldSetPanResponder`, so clips and their drags win), on with a mouse
   (`FINE_POINTER`) or in multi-select mode (on touch it would block scrolling otherwise); rows are mapped with the open automation lanes counted (`rowAt`).
+- **Copy a device chain**: `copyDevices(project, fromId, toId, 'append' | 'replace')` (project.ts, tested; track or `MASTER_ID` on either side, fresh device ids, settings and on/off kept, capped at MAX_DEVICES, device automation lanes are not copied). UI: `DevicePanel` chip "Kette kopieren auf …" with Anhängen/Ersetzen and one chip per other track (and Master); one undo step.
 - **Master bus**: `project.master.devices`, `MixGraph` routes every chain and return into `bus` → `masterBay` (a `DeviceBay`) → the limiter; the device functions in
   `project.ts` take `MASTER_ID`, `DevicePanel` shows the master when `devicesFor === 'master'` (no source slot, no Splice). Measured: a master EQ lowpass at 400 Hz cuts
   hats' zero crossings 15x, bypassed it is transparent.

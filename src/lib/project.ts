@@ -114,6 +114,19 @@ export function addDevice(project: Project, trackId: string, type: DeviceType, i
 export const removeDevice = (project: Project, trackId: string, deviceId: string): Project =>
   mapDevices(project, trackId, (list) => list.filter((d) => d.id !== deviceId));
 
+/**
+ * Copies the whole device chain of `fromId` (a track or MASTER_ID) onto another track or the master: `replace` swaps the target's chain,
+ * `append` adds the copies at its end (capped at MAX_DEVICES). The copies get fresh ids and keep their settings and on/off state; automation
+ * lanes of the devices are not copied. Unchanged when the source has no devices or the target is the source.
+ */
+export function copyDevices(project: Project, fromId: string, toId: string, mode: 'replace' | 'append' = 'append'): Project {
+  if (fromId === toId) return project;
+  const from = fromId === MASTER_ID ? (project.master?.devices ?? []) : (project.tracks.find((t) => t.id === fromId)?.devices ?? []);
+  if (!from.length) return project;
+  const copies = from.map((d) => ({ ...d, params: { ...d.params }, id: uid() }));
+  return mapDevices(project, toId, (list) => (mode === 'replace' ? copies : [...list, ...copies].slice(0, MAX_DEVICES)));
+}
+
 /** Moves a device by `delta` places in the chain (stays put at the ends). */
 export function moveDevice(project: Project, trackId: string, deviceId: string, delta: number): Project {
   return mapDevices(project, trackId, (list) => {

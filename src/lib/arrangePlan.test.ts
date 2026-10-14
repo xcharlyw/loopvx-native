@@ -1,4 +1,4 @@
-import { keepNamedSamples, normalizeKey, parsePlan, planSections } from './arrangePlan';
+import { keepNamedSamples, normalizeKey, parsePlan, planSections, userSearchWords } from './arrangePlan';
 
 describe('arrange plan', () => {
   it('normalizes keys', () => {
@@ -121,5 +121,24 @@ describe('keepNamedSamples', () => {
   it('keeps a name the user typed', () => {
     expect(keepNamedSamples(fx, 'Impact bei Takt 65 mit dem Sample "SSE Pattern 05 Perc FX"')).toEqual(fx);
     expect(keepNamedSamples(fx, 'nimm sse pattern 05 perc fx.wav bei 65')).toEqual(fx);
+  });
+});
+
+describe('user search words', () => {
+  const lib = [
+    { name: 'SSE Impact Shot 1', folder: '06 Impact Shots' },
+    { name: 'SSE Impact Shot 2', folder: '06 Impact Shots' },
+    { name: 'SSE Pattern 05 Perc FX' },
+    { name: 'SSE Clap FX' },
+    { name: 'Kick 150' },
+  ];
+  it("takes the words of the user's sentence that occur in the library, the most specific first", () => {
+    expect(userSearchWords("'Impact' Sample bei Takt 65 auf neuer Spur", lib)).toEqual(['impact']);
+    expect(userSearchWords('Impact FX bei Takt 65 auf neuer Spur', lib)).toEqual(['impact']); // "fx" is too short and too generic to search for
+    expect(userSearchWords('mach was', lib)).toEqual([]);
+  });
+  it('splits a multi-word answer of the model', () => {
+    const plan = parsePlan({ scope: 'fx_only', fx: [{ kind: 'impact', bar: 65, search: ['Impact FX', 'hit'] }] })!;
+    expect(plan.fx[0].search).toEqual(['impact', 'fx', 'hit']);
   });
 });

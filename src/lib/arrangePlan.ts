@@ -74,7 +74,8 @@ export function parseFx(raw: unknown): FxHit[] {
     const len = Number(it.length);
     const length = Number.isFinite(len) && len > 0 ? Math.min(16, Math.max(0.25, Math.round(len * 4) / 4)) : undefined;
     const track = typeof it.track === 'string' && it.track.trim() ? it.track.trim().slice(0, 24) : undefined;
-    const search = Array.isArray(it.search) ? it.search.filter((w): w is string => typeof w === 'string' && !!w.trim()).slice(0, 6).map((w) => w.trim().slice(0, 24)) : [];
+    // One word each: a model may answer "impact fx" as one entry.
+    const search = Array.isArray(it.search) ? [...new Set(it.search.filter((w): w is string => typeof w === 'string').flatMap((w) => w.toLowerCase().split(/[^a-z0-9äöüß]+/)).filter((w) => w.length >= 2).map((w) => w.slice(0, 24)))].slice(0, 6) : [];
     const sample = typeof it.sample === 'string' && it.sample.trim() ? it.sample.trim().slice(0, 80) : undefined;
     out.push({ kind, bar: Math.round(n) - 1, ...(length ? { length } : {}), ...(track ? { track } : {}), ...(search.length ? { search } : {}), ...(sample ? { sample } : {}) });
   }
@@ -155,4 +156,30 @@ export function keepNamedSamples(fx: FxHit[], prompt: string): FxHit[] {
     const { sample: _drop, ...rest } = hit;
     return named.length >= 3 && said.includes(` ${named} `) ? hit : rest;
   });
+}
+
+const STOP = new Set(['bei', 'takt', 'auf', 'neuer', 'neue', 'neuen', 'spur', 'spuren', 'sample', 'samples', 'mit', 'dem', 'den', 'der', 'die', 'das', 'ein', 'eine', 'einen', 'und', 'oder', 'the', 'add', 'track', 'new', 'bar', 'von', 'aus', 'meinen', 'meine', 'library', 'einfügen', 'füge', 'mach', 'mache', 'bitte', 'sound', 'sounds', 'effekt', 'effect', 'audio', 'nimm', 'setze', 'lege', 'platziere', 'stelle', 'stell', 'soll', 'will', 'noch', 'nach', 'vor', 'zum', 'zur', 'für']);
+
+/**
+ * The words of the user's own sentence that really occur in sample names or folders of the library ("Impact" in "SSE Impact Shot 3"),
+ * the rarest first (the most specific). These are the best search words: the user knows what the sound is called.
+ */
+export function userSearchWords(prompt: string, samples: { name: string; folder?: string }[]): string[] {
+  const tokens = samples.map((x) => plainText(`${x.name} ${x.folder ?? ''}`).split(' '));
+  const seen = new Set<string>();
+  const found: { w: string; n: number; i: number }[] = [];
+  plainText(prompt).split(' ').forEach((w, i) => {
+    if (w.length < 3 || /^\d+$/.test(w) || STOP.has(w) || seen.has(w)) return;
+    seen.add(w);
+    const n = tokens.filter((t) => t.some((x) => x === w || (w.length >= 4 && x.startsWith(w)))).length;
+    if (n > 0) found.push({ w, n, i });
+  });
+  return found.sort((a, b) => a.n - b.n || a.i - b.i).slice(0, 3).map((e) => e.w);
+}
+
+/** Puts the user's own words in front of the model's search words, for every effect. */
+export function withUserWords(fx: FxHit[], prompt: string, samples: { name: string; folder?: string }[]): FxHit[] {
+  const words = userSearchWords(prompt, samples);
+  if (!words.length) return fx;
+  return fx.map((hit) => ({ ...hit, search: [...new Set([...words, ...(hit.search ?? [])])].slice(0, 6) }));
 }

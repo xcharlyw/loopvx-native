@@ -146,7 +146,10 @@ const plain = (v: string) => v.toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, '').re
  * picked, so rolling again changes the sound.
  */
 export function findFxSample(samples: Sample[], hit: Pick<FxHit, 'kind' | 'search' | 'sample'>, rand: () => number = () => 0): Sample | undefined {
-  const usable = samples.filter((x) => x.category !== 'vocal');
+  // The category is only a guess made at import (Karl's "Impact Shots" came in as vocals): when the user's words or a name are given
+  // every sample counts; vocals are left out only for the fallback by the kind's typical words.
+  const wantedWords = (hit.search ?? []).map(plain).filter(Boolean);
+  const usable = wantedWords.length || hit.sample ? samples : samples.filter((x) => x.category !== 'vocal');
   const named = hit.sample ? plain(hit.sample) : '';
   if (named.length >= 3) {
     const exact = usable.find((x) => plain(x.name) === named);
@@ -156,8 +159,7 @@ export function findFxSample(samples: Sample[], hit: Pick<FxHit, 'kind' | 'searc
   }
   // The user's own words decide (the first one most); the kind's typical words are only a fallback when there are none, so a sound
   // that does not match what was asked for is never picked: no match means "not found".
-  const wanted = (hit.search ?? []).map(plain).filter(Boolean);
-  const words = wanted.length ? wanted : FX_WORDS[hit.kind];
+  const words = wantedWords.length ? wantedWords : FX_WORDS[hit.kind];
   const oneShot = hit.kind === 'impact' || hit.kind === 'crash';
   const scored = usable
     .map((x) => {
@@ -290,7 +292,7 @@ function placeFx(tracksIn: Track[], project: Project, samples: Sample[], hits: F
     const name = hit.track?.trim() || FX_TRACK[hit.kind];
     const found = findFxSample(samples, hit, rand);
     if (!found) {
-      fxMissing.push(`${name} (Takt ${hit.bar + 1})`);
+      fxMissing.push(`${name} (Takt ${hit.bar + 1}, gesucht: ${(hit.search?.length ? hit.search : FX_WORDS[hit.kind]).slice(0, 4).join(', ')})`);
       continue;
     }
     const bars = hit.length ?? (found.duration ? sampleLengthBars(found.duration, project.bpm, found.bpm) : 2);

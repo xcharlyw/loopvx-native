@@ -117,7 +117,8 @@ export function ArrangerPanel() {
 
       {plan && (
         <Section title="Ergebnis" style={{ marginTop: 12 }}>
-          {plan.summary ? <Txt style={[s.note, { color: C.text }]}>{plan.summary}</Txt> : null}
+          {/* For single additions only what the app really did counts (the model's own summary may promise more). */}
+          {plan.summary && !fxOnly ? <Txt style={[s.note, { color: C.text }]}>{plan.summary}</Txt> : null}
           {last?.fx.map((f) => (
             <Txt key={`${f.track}${f.bar}`} style={s.note}>{`✓ ${f.track}: „${f.sample}“ bei Takt ${f.bar}`}</Txt>
           ))}

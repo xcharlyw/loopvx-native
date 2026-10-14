@@ -1,7 +1,7 @@
 import type { Project, Sample, Track } from '../types';
 import { laneOf, laneValue } from './automation';
 import { arrange, candidates, findFxSample, roleOf, sectionsFor } from './arranger';
-import { planSections } from './arrangePlan';
+import { planSections, withUserWords } from './arrangePlan';
 import { createProject, createTrack, trackSynth } from './project';
 
 const sample = (id: string, category: Sample['category'], extra: Partial<Sample> = {}): Sample => ({ id, name: `${id}.wav`, category, addedAt: 1, ...extra });
@@ -188,11 +188,13 @@ describe('effect sounds', () => {
     expect(findFxSample(lib, { kind: 'impact', search: ['impact'] })?.name).toBe('Dark Impact 03.wav');
     expect(findFxSample(lib, { kind: 'riser' })?.id).toBe('Rise Sweep 8 Bars');
     expect(findFxSample(lib, { kind: 'crash' })).toBeUndefined();
+    // vocals stay out of the fallback by the kind's words, but not when the user's own word names them
     expect(findFxSample([sample('vocal-impact', 'vocal', { name: 'Impact Shout.wav' })], { kind: 'impact' })).toBeUndefined();
+    expect(findFxSample([sample('vocal-impact', 'vocal', { name: 'Impact Shout.wav' })], { kind: 'impact', search: ['impact'] })?.id).toBe('vocal-impact');
   });
 
   it('puts the effect on a new audio track at the bar, the length of the sample', () => {
-    const r = arrange(base(), lib, { ...opts, addMissingTracks: false, fx: [{ kind: 'impact', bar: 64, search: ['impact'] }] });
+    const r = arrange(base(), lib.filter((x) => x.category !== 'vocal'), { ...opts, addMissingTracks: false, fx: [{ kind: 'impact', bar: 64, search: ['impact'] }] });
     const track = r.project.tracks.find((t) => t.name === 'Impact FX')!;
     expect(r.added).toContain('Impact FX');
     expect(track.kind).toBe('audio');
@@ -206,7 +208,7 @@ describe('effect sounds', () => {
 
   it('says what it could not find instead of pretending', () => {
     const r = arrange(base(), [sample('kick1', 'kick')], { ...opts, addMissingTracks: false, fx: [{ kind: 'impact', bar: 64 }] });
-    expect(r.fxMissing).toEqual(['Impact FX (Takt 65)']);
+    expect(r.fxMissing).toEqual(['Impact FX (Takt 65, gesucht: impact, hit, boom, slam)']);
     expect(r.project.tracks.some((t) => t.name === 'Impact FX')).toBe(false);
   });
 
@@ -247,5 +249,14 @@ describe('effect sounds', () => {
     expect(findFxSample(karl, { kind: 'impact', search: ['boomerang'] })).toBeUndefined();
     // "hit" is a whole word: it finds "Hit Loop" but not a "white" sample
     expect(findFxSample([fxSample('Whitenoise Sweep')], { kind: 'impact', search: ['hit'] })).toBeUndefined();
+  });
+
+  it('finds Karl\'s impact shots although the import tagged them as vocals', () => {
+    const lib2 = [...[1, 2, 3, 4, 5].map((n) => fxSample(`SSE Impact Shot ${n}`, { category: 'vocal', folder: '06 Impact Shots' })), fxSample('SSE Pattern 05 Perc FX')];
+    const hit = withUserWords([{ kind: 'other', bar: 64 }], "'Impact' Sample bei Takt 65 auf neuer Spur", lib2)[0];
+    expect(hit.search).toEqual(['impact']);
+    const r = arrange(base(), lib2, { ...opts, addMissingTracks: false, fxOnly: true, fx: [hit] });
+    expect(r.fx[0].sample).toMatch(/^SSE Impact Shot \d$/);
+    expect(r.fxMissing).toEqual([]);
   });
 });

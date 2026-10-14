@@ -1,7 +1,7 @@
 import { ARRANGE_ENDPOINT } from '../config';
 import type { Project, Sample } from '../types';
 import { candidates, roleOf } from './arranger';
-import { keepNamedSamples, parsePlan, type ArrangePlan } from './arrangePlan';
+import { keepNamedSamples, parsePlan, withUserWords, type ArrangePlan } from './arrangePlan';
 import { getSession } from './supabase';
 
 /** Asks Gemini (through api/arrange) for a plan that fits the text; the answer is checked by `parsePlan`. */
@@ -10,7 +10,7 @@ export async function requestPlan(prompt: string, project: Project, samples: Sam
   if (!session) throw new Error('Bitte zuerst anmelden (Projekte → Mit Google anmelden).');
   // The model picks effect sounds by name, so it sees the sample names (effect-like ones first, at most 120).
   const FX_LIKE = /fx|impact|hit|crash|riser|rise|sweep|uplift|downlift|boom|slam|noise|cymbal|reverse|transition|swell|texture|atmos/i;
-  const names = samples.filter((x) => x.category !== 'vocal').map((x) => ({ name: x.name.replace(/\.[a-z0-9]{2,5}$/i, ''), category: x.category, bpm: x.bpm }));
+  const names = samples.map((x) => ({ name: x.name.replace(/\.[a-z0-9]{2,5}$/i, ''), category: x.category, bpm: x.bpm }));
   // Names with the user's own words first (so "impact" shows the impact samples), then effect-like ones, then the rest.
   const words = prompt.toLowerCase().split(/[^a-z0-9äöüß]+/).filter((w) => w.length >= 4);
   const said = (x: { name: string }) => words.some((w) => x.name.toLowerCase().includes(w));
@@ -25,5 +25,5 @@ export async function requestPlan(prompt: string, project: Project, samples: Sam
   const answer = (await res.json()) as { plan?: unknown; model?: string };
   const plan = parsePlan(answer.plan);
   if (!plan) throw new Error('Die KI hat keinen brauchbaren Plan geliefert, bitte nochmal versuchen.');
-  return { ...plan, fx: keepNamedSamples(plan.fx, prompt), ...(typeof answer.model === 'string' ? { model: answer.model } : {}) };
+  return { ...plan, fx: withUserWords(keepNamedSamples(plan.fx, prompt), prompt, samples), ...(typeof answer.model === 'string' ? { model: answer.model } : {}) };
 }

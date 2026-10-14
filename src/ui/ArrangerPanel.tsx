@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, TextInput, View } from 'react-native';
 import { engine } from '../audio/engine';
-import { C, font, mono } from '../constants/theme';
+import { C, font } from '../constants/theme';
 import { setCursor, togglePlay } from '../lib/actions';
 import { requestPlan } from '../lib/aiArrange';
-import { arrange, FX_TRACK, type ArrangeResult } from '../lib/arranger';
+import { arrange, type ArrangeResult } from '../lib/arranger';
 import { planSections, type ArrangePlan } from '../lib/arrangePlan';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
@@ -19,8 +19,6 @@ import { Sheet } from './Sheet';
 export function ArrangerPanel() {
   const project = useStore((st) => st.project);
   const samples = useStore((st) => st.samples);
-  const [addMissing, setAddMissing] = useState(true);
-  const [automation, setAutomation] = useState(true);
   const [last, setLast] = useState<ArrangeResult | null>(null);
   const [rolls, setRolls] = useState(0);
   const [prompt, setPrompt] = useState('');
@@ -28,7 +26,6 @@ export function ArrangerPanel() {
   const [thinking, setThinking] = useState(false);
 
   const sections = plan ? planSections(plan) : [];
-  const totalBars = sections.reduce((n, sec) => Math.max(n, sec.start + sec.bars), 0);
 
   const askAi = async () => {
     setThinking(true);
@@ -58,8 +55,8 @@ export function ArrangerPanel() {
       const source = { ...current, bpm: plan.bpm ?? current.bpm, key: plan.key ?? current.key, ...(plan.key && plan.key !== current.key ? { scale: undefined } : {}) };
       const result = arrange(source, getState().samples, {
         seed: Math.floor(Math.random() * 2 ** 31),
-        addMissingTracks: addMissing,
-        automation: plan.automation && automation,
+        addMissingTracks: true,
+        automation: plan.automation,
         sections,
         styles: plan?.styles,
         addRoles: plan?.addRoles,
@@ -129,47 +126,6 @@ export function ArrangerPanel() {
         </Section>
       ) : null}
 
-      {plan?.fx.length ? (
-        <Section title="Effekt-Sounds aus deiner Library" style={{ marginTop: 12 }}>
-          <View style={s.sections}>
-            {plan.fx.map((f, i) => (
-              <View key={`${f.kind}${f.bar}${i}`} style={s.sec}>
-                <Txt style={s.secName}>{`${f.track ?? FX_TRACK[f.kind]} · neue Spur`}</Txt>
-                <Txt style={s.secBars}>{`Takt ${f.bar + 1}`}</Txt>
-              </View>
-            ))}
-          </View>
-          <Txt style={s.note}>Das Sample sucht die App beim Erzeugen in deiner Library (nach dem Namen, den die KI vorgibt, und typischen Wörtern wie „impact“, „hit“, „riser“).</Txt>
-        </Section>
-      ) : null}
-
-      {plan && (
-        <Section title={`Aufbau · ${totalBars} Takte`} style={{ marginTop: 12 }}>
-          <View style={s.sections}>
-            {sections.map((sec) => (
-              <View key={sec.id + sec.start} style={s.sec}>
-                <Txt style={s.secName}>{sec.mute?.length ? `${sec.label} · ohne ${sec.mute.map((r) => ROLE_DE[r]).join(', ')}` : sec.label}</Txt>
-                <Txt style={s.secBars}>{`Takt ${sec.start + 1}–${sec.start + sec.bars}`}</Txt>
-              </View>
-            ))}
-          </View>
-        </Section>
-      )}
-
-      <Section title="Optionen" style={{ marginTop: 12 }}>
-        <View style={s.chips}>
-          <Chip variant={addMissing ? 'on' : 'ghost'} accessibilityLabel="Fehlende Spuren anlegen" onPress={() => setAddMissing(!addMissing)}>
-            Fehlende Spuren anlegen
-          </Chip>
-          <Chip variant={automation ? 'on' : 'ghost'} accessibilityLabel="Automationen" onPress={() => setAutomation(!automation)}>
-            Automationen
-          </Chip>
-        </View>
-        <Txt style={s.note}>
-          {`Spuren: 909-Drums, Rumble-Bass, Lead und Pad, wo es sie noch nicht gibt. Automationen: Filter öffnet in den Build-ups, Hall-Wurf vor dem Drop, Drive-Anstieg im Bass, Ausblenden am Ende.`}
-        </Txt>
-      </Section>
-
       <View style={[s.chips, { marginTop: 14 }]}>
         <Btn kind="primary" disabled={!plan} accessibilityLabel="Arrangement erzeugen" onPress={() => void run()}>
           {rolls ? 'Neu würfeln' : plan ? 'Arrangement erzeugen' : 'Zuerst mit KI planen'}
@@ -198,15 +154,9 @@ export function ArrangerPanel() {
   );
 }
 
-const ROLE_DE: Record<string, string> = { drums: 'Drums', bass: 'Bass', lead: 'Lead', pad: 'Pad', kickLoop: 'Kick-Loop', topLoop: 'Top-Loop', synthLoop: 'Synth-Loop', vocal: 'Vocals' };
-
 const s = StyleSheet.create({
   note: { color: C.muted, fontSize: 12, lineHeight: 17, marginBottom: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8, alignItems: 'center' },
-  sections: { gap: 4 },
-  sec: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: C.lineSoft },
-  secName: { ...font(600), fontSize: 13 },
-  secBars: { ...mono(), fontSize: 11, color: C.muted },
   promptBox: { borderWidth: 1, borderColor: C.line, borderRadius: 10, backgroundColor: C.bg2, padding: 10, marginBottom: 8 },
   input: { color: C.text, ...font(400), fontSize: 14, minHeight: 54, padding: 0, outlineWidth: 0, textAlignVertical: 'top' },
 });

@@ -370,7 +370,7 @@ reused and re-rolling replaces only the clip at that bar. No match = `fxMissing`
 for that the plan cannot express ("Nicht umgesetzt" in the panel), so the model cannot pretend; `requestPlan` also sends up to 120 sample names (effect-like first) and the
 server prompt demands German texts (`summary`, `notes`) and low temperature; the model that answered is shown (the lite fallback gives noticeably worse plans). UI `ArrangerPanel` (FAB
 "Arrangement" next to "AI Vocals") is **AI only**: the plan-less default (fixed 64/128 shape, "Arrangement erzeugen" without a text) was removed from the UI at Karl's request;
-"Arrangement erzeugen" stays disabled until Gemini has planned. `arrange()` itself still works without `sections` (default `sectionsFor(128)`), tests rely on it. Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
+"Arrangement erzeugen" stays disabled until Gemini has planned. The panel is kept lean at Karl's request: text field, summary, "Nicht umgesetzt" notes, the button and the result; **no section list and no option chips** (missing tracks are always added within the plan's `addRoles`, automation follows `plan.automation`). `arrange()` itself still works without `sections` (default `sectionsFor(128)`), tests rely on it. Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
 
 ## 909 drum machine (issue #4)
 

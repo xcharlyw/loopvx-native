@@ -1,4 +1,4 @@
-import { normalizeKey, parsePlan, planSections } from './arrangePlan';
+import { keepNamedSamples, normalizeKey, parsePlan, planSections } from './arrangePlan';
 
 describe('arrange plan', () => {
   it('normalizes keys', () => {
@@ -110,5 +110,16 @@ describe('plan scope', () => {
   });
   it('anything else is a full plan', () => {
     expect(parsePlan({ sections: [{ type: 'drop', bars: 8 }] })!.scope).toBe('full');
+  });
+});
+
+describe('keepNamedSamples', () => {
+  const fx = [{ kind: 'impact' as const, bar: 64, search: ['impact'], sample: 'SSE Pattern 05 Perc FX' }];
+  it('drops a sample name the model made up', () => {
+    expect(keepNamedSamples(fx, 'Impact FX bei Takt 65 auf neuer Spur')).toEqual([{ kind: 'impact', bar: 64, search: ['impact'] }]);
+  });
+  it('keeps a name the user typed', () => {
+    expect(keepNamedSamples(fx, 'Impact bei Takt 65 mit dem Sample "SSE Pattern 05 Perc FX"')).toEqual(fx);
+    expect(keepNamedSamples(fx, 'nimm sse pattern 05 perc fx.wav bei 65')).toEqual(fx);
   });
 });

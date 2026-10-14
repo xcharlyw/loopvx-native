@@ -123,7 +123,7 @@ export function ArrangerPanel() {
           ))}
           {last && !fxOnly && last.added.length > 0 && <Txt style={s.note}>{`Neue Spuren: ${last.added.join(', ')}.`}</Txt>}
           {last && last.fxMissing.length > 0 && (
-            <Txt style={[s.note, { color: C.danger }]}>{`Kein passendes Sample gefunden für: ${last.fxMissing.join(', ')}. Schreib den Sample-Namen in die Anfrage (z. B. „… mit dem Sample ‚SSE Pattern 05 Perc FX‘“).`}</Txt>
+            <Txt style={[s.note, { color: C.danger }]}>{`Kein Sample in deiner Library gefunden für: ${last.fxMissing.join(', ')}. Probier ein anderes Wort (z. B. „Boom“ statt „Impact“) oder schreib den Sample-Namen in die Anfrage.`}</Txt>
           )}
           {last && !fxOnly && last.missingSamples.length > 0 && <Txt style={[s.note, { color: C.muted }]}>{`Ohne passende Library-Samples geblieben: ${last.missingSamples.join(', ')}.`}</Txt>}
           {plan.notes?.map((n) => (

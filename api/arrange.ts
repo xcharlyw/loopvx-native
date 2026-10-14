@@ -44,8 +44,8 @@ Answer ONLY with one JSON object, no prose, of this shape:
       "bar": number,            // bar NUMBER as shown in the ruler (1 = first bar) where the sound starts; a riser starts "length" bars BEFORE the bar it leads into
       "length": number | null,  // bars, only if the sound must be cut or stretched, else null
       "track": string | null,   // name of the new audio track, e.g. "Impact FX"
-      "search": string[],       // 1-4 words that appear in fitting sample names, best first (e.g. ["impact","hit","boom"])
-      "sample": string | null } // an exact name from the library list below if one clearly fits, else null
+      "search": string[],       // 1-4 words that appear in fitting sample names, best first: the word(s) the USER used for the sound (e.g. "impact" -> ["impact"]), then close synonyms
+      "sample": string | null } // ONLY a sample name the user typed himself (copy it exactly); otherwise null. Never pick or invent a name yourself: the app searches the library with "search"
   ],
   "notes": string[]             // German: every request you could NOT express in this JSON (empty if none)
 }

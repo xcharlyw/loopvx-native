@@ -154,15 +154,18 @@ export function findFxSample(samples: Sample[], hit: Pick<FxHit, 'kind' | 'searc
     const loose = usable.filter((x) => plain(x.name).includes(named) || named.includes(plain(x.name))).sort((a, b) => a.name.length - b.name.length);
     if (loose.length) return loose[0];
   }
+  // The user's own words decide (the first one most); the kind's typical words are only a fallback when there are none, so a sound
+  // that does not match what was asked for is never picked: no match means "not found".
   const wanted = (hit.search ?? []).map(plain).filter(Boolean);
-  const own = FX_WORDS[hit.kind];
+  const words = wanted.length ? wanted : FX_WORDS[hit.kind];
   const oneShot = hit.kind === 'impact' || hit.kind === 'crash';
   const scored = usable
     .map((x) => {
-      const hay = ` ${plain(`${x.name} ${x.folder ?? ''}`)} `;
-      const has = (w: string) => hay.includes(` ${w} `) || hay.includes(w);
-      const score = wanted.filter(has).length * 2 + own.filter(has).length;
-      return { x, score: score + (oneShot && !x.bpm ? 0.5 : 0) - (x.duration && x.duration > 12 ? 1 : 0) };
+      // Whole words (a word may continue: "impact" finds "Impacts"), so "hit" does not match "white" and "fx" not "fxx".
+      const tokens = plain(`${x.name} ${x.folder ?? ''}`).split(' ');
+      const has = (w: string) => tokens.some((t) => t === w || (w.length >= 4 && t.startsWith(w)));
+      const score = words.reduce((n, w, i) => n + (has(w) ? (i === 0 ? 3 : 1) : 0), 0);
+      return { x, score: score ? score + (oneShot && !x.bpm ? 0.5 : 0) - (x.duration && x.duration > 12 ? 1 : 0) : 0 };
     })
     .filter((e) => e.score >= 1)
     .sort((a, b) => b.score - a.score || (a.x.duration ?? 99) - (b.x.duration ?? 99) || a.x.name.localeCompare(b.x.name));

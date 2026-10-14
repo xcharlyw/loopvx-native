@@ -231,4 +231,21 @@ describe('effect sounds', () => {
     expect(r.added).toEqual(['Impact FX']);
     expect(r.sections).toEqual([]);
   });
+
+  it('searches the words the user asked for, whole words only, and never guesses another sound', () => {
+    const karl = [
+      fxSample('SSE Pattern 05 Perc FX', { bpm: 155, duration: 3.1 }),
+      fxSample('SSE Clap FX', { duration: 1 }),
+      ...[1, 2, 3].map((n) => fxSample(`SSE Impact Shot ${n}`, { folder: '06 Impact Shots', duration: 2 })),
+      fxSample('White Noise Hit Loop', { bpm: 155, duration: 8 }),
+    ];
+    for (let seed = 0; seed < 10; seed++) {
+      const r = arrange(base(), karl, { ...opts, seed, addMissingTracks: false, fxOnly: true, fx: [{ kind: 'impact', bar: 64, search: ['impact'] }] });
+      expect(r.fx[0].sample).toMatch(/^SSE Impact Shot \d$/);
+    }
+    // a word nothing matches is "not found", not some other effect
+    expect(findFxSample(karl, { kind: 'impact', search: ['boomerang'] })).toBeUndefined();
+    // "hit" is a whole word: it finds "Hit Loop" but not a "white" sample
+    expect(findFxSample([fxSample('Whitenoise Sweep')], { kind: 'impact', search: ['hit'] })).toBeUndefined();
+  });
 });

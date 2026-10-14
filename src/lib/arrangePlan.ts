@@ -140,3 +140,19 @@ export function planSections(plan: Pick<ArrangePlan, 'sections'>): Section[] {
   }
   return out;
 }
+
+const plainText = (v: string) => v.toLowerCase().replace(/\.[a-z0-9]{2,5}\b/g, '').replace(/[^a-z0-9äöüß]+/g, ' ').trim();
+
+/**
+ * A model likes to invent a sample name; only one the user typed counts. Everything else is found by the search words (what the
+ * user asked for, e.g. "impact") in the library, so the sound is one that really matches.
+ */
+export function keepNamedSamples(fx: FxHit[], prompt: string): FxHit[] {
+  const said = ` ${plainText(prompt)} `;
+  return fx.map((hit) => {
+    if (!hit.sample) return hit;
+    const named = plainText(hit.sample);
+    const { sample: _drop, ...rest } = hit;
+    return named.length >= 3 && said.includes(` ${named} `) ? hit : rest;
+  });
+}

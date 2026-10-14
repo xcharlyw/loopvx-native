@@ -406,6 +406,14 @@ ends), drums without bass = build-up before a drop; silent stems become the sect
 (markers named after the sections), automation on, new tracks only for roles the tune has, and **never the tune's own stems** as library material (only the project's
 tracks and the user's samples). Confirm before replacing clips; one undo step. The tune's tempo is not taken over. Tested on synthetic levels only (no real tune in the sandbox).
 
+**Drums of a stemmed tune** (same section, per tune): `drumSplit.ts` (pure, tested on synthetic drums incl. a late start, a 0.2 BPM wrong tempo and a tune without
+claps). "Drums → MIDI" = `drumsToMidi` (referenceRun.ts): the drums stem mono at ≤ 24 kHz (`monoForAnalysis`), band filters (RBJ biquads, 24 dB/oct: kick < 150 Hz, clap
+500–5000 Hz, hats > 7 kHz), 1 ms peak envelopes, the grid fitted to the kicks (`fitGrid`: tempo ±0.25 BPM and the first beat's phase), then per 16th step and band the jump
+from before to after the step against the band's 95th percentile; bleed rules: a clap on a kick step must beat 1.6x the quieter kick steps' mid jump, on a hat-ish step 2.5x
+the hats' mid jump; a hat on a clap/kick step likewise. Notes on the 909 pads (kick 36, clap 39, closed hat 42) in one clip over the whole tune on a new track "<tune> Drums"
+(kit-909). "Drums → Kick / Clap / HiHats" = `splitDrumsAudio`: the same band filters per channel, one band at a time, as WAV samples "<tune> - Kick / Clap + Snare / HiHats"
+in the tune's folder (`split:<id>`, not AI: bleed stays audible). Never run on a real tune.
+
 ## 909 drum machine (issue #4)
 
 `wave: 'kit909'` is a whole drum kit as one instrument (`src/audio/drum909.ts`, pure): 12 pads on drum-rack/GM notes (kick C1 = 36, rim 37, snare 38,

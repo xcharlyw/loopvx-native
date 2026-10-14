@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { C } from '../constants/theme';
 import { setCursor } from '../lib/actions';
 import { structureText } from '../lib/referenceArrange';
-import { rebuildFromStems, stemTunes } from '../lib/referenceRun';
+import { drumsToMidi, rebuildFromStems, splitDrumsAudio, stemTunes } from '../lib/referenceRun';
 import { errorText, getState, setState, toast, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -14,6 +14,30 @@ export function ReferenceRebuild() {
   const tunes = stemTunes(samples);
   const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState<{ tune: string; text: string; bpm: number; added: string[] } | null>(null);
+  const [lines, setLines] = useState<string[]>([]);
+
+  const work = async (key: string, job: () => Promise<string>) => {
+    setBusy(key);
+    try {
+      const line = await job();
+      setLines((l) => [line, ...l].slice(0, 4));
+      toast(line);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const midi = (folder: string, tune: string) =>
+    void work(`${folder}#midi`, async () => {
+      const r = await drumsToMidi(folder);
+      return `✓ „${tune}“: Drums als MIDI auf Spur „${r.track}“ (${r.notes} Schläge, ${r.bars} Takte, Raster ${r.bpm} BPM)`;
+    });
+  const split = (folder: string, tune: string) =>
+    void work(`${folder}#split`, async () => {
+      const r = await splitDrumsAudio(folder);
+      return `✓ „${tune}“: Drums aufgeteilt in ${r.map((x) => x.name.split(' - ').pop()!.replace(/\.wav$/, '')).join(', ')} (Library, Ordner des Tunes)`;
+    });
 
   const go = async (folder: string, tune: string) => {
     if (getState().project.tracks.some((t) => t.clips.length > 0)) {
@@ -36,21 +60,39 @@ export function ReferenceRebuild() {
   return (
     <Section title="Aufbau von einem Tune nachbauen" style={{ marginTop: 12 }}>
       <Txt style={s.note}>
-        Die App hört in die Stems eines Tunes (Library → Stems trennen), erkennt Intro, Build-up, Drop, Break und Outro und wo Drums, Bass, Synth und Vocal spielen, und baut diesen Aufbau mit deinen Spuren und Sounds nach.
+        Die App hört in die Stems eines Tunes (Library → Stems trennen). „Aufbau nachbauen“ erkennt Intro, Build-up, Drop, Break und Outro und baut sie mit deinen Spuren nach. „Drums → MIDI“ schreibt Kick, Clap und HiHats als MIDI auf eine neue 909-Spur. „Drums → Kick / Clap / HiHats“ teilt den Drum-Stem per Filter in drei Audio-Spuren (nicht ganz sauber getrennt).
       </Txt>
       {tunes.length === 0 ? (
         <View style={s.row}>
           <Btn small onPress={() => setState({ panel: 'library' })}>Erst einen Tune in Stems trennen</Btn>
         </View>
       ) : (
-        <View style={s.row}>
+        <View style={{ gap: 10 }}>
           {tunes.map((t) => (
-            <Chip key={t.folder} variant={busy === t.folder ? 'on' : 'ghost'} onPress={() => (busy ? undefined : void go(t.folder, t.tune))} accessibilityLabel={`Aufbau von ${t.tune} übernehmen`}>
-              {busy === t.folder ? `${t.tune}: hört rein …` : t.tune}
-            </Chip>
+            <View key={t.folder} style={s.tune}>
+              <Txt style={s.tuneName} numberOfLines={1}>
+                {t.tune}
+              </Txt>
+              <View style={s.row}>
+                <Chip variant={busy === t.folder ? 'on' : 'ghost'} onPress={() => (busy ? undefined : void go(t.folder, t.tune))} accessibilityLabel={`Aufbau von ${t.tune} übernehmen`}>
+                  {busy === t.folder ? 'hört rein …' : 'Aufbau nachbauen'}
+                </Chip>
+                <Chip variant={busy === `${t.folder}#midi` ? 'on' : 'ghost'} onPress={() => (busy ? undefined : midi(t.folder, t.tune))} accessibilityLabel={`Drums von ${t.tune} als MIDI`}>
+                  {busy === `${t.folder}#midi` ? 'erkennt Drums …' : 'Drums → MIDI'}
+                </Chip>
+                <Chip variant={busy === `${t.folder}#split` ? 'on' : 'ghost'} onPress={() => (busy ? undefined : split(t.folder, t.tune))} accessibilityLabel={`Drums von ${t.tune} aufteilen`}>
+                  {busy === `${t.folder}#split` ? 'teilt auf …' : 'Drums → Kick / Clap / HiHats'}
+                </Chip>
+              </View>
+            </View>
           ))}
         </View>
       )}
+      {lines.map((l) => (
+        <Txt key={l} style={[s.note, { color: C.text, marginTop: 6 }]}>
+          {l}
+        </Txt>
+      ))}
       {done && (
         <>
           <Txt style={[s.note, { color: C.text, marginTop: 8 }]}>{`✓ „${done.tune}“ (${done.bpm} BPM): ${done.text}`}</Txt>
@@ -64,4 +106,6 @@ export function ReferenceRebuild() {
 const s = StyleSheet.create({
   note: { color: C.muted, fontSize: 12, lineHeight: 17, marginBottom: 8 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tune: { gap: 6 },
+  tuneName: { color: C.text, fontSize: 13 },
 });

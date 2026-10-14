@@ -24,3 +24,15 @@ describe('pickDriveFile', () => {
     expect(pickDriveFile(karls, { search: ['fmin'], key: 'F minor' }, 155)).toBeUndefined();
   });
 });
+
+import { pickSpliceResult } from './fxPick';
+describe('pickSpliceResult', () => {
+  const r = (name: string, key: string | undefined, bpm: number, type: 'loop' | 'oneshot' = 'loop', tags: string[] = ['synth']) => ({ uuid: name, name, key, bpm, type, tags });
+  it('takes the screech loop in F near the project tempo, not another key', () => {
+    const list = [r('ZEN_NST_158_screech_synth_loop_dystopia_A.wav', 'a', 158), r('ZEN_NST_155_screech_synth_loop_plasma_F.wav', 'f', 155), r('ESM_150_synth_lead_kiss_fm.wav', 'f minor', 150)];
+    expect(pickSpliceResult(list, { search: ['screech', 'synth'], key: 'F minor', length: 32 }, 155)?.name).toBe('ZEN_NST_155_screech_synth_loop_plasma_F.wav');
+  });
+  it('finds nothing without a word match', () => {
+    expect(pickSpliceResult([r('kick_f.wav', 'f', 155, 'oneshot', ['kick'])], { search: ['screech'] }, 155)).toBeUndefined();
+  });
+});

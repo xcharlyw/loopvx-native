@@ -5,12 +5,16 @@ import { C, font } from '../constants/theme';
 import { setCursor, togglePlay } from '../lib/actions';
 import { requestPlan } from '../lib/aiArrange';
 import { arrange, type ArrangeResult } from '../lib/arranger';
-import { fetchMissingFx } from '../lib/fxDrive';
+import { fetchMissingFx, type FxSources } from '../lib/fxDrive';
+import { spliceAvailable } from '../lib/splice';
 import { planSections, type ArrangePlan } from '../lib/arrangePlan';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
-import { Btn, Section, Txt } from './kit';
+import { Btn, Chip, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
+
+// Where the AI may take sounds from; kept while the app runs. Splice is off by default (the first download costs a credit).
+let chosenSources: FxSources = { library: true, drive: true, splice: false };
 
 /**
  * One step: the text goes to Gemini, which answers with a plan (`requestPlan`), and the app applies it right away. A request for
@@ -23,16 +27,27 @@ export function ArrangerPanel() {
   const [prompt, setPrompt] = useState('');
   const [plan, setPlan] = useState<ArrangePlan | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sources, setSources] = useState<FxSources>(chosenSources);
+  const [notes, setNotes] = useState<string[]>([]);
+  const toggle = (k: keyof FxSources) => {
+    const next = { ...sources, [k]: !sources[k] };
+    if (!next.library && !next.drive && !next.splice) return; // at least one source
+    chosenSources = next;
+    setSources(next);
+  };
 
   const apply = async (p: ArrangePlan) => {
     const fxOnly = p.scope === 'fx_only';
     if (engine.playing) engine.stop();
     // Sounds that are not in the library yet are looked up in the user's Drive and imported first.
-    const fromDrive = await fetchMissingFx(p.fx, getState().project);
+    const got = await fetchMissingFx(p.fx, getState().project, sources, (name) => confirmDestructive(`„${name}“ von Splice laden?`, 'Der erste Download eines Sounds kostet einen Splice-Credit, danach ist er kostenlos.', 'Laden'));
+    setNotes(got.notes);
+    const fromDrive = got.loaded;
+    const pool = sources.library ? getState().samples : got.pool;
     // A full plan may set tempo and key; they change with the arrangement (one undo step).
     const current = getState().project;
     const source = fxOnly ? current : { ...current, bpm: p.bpm ?? current.bpm, key: p.key ?? current.key, ...(p.key && p.key !== current.key ? { scale: undefined } : {}) };
-    const result = arrange(source, getState().samples, {
+    const result = arrange(source, pool, {
       seed: Math.floor(Math.random() * 2 ** 31),
       addMissingTracks: true,
       automation: p.automation,
@@ -46,7 +61,7 @@ export function ArrangerPanel() {
     setLast(result);
     if (!fxOnly) setCursor(0);
     const lacking = [...result.missingSamples, ...result.fxMissing];
-    toast(lacking.length ? `Fertig. Keine passenden Samples für: ${lacking.join(', ')}` : fromDrive.length ? `Fertig, aus Google Drive geladen: ${fromDrive.map((x) => x.name).join(', ')}` : 'Fertig');
+    toast(lacking.length ? `Fertig. Keine passenden Samples für: ${lacking.join(', ')}` : fromDrive.length ? `Fertig, neu geladen: ${fromDrive.map((x) => x.name).join(', ')}` : 'Fertig');
   };
 
   const go = async () => {
@@ -90,6 +105,22 @@ export function ArrangerPanel() {
         {`Schreib, was die KI machen soll (${project.bpm} BPM, ${project.key}). Sie setzt es sofort um, z. B. „Impact FX bei Takt 65 auf neuer Spur“ oder „baue ein 128-Takte-Arrangement mit langem Break“. Mit „Rückgängig“ (↩) nimmst du alles zurück.`}
       </Txt>
 
+      <View style={s.chips}>
+        <Txt style={[s.note, { marginBottom: 0 }]}>Sounds aus:</Txt>
+        <Chip variant={sources.library ? 'on' : 'ghost'} onPress={() => toggle('library')} accessibilityLabel="Quelle Library">
+          Library
+        </Chip>
+        <Chip variant={sources.drive ? 'on' : 'ghost'} onPress={() => toggle('drive')} accessibilityLabel="Quelle Google Drive">
+          Google Drive
+        </Chip>
+        {spliceAvailable() && (
+          <Chip variant={sources.splice ? 'on' : 'ghost'} onPress={() => toggle('splice')} accessibilityLabel="Quelle Splice">
+            Splice
+          </Chip>
+        )}
+      </View>
+      {sources.splice && <Txt style={s.note}>Splice: der erste Download eines Sounds kostet einen Credit, die App fragt vorher.</Txt>}
+
       <View style={s.promptBox}>
         <TextInput
           style={s.input}
@@ -130,6 +161,9 @@ export function ArrangerPanel() {
             <Txt style={[s.note, { color: C.danger }]}>{`Kein Sample in deiner Library gefunden für: ${last.fxMissing.join(', ')}. Probier ein anderes Wort (z. B. „Boom“ statt „Impact“) oder schreib den Sample-Namen in die Anfrage.`}</Txt>
           )}
           {last && !fxOnly && last.missingSamples.length > 0 && <Txt style={[s.note, { color: C.muted }]}>{`Ohne passende Library-Samples geblieben: ${last.missingSamples.join(', ')}.`}</Txt>}
+          {notes.map((n) => (
+            <Txt key={n} style={[s.note, { color: C.muted }]}>{n}</Txt>
+          ))}
           {plan.notes?.map((n) => (
             <Txt key={n} style={[s.note, { color: C.muted }]}>{`Nicht umgesetzt: ${n}`}</Txt>
           ))}

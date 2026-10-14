@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
+import { db } from '../storage/db';
+import { libraryDuplicates, usedSampleIds } from '../lib/duplicates';
 import { deleteSample } from '../lib/samples';
 import { allFolders, canMoveFolder, samplesUnder, withoutFolder, childFolders, countIn, dissolveFolder, flattenFolders, moveFolder, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
 import { getState, removeSamples, setFolders, toast, upsertSamples, useStore } from '../lib/store';
@@ -40,6 +42,29 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
     setPath('');
     toast(r.changed.length ? `${r.changed.length} Sample(s) in flache Ordner gelegt` : 'Die Ordner waren schon flach.');
   };
+  const dedupe = async () => {
+    const projects = await db.getProjects();
+    const groups = libraryDuplicates(samples, usedSampleIds([...projects, getState().project]));
+    const drop = groups.flatMap((g) => g.drop);
+    if (!groups.length) {
+      toast('Keine Duplikate gefunden (gleicher Name und gleiche Größe).');
+      return;
+    }
+    const pinned = groups.reduce((n, g) => n + g.pinned.length, 0);
+    if (!drop.length) {
+      toast(`${groups.length} doppelte Datei(en), aber alle Kopien werden in Projekten benutzt. Nichts entfernt.`);
+      return;
+    }
+    const names = groups.slice(0, 4).map((g) => g.keep.name).join(', ');
+    const ok = await confirmDestructive(
+      `${drop.length} Duplikat(e) entfernen?`,
+      `Gleicher Dateiname und gleiche Größe, z. B. ${names}. Je Datei bleibt eine Kopie (die, die ein Projekt benutzt, sonst die älteste). Entfernt werden nur Kopien, die kein Projekt spielt${pinned ? `; ${pinned} benutzte Kopie(n) bleiben` : ''}. Die Kopien verschwinden auch aus deinem Drive-Ordner LOOPVX, die Originaldateien in deinen Drive-Sample-Ordnern bleiben unangetastet.`,
+      'Entfernen',
+    );
+    if (!ok) return;
+    await removeSamples(drop, deleteSample);
+    toast(`${drop.length} Duplikat(e) entfernt`);
+  };
   const create = () => {
     if (naming === null) return;
     const made = addFolder(path, naming);
@@ -69,6 +94,9 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
             Pfade kürzen
           </Btn>
         )}
+        <Btn small accessibilityLabel="Duplikate suchen" onPress={() => void dedupe()}>
+          Duplikate
+        </Btn>
         <Btn small accessibilityLabel={selecting ? 'Auswahl beenden' : 'Samples auswählen'} onPress={() => onSelecting(!selecting)}>
           {selecting ? 'Fertig' : 'Auswählen'}
         </Btn>

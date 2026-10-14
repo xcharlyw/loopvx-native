@@ -1,5 +1,6 @@
 import { download } from './drive';
 import { libraryFolderOf, notYetImported, sampleFromDriveFile, type DriveEntry } from './driveImport';
+import { splitDuplicates } from './duplicates';
 import { storeSampleAudio } from './samples';
 import { getState, setSamples, upsertSamples } from './store';
 import type { Sample } from '../types';
@@ -9,6 +10,8 @@ const extOf = (name: string) => (/\.([a-z0-9]{2,5})$/i.exec(name)?.[1] ?? 'wav')
 export interface ImportResult {
   added: Sample[];
   skipped: number;
+  /** Same file (name and size) as one already in the library or earlier in this import: not downloaded. */
+  duplicates: number;
   /** Samples that were already in the library and only moved into their pack folder. */
   regrouped: number;
   failed: string[];
@@ -23,7 +26,8 @@ export interface ImportResult {
  * can be left running while the new loops already show up.
  */
 export async function importDriveItems(items: { file: DriveEntry; folder: string; root?: string }[], onProgress: (done: number, total: number, name: string) => void, shouldStop: () => boolean = () => false): Promise<ImportResult> {
-  const fresh = notYetImported(items, getState().samples);
+  const notYet = notYetImported(items, getState().samples);
+  const { unique: fresh, dupes } = splitDuplicates(notYet, getState().samples);
   // Already imported files only get the (new) library folder: no download, the sync carries the change.
   const known = new Map(getState().samples.filter((x) => x.driveId).map((x) => [x.driveId!, x]));
   const moved: Sample[] = [];
@@ -53,5 +57,5 @@ export async function importDriveItems(items: { file: DriveEntry; folder: string
     }
   }
   onProgress(fresh.length, fresh.length, '');
-  return { added, skipped: items.length - fresh.length, regrouped: moved.length, failed, stopped };
+  return { added, skipped: items.length - notYet.length, duplicates: dupes.length, regrouped: moved.length, failed, stopped };
 }

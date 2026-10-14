@@ -143,6 +143,13 @@ sample is then whole bars, they become whole BPM (149.82 → 150), otherwise a l
 Drive browser): a knob for the audition level (`previewDb`, -24..+6 dB, kv `previewDb`, a per-device preference; `engine.setPreviewDb` changes the playing preview)
 and "Wie Spur: <track>", which sets it to the fader level of the track the sample would land on (`trackForSample`), plus the now-playing line (tempo → project tempo).
 
+## Duplicates
+
+`lib/duplicates.ts` (pure, tested): a duplicate is the same file name (no case) **and** byte size; no size = never a duplicate. The Drive import skips them
+(`splitDuplicates` in `summarizeImport`/`importDriveItems`: against the library under another Drive id, and repeats inside one scan, e.g. "Version 34 - Hard Kick Pack"
+vs "Version 34 - Mini Hard Techno Kick Pack"); the plan card says "n Duplikat(e) ... übersprungen". Library → folder bar "Duplikate" (`libraryDuplicates`): keeps the copy a
+project uses (else the oldest) and removes only copies that no stored project/slot/sample instrument plays (`usedSampleIds`), after a confirm; Drive originals are never touched.
+
 ## Library folders
 
 `Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (the pack name), Splice (the pack name) and the user. Folders that hold samples exist by themselves;

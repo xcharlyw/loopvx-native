@@ -107,6 +107,7 @@ export function DriveImport() {
       if (result.stopped) parts.push('abgebrochen, ein erneuter Import macht dort weiter');
       if (result.regrouped) parts.push(`${result.regrouped} schon vorhandene in den Pack-Ordner einsortiert`);
       else if (result.skipped) parts.push(`${result.skipped} schon vorhanden`);
+      if (result.duplicates) parts.push(`${result.duplicates} Duplikat(e) übersprungen`);
       if (result.failed.length) parts.push(`${result.failed.length} fehlgeschlagen`);
       const tops = [...new Set(result.added.map((x) => x.folder).filter(Boolean))];
       if (tops.length) parts.push(`Library-Ordner: ${tops.slice(0, 3).join(', ')}`);
@@ -339,6 +340,7 @@ export function DriveImport() {
           <Txt style={s.note}>
             {[
               plan.summary.existing ? `${plan.summary.existing} schon in der Library${plan.summary.regroup ? `, ${plan.summary.regroup} davon kommen in den Pack-Ordner (kein neuer Download)` : ''}` : null,
+              plan.summary.duplicates ? `${plan.summary.duplicates} Duplikat(e) (gleicher Name und Größe) werden übersprungen` : null,
               plan.summary.bytes ? `${sizeText(String(plan.summary.bytes))} zu laden` : null,
               plan.truncated ? 'Limit erreicht, der Rest folgt im zweiten Durchgang' : null,
             ]

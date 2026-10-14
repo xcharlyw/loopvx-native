@@ -139,7 +139,7 @@ describe('summarizeImport', () => {
     { file: file('4', 'd.wav'), folder: '' },
   ];
   it('counts new files, size and library folders, biggest first', () => {
-    const s = summarizeImport(items, [{ driveId: '4' }]);
+    const s = summarizeImport(items, [{ driveId: '4', name: 'x.wav' }]);
     expect(s).toMatchObject({ total: 4, fresh: 3, existing: 1, regroup: 0, bytes: 4500 });
     expect(s.packs).toEqual([{ name: 'Pack A', count: 2 }, { name: 'Pack B', count: 1 }]);
   });
@@ -171,10 +171,19 @@ describe('regrouping known samples', () => {
   ];
   it('counts files that are in the library but in another folder', () => {
     const s = summarizeImport(items, [
-      { driveId: '1', folder: '06 Impact Shots' }, // the old rule lost the main folder
-      { driveId: '2', folder: 'SSE Pack' }, // already right
+      { driveId: '1', name: 'a.wav', folder: '06 Impact Shots' }, // the old rule lost the main folder
+      { driveId: '2', name: 'b.wav', folder: 'SSE Pack' }, // already right
     ]);
     expect(s).toMatchObject({ fresh: 1, existing: 2, regroup: 1 });
     expect(s.packs).toEqual([{ name: 'SSE Pack/07 Kicks', count: 1 }]);
+  });
+
+  it('skips a file that is the same (name and size) as one in the library under another id', () => {
+    const list = [
+      { file: { id: 'n1', name: 'Kick.wav', size: '100' }, folder: 'Version 34 - Mini Hard Techno Kick Pack' },
+      { file: { id: 'n2', name: 'Kick 2.wav', size: '100' }, folder: 'Version 34 - Mini Hard Techno Kick Pack' },
+    ];
+    const s = summarizeImport(list, [{ driveId: 'old', name: 'kick.WAV', size: 100, folder: 'Version 34 - Hard Kick Pack' }]);
+    expect(s).toMatchObject({ fresh: 1, duplicates: 1, existing: 0 });
   });
 });

@@ -1,5 +1,6 @@
 import { parseSampleName } from '../audio/timing';
 import type { Sample } from '../types';
+import { splitDuplicates } from './duplicates';
 
 // Importing loops from the user's existing Google Drive folders: what to show, what to skip, and how a Drive file
 // becomes a sample. Pure (no network); the run itself is in driveImportRun.ts.
@@ -156,6 +157,8 @@ export interface ImportSummary {
   total: number;
   fresh: number;
   existing: number;
+  /** New files that are the same file (name and size) as one in the library or earlier in the list: skipped. */
+  duplicates: number;
   /** Files already in the library whose library folder would change (they are only moved, not downloaded again). */
   regroup: number;
   /** Bytes of the files that are not in the library yet. */
@@ -165,8 +168,9 @@ export interface ImportSummary {
 }
 
 /** What an import would do, shown before it starts: how many files are new, how big, and into which library folders. */
-export function summarizeImport(items: { file: DriveEntry; folder: string; root?: string }[], samples: Pick<Sample, 'driveId' | 'folder'>[]): ImportSummary {
-  const fresh = notYetImported(items, samples);
+export function summarizeImport(items: { file: DriveEntry; folder: string; root?: string }[], samples: Pick<Sample, 'driveId' | 'folder' | 'name' | 'size'>[]): ImportSummary {
+  const notYet = notYetImported(items, samples);
+  const { unique: fresh, dupes } = splitDuplicates(notYet, samples);
   const counts = new Map<string, number>();
   let bytes = 0;
   for (const { file, folder, root } of fresh) {
@@ -181,7 +185,7 @@ export function summarizeImport(items: { file: DriveEntry; folder: string; root?
     return !!sample && !!target && sample.folder !== target;
   }).length;
   const packs = [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  return { total: items.length, fresh: fresh.length, existing: items.length - fresh.length, regroup, bytes, packs };
+  return { total: items.length, fresh: fresh.length, existing: items.length - notYet.length, duplicates: dupes.length, regroup, bytes, packs };
 }
 
 /** "12,3 MB" for a Drive size string. */

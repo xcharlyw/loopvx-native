@@ -1,5 +1,5 @@
-import type { Track } from '../types';
-import { AUTO_GRID, AUTO_PARAMS, drawStep, drawStroke, simplifyLane, deviceAutoParams, hasAutomation, joinPoints, knobPosition, knobValue, paramDef, parseDeviceParam, laneOf, laneValue, ramp, sampleLane, setLane, throwAt, withPoint, withoutPoint } from './automation';
+import type { Device, Track } from '../types';
+import { AUTO_GRID, copyAutomation, copyRange, AUTO_PARAMS, drawStep, drawStroke, simplifyLane, deviceAutoParams, hasAutomation, joinPoints, knobPosition, knobValue, paramDef, parseDeviceParam, laneOf, laneValue, ramp, sampleLane, setLane, throwAt, withPoint, withoutPoint } from './automation';
 
 const track = { id: 't', name: 't', category: 'synth', color: '#fff', volume: 1, muted: false, solo: false, clips: [], slots: [] } as Track;
 
@@ -150,5 +150,28 @@ describe('drawing', () => {
     expect(drawStep(240)).toBe(1 / 16);
     expect(drawStep(56)).toBe(1 / 8);
     expect(drawStep(8)).toBe(1);
+  });
+});
+
+describe('copying automation', () => {
+  const pts = [{ bar: 0, value: 0 }, { bar: 8, value: 1 }, { bar: 16, value: 0 }];
+  it('copies a range to another place and replaces what was there', () => {
+    const out = copyRange(pts, 0, 8, 16);
+    expect(out.filter((p) => p.bar >= 16)).toEqual([{ bar: 16, value: 0 }, { bar: 24, value: 1 }]);
+    expect(out.filter((p) => p.bar < 16)).toEqual(pts.slice(0, 2));
+    expect(copyRange(pts, 4, 12, 20).find((p) => p.bar === 20)!.value).toBeCloseTo(0.5);
+    expect(copyRange([], 0, 8, 8)).toEqual([]);
+  });
+  it('copies the lanes of a track and maps device lanes to the same device type', () => {
+    const eq1 = { id: 'e1', type: 'eq', on: true, params: {} } as Device;
+    const eq2 = { id: 'e2', type: 'eq', on: true, params: {} } as Device;
+    const rev = { id: 'r1', type: 'reverb', on: true, params: {} } as Device;
+    const from = { id: 'a', devices: [eq1, rev], automation: [{ param: 'filter', points: [{ bar: 0, value: 0 }] }, { param: 'dev:e1:hp', points: [{ bar: 0, value: 0.2 }] }, { param: 'dev:r1:mix', points: [{ bar: 0, value: 0.5 }] }] } as unknown as Track;
+    const to = { id: 'b', devices: [eq2], automation: [{ param: 'filter', points: [{ bar: 9, value: 1 }] }] } as unknown as Track;
+    const r = copyAutomation(from, to);
+    expect(r.copied).toBe(2);
+    expect(r.skipped).toBe(1);
+    expect(r.track.automation!.map((l) => l.param).sort()).toEqual(['dev:e2:hp', 'filter']);
+    expect(r.track.automation!.find((l) => l.param === 'filter')!.points).toEqual([{ bar: 0, value: 0 }]);
   });
 });

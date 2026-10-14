@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { projectEndBars } from '../audio/timing';
 import { C, font, mono } from '../constants/theme';
-import { AUTO_GRID, AUTO_ORDER, AUTO_PARAMS, deviceAutoParams, laneOf, paramDef, ramp, setLane, throwAt, withPoint, withoutPoint } from '../lib/automation';
+import { AUTO_GRID, AUTO_ORDER, AUTO_PARAMS, copyAutomation, copyRange, deviceAutoParams, laneOf, paramDef, ramp, setLane, throwAt, withPoint, withoutPoint } from '../lib/automation';
 import { formatBarPosition } from '../audio/timing';
 import { mapTrack } from '../lib/project';
-import { setState, updateProject, useStore } from '../lib/store';
+import { setState, toast, updateProject, useStore } from '../lib/store';
 import type { AutoParam, AutoPoint } from '../types';
 import { AutomationCurve } from './AutomationCurve';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -23,6 +23,7 @@ export function AutomationPanel() {
   const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
   const end = useStore((st) => projectEndBars(st.project));
   const drawMode = useStore((st) => st.drawMode);
+  const allTracks = useStore((st) => st.project.tracks);
   const [param, setParam] = useState<AutoParam>('filter');
   const [span, setSpan] = useState(32);
   const [start, setStart] = useState(0);
@@ -39,6 +40,25 @@ export function AutomationPanel() {
   const def = paramDef(track, param);
   const points = laneOf(track, param);
   const write = (next: AutoPoint[], opts: { reschedule?: boolean; record?: boolean } = {}) => updateProject((p) => mapTrack(p, trackId, (t) => setLane(t, param, next)), opts);
+  const others = allTracks.filter((t) => t.id !== trackId);
+  const repeatWindow = () => {
+    const next = copyRange(points, start, start + span, start + span);
+    if (next === points) return;
+    write(next);
+    toast(`Takt ${start + 1}–${start + span} nach Takt ${start + span + 1}–${start + 2 * span} kopiert.`);
+    setStart(start + span);
+  };
+  const copyTo = (toId: string, name: string) => {
+    const target = allTracks.find((t) => t.id === toId);
+    if (!target) return;
+    const r = copyAutomation(track, target);
+    if (!r.copied) {
+      toast(track.automation?.length ? `Keine Kurve passte auf „${name}“ (ihr fehlen die Geräte).` : 'Diese Spur hat noch keine Automation.');
+      return;
+    }
+    updateProject((p) => mapTrack(p, toId, () => r.track), { reschedule: false });
+    toast(`${r.copied} Kurve${r.copied === 1 ? '' : 'n'} auf „${name}“ kopiert${r.skipped ? `, ${r.skipped} ohne passendes Gerät übersprungen` : ''}.`);
+  };
   const indexOfBar = (list: AutoPoint[], bar: number) => list.findIndex((p) => Math.abs(p.bar - bar) < AUTO_GRID / 2);
 
   const nudge = (patch: { bar?: number; value?: number }) => {
@@ -176,6 +196,26 @@ export function AutomationPanel() {
           </Btn>
         </View>
         <Txt style={s.note}>Beispiele: Filter ↗ öffnet den Tiefpass bis zum Drop, Hall „Anstieg, dann Reset“ gibt den Hall-Wurf vor dem Drop, Lautstärke ↘ blendet aus.</Txt>
+      </Section>
+
+      <Section title="Kopieren" style={{ marginTop: 12 }}>
+        <View style={s.chips}>
+          <Btn small accessibilityLabel="Ausschnitt danach wiederholen" disabled={!points.length} onPress={repeatWindow}>
+            {`Ausschnitt Takt ${start + 1}–${start + span} danach wiederholen`}
+          </Btn>
+        </View>
+        {others.length > 0 && (
+          <>
+            <Txt style={s.note}>Alle Kurven dieser Spur auf eine andere Spur kopieren (Geräte-Kurven gehen an das gleiche Gerät der Zielspur):</Txt>
+            <View style={s.chips}>
+              {others.map((t) => (
+                <Chip key={t.id} onPress={() => copyTo(t.id, t.name)} textStyle={{ fontSize: 12 }} accessibilityLabel={`Kurven auf ${t.name} kopieren`}>
+                  {t.name}
+                </Chip>
+              ))}
+            </View>
+          </>
+        )}
       </Section>
     </Sheet>
   );

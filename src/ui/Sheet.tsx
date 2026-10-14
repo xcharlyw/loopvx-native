@@ -4,7 +4,7 @@ import { font } from '../constants/theme';
 import { setState, useStore } from '../lib/store';
 import { ChevronDown, ChevronUp, Close } from './icons';
 import { IconBtn, Txt } from './kit';
-import { bigger, smaller } from './sheetLayout';
+import { stepSheet } from './sheetLayout';
 
 /**
  * `.sheet-head` + `.sheet-body` of the original side panels. The arrows make the panel smaller (docked at the bottom, the
@@ -17,22 +17,27 @@ export const SheetPlace = createContext<{ column: boolean; onClose: () => void }
 export function Sheet({ title, children }: { title: string; children: ReactNode }) {
   const place = useContext(SheetPlace);
   const stored = useStore((st) => st.sheetSize);
+  const scale = useStore((st) => st.sheetScale);
   const size = place.column ? 'full' : stored;
+  const step = (dir: 'smaller' | 'bigger') => {
+    const next = stepSheet({ size, scale }, dir);
+    setState({ sheetSize: next.size, sheetScale: next.scale });
+  };
   return (
     <>
       <View style={s.head}>
-        <Pressable style={{ flex: 1 }} disabled={size !== 'bar'} onPress={() => setState({ sheetSize: 'half' })} accessibilityLabel={size === 'bar' ? `${title} aufklappen` : title}>
+        <Pressable style={{ flex: 1 }} disabled={size !== 'bar'} onPress={() => setState({ sheetSize: 'half', sheetScale: 1 })} accessibilityLabel={size === 'bar' ? `${title} aufklappen` : title}>
           <Txt style={s.title} numberOfLines={1}>
             {title}
           </Txt>
         </Pressable>
         {!place.column && size !== 'bar' && (
-          <IconBtn onPress={() => setState({ sheetSize: smaller(size) })} accessibilityLabel="Fenster verkleinern">
+          <IconBtn onPress={() => step('smaller')} accessibilityLabel="Fenster verkleinern">
             <ChevronDown />
           </IconBtn>
         )}
-        {!place.column && size !== 'full' && (
-          <IconBtn onPress={() => setState({ sheetSize: bigger(size) })} accessibilityLabel="Fenster vergrößern">
+        {!place.column && (size !== 'full' || scale < 1) && (
+          <IconBtn onPress={() => step('bigger')} accessibilityLabel="Fenster vergrößern">
             <ChevronUp />
           </IconBtn>
         )}

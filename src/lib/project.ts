@@ -1,7 +1,8 @@
 import { snapBars } from '../audio/timing';
 import { MAX_DEVICES, createDevice, deviceParams } from '../audio/devices';
+import { setLane } from './automation';
 import type { ScaleName } from './melody';
-import type { AutomationLane, Clip, Device, DeviceType, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
+import type { AutoParam, AutomationLane, Clip, Device, DeviceType, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
 
 export const uid = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -116,15 +117,27 @@ export const removeDevice = (project: Project, trackId: string, deviceId: string
 
 /**
  * Copies the whole device chain of `fromId` (a track or MASTER_ID) onto another track or the master: `replace` swaps the target's chain,
- * `append` adds the copies at its end (capped at MAX_DEVICES). The copies get fresh ids and keep their settings and on/off state; automation
- * lanes of the devices are not copied. Unchanged when the source has no devices or the target is the source.
+ * `append` adds the copies at its end (capped at MAX_DEVICES). The copies get fresh ids and keep their settings and on/off state; the automation
+ * lanes of their knobs are copied too (onto the new devices). Unchanged when the source has no devices or the target is the source.
  */
 export function copyDevices(project: Project, fromId: string, toId: string, mode: 'replace' | 'append' = 'append'): Project {
   if (fromId === toId) return project;
   const from = fromId === MASTER_ID ? (project.master?.devices ?? []) : (project.tracks.find((t) => t.id === fromId)?.devices ?? []);
   if (!from.length) return project;
   const copies = from.map((d) => ({ ...d, params: { ...d.params }, id: uid() }));
-  return mapDevices(project, toId, (list) => (mode === 'replace' ? copies : [...list, ...copies].slice(0, MAX_DEVICES)));
+  const next = mapDevices(project, toId, (list) => (mode === 'replace' ? copies : [...list, ...copies].slice(0, MAX_DEVICES)));
+  // The automation of the copied devices' knobs comes along, pointing at the copies (the master has no automation).
+  const source = fromId === MASTER_ID ? undefined : project.tracks.find((t) => t.id === fromId);
+  if (toId === MASTER_ID || !source?.automation?.length) return next;
+  const ids = new Map(from.map((d, i) => [d.id, copies[i].id]));
+  return mapTrack(next, toId, (t) => {
+    let out = t;
+    for (const lane of source.automation ?? []) {
+      const m = /^dev:([^:]+):(.+)$/.exec(lane.param);
+      if (m && ids.has(m[1]) && out.devices?.some((d) => d.id === ids.get(m[1]))) out = setLane(out, `dev:${ids.get(m[1])}:${m[2]}` as AutoParam, lane.points.map((p) => ({ ...p })));
+    }
+    return out;
+  });
 }
 
 /** Moves a device by `delta` places in the chain (stays put at the ends). */

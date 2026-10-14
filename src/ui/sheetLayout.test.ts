@@ -1,4 +1,4 @@
-import { BAR_HEIGHT, bigger, browserWidth, placementFor, sheetLayout, smaller } from './sheetLayout';
+import { BAR_HEIGHT, bigger, clampScale, fullHeight, stepSheet, browserWidth, placementFor, sheetLayout, smaller } from './sheetLayout';
 
 describe('sheet layout', () => {
   it('is a side panel in full size and docked below', () => {
@@ -37,5 +37,33 @@ describe('placement on a wide screen (Live layout)', () => {
     expect(browserWidth(1400)).toBe(336);
     expect(browserWidth(800)).toBe(260);
     expect(browserWidth(3000)).toBe(340);
+  });
+});
+
+describe('scaled full size', () => {
+  it('docks a scaled full panel at that fraction of the window', () => {
+    expect(sheetLayout('full', { width: 390, height: 800 }, 0.67)).toEqual({ docked: true, width: 390, height: 536 });
+    expect(sheetLayout('full', { width: 390, height: 800 }, 1)).toEqual({ docked: false, width: 390 });
+    expect(sheetLayout('full', { width: 390, height: 300 }, 0.25).height).toBe(160);
+  });
+  it('scales a detail view on a wide screen from its own full height', () => {
+    const win = { width: 1400, height: 900 };
+    expect(placementFor('piano', 'full', win, true, 0.67).height).toBe(Math.round(900 * 0.46 * 0.67));
+    expect(fullHeight('piano', win, true)).toBe(414);
+    expect(fullHeight('track', win, true)).toBe(900);
+  });
+  it('steps full → 67 % → half → bar and back; the handle snaps to full', () => {
+    let c = { size: 'full' as const, scale: 1 } as { size: 'full' | 'half' | 'bar'; scale: number };
+    c = stepSheet(c, 'smaller');
+    expect(c).toEqual({ size: 'full', scale: 0.67 });
+    c = stepSheet(c, 'smaller');
+    expect(c).toEqual({ size: 'half', scale: 1 });
+    c = stepSheet(c, 'smaller');
+    expect(c.size).toBe('bar');
+    expect(stepSheet(stepSheet({ size: 'bar', scale: 1 }, 'bigger'), 'bigger')).toEqual({ size: 'full', scale: 0.67 });
+    expect(stepSheet({ size: 'full', scale: 0.67 }, 'bigger')).toEqual({ size: 'full', scale: 1 });
+    expect(clampScale(0.98)).toBe(1);
+    expect(clampScale(0.1)).toBe(0.25);
+    expect(clampScale(0.5)).toBe(0.5);
   });
 });

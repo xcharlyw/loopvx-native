@@ -217,3 +217,51 @@ export function drawStep(pxPerBar: number): number {
   while (step < 1 && step * pxPerBar < 6) step *= 2;
   return step;
 }
+
+// ---------------------------------------------------------------- copying
+
+/**
+ * Copies the bars [from, to) of a curve to start at `at`: the copy replaces what the curve had over [at, at + to - from) and
+ * leaves everything else alone. The edges are interpolated, so the pasted piece starts and ends at the same values as the original.
+ */
+export function copyRange(points: AutoPoint[], from: number, to: number, at: number): AutoPoint[] {
+  if (!points.length || to <= from || at < 0) return points;
+  const len = to - from;
+  const inside = points.filter((p) => p.bar > from && p.bar < to);
+  const piece: AutoPoint[] = [{ bar: from, value: laneValue(points, from)! }, ...inside, { bar: to, value: laneValue(points, to)! }].map((p) => ({ bar: p.bar - from + at, value: p.value }));
+  const keep = points.filter((p) => p.bar < at || p.bar > at + len);
+  // Points exactly on the edges of the pasted piece are replaced by it.
+  return [...keep, ...piece].sort((a, b) => a.bar - b.bar);
+}
+
+/**
+ * Copies every curve of `from` onto `to` (curves of the same parameter are replaced, others stay). Device knob curves go to the
+ * device of the same type in `to` (the first with the first, the second with the second); curves of devices `to` does not have are skipped.
+ */
+export function copyAutomation(from: Track, to: Track): { track: Track; copied: number; skipped: number } {
+  let track = to;
+  let copied = 0;
+  let skipped = 0;
+  const used = new Map<string, number>();
+  const deviceFor = new Map<string, string | undefined>();
+  for (const d of from.devices ?? []) {
+    const n = used.get(d.type) ?? 0;
+    used.set(d.type, n + 1);
+    deviceFor.set(d.id, (to.devices ?? []).filter((x) => x.type === d.type)[n]?.id);
+  }
+  for (const lane of from.automation ?? []) {
+    const dev = parseDeviceParam(lane.param);
+    let param: AutoParam = lane.param;
+    if (dev) {
+      const target = deviceFor.get(dev.deviceId);
+      if (!target) {
+        skipped++;
+        continue;
+      }
+      param = `dev:${target}:${dev.key}`;
+    }
+    track = setLane(track, param, lane.points.map((p) => ({ ...p })));
+    copied++;
+  }
+  return { track, copied, skipped };
+}

@@ -7,9 +7,13 @@ import { getState, setState, updateProject, useStore } from '../lib/store';
 import { Btn, Txt } from './kit';
 import { Sheet } from './Sheet';
 
+const NO_MARKERS: NonNullable<ReturnType<typeof getState>['project']['markers']> = [];
+
 /** The project's markers: rename, nudge, jump to, delete; and a new one at the playhead. */
 export function MarkersPanel() {
-  const markers = useStore((st) => st.project.markers ?? []);
+  // Select the stored array itself: a fresh `?? []` per call would make the store loop forever when there are no markers.
+  const stored = useStore((st) => st.project.markers);
+  const markers = stored ?? NO_MARKERS;
   const edit = (fn: Parameters<typeof updateProject>[0]) => updateProject(fn, { reschedule: false });
   return (
     <Sheet title="Marker">

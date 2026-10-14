@@ -1,7 +1,7 @@
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { useFonts } from 'expo-font';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { engine } from '../audio/engine';
@@ -33,7 +33,8 @@ import { COMMANDS } from './commands';
 import { SampleDragGhost } from './dnd';
 import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
 import { useSmall } from './hooks';
-import { browserWidth, placementFor } from './sheetLayout';
+import { browserWidth, clampScale, fullHeight, placementFor } from './sheetLayout';
+import { useDrag, web } from './drag';
 import { SheetPlace } from './Sheet';
 
 const BROWSER_PLACE = { column: true, onClose: () => setState({ browserOpen: false }) };
@@ -42,6 +43,7 @@ function Shell() {
   const view = useStore((st) => st.view);
   const panel = useStore((st) => st.panel);
   const sheetSize = useStore((st) => st.sheetSize);
+  const sheetScale = useStore((st) => st.sheetScale);
   const toasts = useStore((st) => st.toasts);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -53,8 +55,18 @@ function Shell() {
   const browserOpen = useStore((st) => st.browserOpen);
   const browser = menuBar && browserOpen;
   const browserW = browser ? browserWidth(width) : 0;
-  const layout = placementFor(panel, sheetSize, { width: width - browserW, height }, menuBar);
+  const layout = placementFor(panel, sheetSize, { width: width - browserW, height }, menuBar, sheetScale);
   const docked = open && layout.docked;
+  // The handle on a docked sheet's top edge: drag up or down to make it as tall as you need (kept as a fraction of its full height).
+  const dragStart = useRef(0);
+  const fullH = fullHeight(panel, { height }, menuBar);
+  const handle = useDrag('start', docked && sheetSize !== 'bar', (_dx, dy, phase) => {
+    if (phase === 'cancel') return;
+    if (dragStart.current === 0) dragStart.current = layout.height ?? 0;
+    const next = clampScale((dragStart.current - dy) / fullH);
+    setState({ sheetSize: 'full', sheetScale: next });
+    if (phase === 'end') dragStart.current = 0;
+  });
 
   // Live layout: on a wide screen the Library is the browser column, not a panel.
   useEffect(() => {
@@ -99,6 +111,11 @@ function Shell() {
             {!docked && <Pressable style={s.backdrop} onPress={close} />}
             {docked && !layout.detail && <View style={{ flex: 1 }} pointerEvents="none" />}
             <View style={[s.sheet, docked ? s.sheetDocked : { paddingTop: insets.top, paddingBottom: insets.bottom }, layout.detail ? { flex: 1, borderTopLeftRadius: 0 } : { width: layout.width }]}>
+              {docked && sheetSize !== 'bar' && (
+                <View {...handle} accessibilityLabel="Fenstergröße ziehen" style={[s.grip, web({ touchAction: 'none', cursor: 'ns-resize' })]}>
+                  <View style={s.gripPill} />
+                </View>
+              )}
               {panel === 'library' && <LibraryPanel />}
               {panel === 'mixer' && <MixerPanel />}
               {panel === 'projects' && <ProjectsPanel />}
@@ -206,6 +223,8 @@ const s = StyleSheet.create({
   dockRow: { flex: 1, flexDirection: 'row' },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: { backgroundColor: C.bg2, borderLeftWidth: 1, borderLeftColor: C.line },
+  grip: { position: 'absolute', top: 0, left: 0, right: 0, height: 18, zIndex: 20, alignItems: 'center', justifyContent: 'center' },
+  gripPill: { width: 44, height: 4, borderRadius: 2, backgroundColor: C.dim },
   sheetDocked: { borderTopWidth: 1, borderTopColor: C.line, borderTopLeftRadius: 14, overflow: 'hidden' },
   toasts: { position: 'absolute', gap: 6, zIndex: 40 },
   toast: {

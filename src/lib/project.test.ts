@@ -450,3 +450,16 @@ describe('copyDevices', () => {
     expect(copyDevices(p, empty, b)).toBe(p);
   });
 });
+
+describe('copyDevices with automation', () => {
+  it('copies the knob curves of the copied devices onto the copies', () => {
+    let p = createProject();
+    const [a, b] = [p.tracks[0].id, p.tracks[1].id];
+    p = addDevice(p, a, 'eq');
+    const dev = p.tracks[0].devices![0].id;
+    p = mapTrack(p, a, (t) => ({ ...t, automation: [{ param: `dev:${dev}:hp` as never, points: [{ bar: 0, value: 0.3 }] }] }));
+    const q = copyDevices(p, a, b, 'append');
+    const tb = q.tracks.find((t) => t.id === b)!;
+    expect(tb.automation).toEqual([{ param: `dev:${tb.devices![0].id}:hp`, points: [{ bar: 0, value: 0.3 }] }]);
+  });
+});

@@ -33,6 +33,8 @@ export interface AppState {
   view: View;
   panel: Panel;
   sheetSize: SheetSize;
+  /** 1 = a full-size panel as is; below 1 it is docked at that fraction of its full height (dragged with the handle). */
+  sheetScale: number;
   /** Wide screens: the Library as Live's browser column on the left (independent of the open panel). */
   browserOpen: boolean;
   selectedTrackId: string | null;
@@ -73,6 +75,7 @@ let state: AppState = {
   view: 'arrange',
   panel: 'none',
   sheetSize: 'full',
+  sheetScale: 1,
   browserOpen: false,
   selectedTrackId: null,
   selectedClipId: null,

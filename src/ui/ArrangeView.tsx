@@ -87,6 +87,7 @@ export function ArrangeView() {
   const [viewportH, setViewportH] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
   const hScroll = useRef<ScrollView>(null);
+  const lastMarkerTap = useRef<{ id: string; at: number }>({ id: '', at: 0 });
   const scrollLeft = useRef(0);
   useEffect(() => {
     const id = scrollX.addListener(({ value }) => {
@@ -331,8 +332,11 @@ export function ArrangeView() {
 
       {/* Markers (locators): tap = jump there, long press = edit; long press on the empty strip = a new marker there. */}
       <View style={s.markerRow}>
-        <Pressable accessibilityLabel="Marker an der Abspielposition setzen" onPress={() => updateProject((p) => addMarker(p, getState().cursor), { reschedule: false })} style={[s.corner, s.markerCorner, { width: headerW }]}>
+        <Pressable accessibilityLabel="Marker an der Abspielposition setzen" onPress={() => updateProject((p) => addMarker(p, getState().cursor), { reschedule: false })} style={[s.corner, s.markerCorner, { width: headerW - 30 }]}>
           <Txt style={s.markerAdd}>+ Marker</Txt>
+        </Pressable>
+        <Pressable accessibilityLabel="Marker bearbeiten: umbenennen oder löschen" onPress={() => setState({ panel: 'markers' })} style={s.markerEdit}>
+          <Txt style={s.markerAdd}>✎</Txt>
         </Pressable>
         <View style={s.rulerClip}>
           <Animated.View style={{ width, height: MARKER_H, transform: [{ translateX: Animated.multiply(scrollX, -1) }] }}>
@@ -344,7 +348,13 @@ export function ArrangeView() {
               <Pressable
                 key={m.id}
                 accessibilityLabel={`Marker ${m.name}`}
-                onPress={() => setCursor(m.bar)}
+                onPress={() => {
+                  // A quick second tap opens the marker list (rename, delete); one tap jumps there.
+                  const now = Date.now();
+                  if (lastMarkerTap.current.id === m.id && now - lastMarkerTap.current.at < 400) setState({ panel: 'markers' });
+                  else setCursor(m.bar);
+                  lastMarkerTap.current = { id: m.id, at: now };
+                }}
                 onLongPress={() => setState({ panel: 'markers' })}
                 style={[s.marker, { left: m.bar * zoom }]}
               >
@@ -660,6 +670,7 @@ const s = StyleSheet.create({
   band: { position: 'absolute', zIndex: 8, borderWidth: 1, borderColor: C.accent, backgroundColor: 'rgba(198,255,61,0.10)' },
   markerRow: { flexDirection: 'row', height: MARKER_H, zIndex: 5 },
   markerCorner: { justifyContent: 'center', paddingLeft: 10 },
+  markerEdit: { width: 30, height: MARKER_H, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: C.line },
   markerAdd: { ...font(600), fontSize: 10, color: C.muted },
   marker: { position: 'absolute', top: 2, height: MARKER_H - 4, maxWidth: 140, paddingHorizontal: 5, borderLeftWidth: 2, borderLeftColor: C.accent, backgroundColor: 'rgba(198,255,61,0.12)', borderTopRightRadius: 4, borderBottomRightRadius: 4, justifyContent: 'center' },
   markerText: { ...font(600), fontSize: 10, color: C.accent },

@@ -13,7 +13,7 @@ export function MarkersPanel() {
   const edit = (fn: Parameters<typeof updateProject>[0]) => updateProject(fn, { reschedule: false });
   return (
     <Sheet title="Marker">
-      <Txt style={s.note}>Marker benennen Abschnitte wie „Drop 1“. Tippen im Lineal springt hin, langes Drücken auf den leeren Streifen setzt einen neuen.</Txt>
+      <Txt style={s.note}>Marker benennen Abschnitte wie „Drop 1“. Hier benennst du Marker um (Name tippen, dann Enter) und löschst sie (✕). Im Streifen unter dem Lineal: Tippen springt hin, zweimal tippen oder ✎ öffnet diese Liste, langes Drücken auf die leere Fläche setzt einen neuen Marker.</Txt>
       {markers.length === 0 && <Txt style={s.note}>Noch keine Marker.</Txt>}
       {markers.map((m) => (
         <View key={m.id} style={s.row}>

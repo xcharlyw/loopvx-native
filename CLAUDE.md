@@ -340,7 +340,7 @@ them, consolidate drops their notes. Shown grey with "⊘". Measured offline: th
 
 ## Markers, clipboard, rubber band, master bus, meters
 
-- **Markers** (`project.markers`, pure `lib/markers.ts`): a strip under the ruler (`MARKER_H`); tap = jump, long press on a marker = `MarkersPanel` (rename/nudge/delete),
+- **Markers** (`project.markers`, pure `lib/markers.ts`): a strip under the ruler (`MARKER_H`); tap = jump, double tap / long press on a marker, the "✎" button next to "+ Marker" or Bearbeiten → "Marker umbenennen / löschen …" = `MarkersPanel` (rename/nudge/delete),
   long press on the empty strip or "+ Marker" in the corner = new marker. The arranger names its sections as markers (`withMarkers`).
 - **Clipboard** (`clipgroup.ts`: `copyClips`/`pasteClips`/`clipsSpan`/`clipsInRange`): Ctrl/Cmd+C/V paste at the playhead, the block's top on the selected track if every
   clip fits; Ctrl/Cmd+L or a quick double tap on a clip = loop region on the selection (`loopSelection`). Buttons for touch in the clip sheet.

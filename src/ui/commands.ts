@@ -123,6 +123,7 @@ export const COMMANDS: Command[] = [
   { id: 'midiTrack', label: 'MIDI-Spur einfügen', group: 'Erstellen', keys: [{ letter: 't', mod: true, shift: true }, { letter: 't', alt: true, shift: true }], run: () => addTrack(true) },
   { id: 'midiClip', label: 'MIDI-Clip einfügen', group: 'Erstellen', keys: [{ letter: 'm', mod: true, shift: true }], run: () => selectedTrack() && createMidiClipOnTrack(selectedTrack()!.id), enabled: () => !!selectedTrack() && arrange() },
   { id: 'marker', label: 'Marker hinzufügen', group: 'Erstellen', separator: true, keys: [{ letter: 'i', mod: true }], run: () => updateProject((p) => addMarker(p, getState().cursor), { reschedule: false }), enabled: arrange },
+  { id: 'markers', label: 'Marker umbenennen / löschen …', group: 'Bearbeiten', keys: [], run: () => setState({ panel: 'markers' }), enabled: arrange },
   { id: 'arranger', label: 'Arrangement mit KI …', group: 'Erstellen', run: () => setState({ panel: 'arranger' }) },
 
   // Ansicht

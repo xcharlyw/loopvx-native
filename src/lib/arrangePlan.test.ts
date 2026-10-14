@@ -63,3 +63,31 @@ describe('arrange plan', () => {
     ]);
   });
 });
+
+describe('plan effects', () => {
+  const base = { sections: [{ type: 'drop', bars: 32 }] };
+  it('keeps valid effects (bar 1-based in, 0-based out) and drops nonsense', () => {
+    const plan = parsePlan({
+      ...base,
+      fx: [
+        { kind: 'impact', bar: 65, track: ' Impact FX ', search: ['impact', 'hit', '', 7], sample: 'SSE Pattern 05 Perc FX', length: null },
+        { kind: 'riser', bar: 57.4, length: 7.9 },
+        { kind: 'laser', bar: 3 },
+        { kind: 'crash', bar: 0 },
+        { kind: 'crash', bar: 'x' },
+        'no',
+      ],
+      notes: ['Keine Gesangsspur möglich', 4, ' '],
+    })!;
+    expect(plan.fx).toEqual([
+      { kind: 'impact', bar: 64, track: 'Impact FX', search: ['impact', 'hit'], sample: 'SSE Pattern 05 Perc FX' },
+      { kind: 'riser', bar: 56, length: 8 },
+      { kind: 'other', bar: 2 },
+    ]);
+    expect(plan.notes).toEqual(['Keine Gesangsspur möglich']);
+  });
+  it('has no effects without a list', () => {
+    expect(parsePlan(base)!.fx).toEqual([]);
+    expect(parsePlan({ ...base, fx: 'impact' })!.fx).toEqual([]);
+  });
+});

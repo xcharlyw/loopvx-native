@@ -1,4 +1,4 @@
-import type { ArrangeStyles, Role, Section, SectionId } from './arranger';
+import { FX_KINDS, type ArrangeStyles, type FxHit, type Role, type Section, type SectionId } from './arranger';
 import { KEYS } from './project';
 
 // An arrangement plan from a language model (Gemini, via api/arrange): the structure and the styles, chosen from a text
@@ -24,6 +24,12 @@ export interface ArrangePlan {
   automation: boolean;
   /** One or two German sentences: what the model made of the text. */
   summary?: string;
+  /** One-off effect sounds from the library on their own audio tracks (impact at the vocal break ...). */
+  fx: FxHit[];
+  /** What the text asked for that a plan cannot express; shown so nothing is silently dropped. */
+  notes?: string[];
+  /** The model that planned it (the server may fall back to a lighter one). */
+  model?: string;
 }
 
 const TYPES: PlanSectionType[] = ['intro', 'build', 'drop', 'break', 'outro'];
@@ -33,7 +39,7 @@ const BASS = ['rumble', 'offbeat', 'reese', 'acid'] as const;
 const LEAD = ['trance', 'hypnotic', 'arp', 'prog', 'stabs', 'rave'] as const;
 const DRUMS = ['kit-techno', 'kit-rolling', 'kit-minimal'] as const;
 
-export const PLAN_LIMITS = { maxSections: 16, minBars: 4, maxBars: 64, maxTotal: 256, minBpm: 120, maxBpm: 200 };
+export const PLAN_LIMITS = { maxFx: 12, maxSections: 16, minBars: 4, maxBars: 64, maxTotal: 256, minBpm: 120, maxBpm: 200 };
 
 const LABEL: Record<PlanSectionType, string> = { intro: 'Intro', build: 'Build-up', drop: 'Drop', break: 'Break', outro: 'Outro' };
 
@@ -52,6 +58,25 @@ export function normalizeKey(v: unknown): string | undefined {
   const mode = m[3] && /^(maj|major|dur)$/i.test(m[3]) ? 'major' : 'minor'; // no mode given: minor, the techno default
   const key = `${names[(i + 12) % 12]} ${mode}`;
   return KEYS.includes(key) ? key : undefined;
+}
+
+/** The effect list of a plan: `bar` comes in as the 1-based bar number shown in the ruler and goes out 0-based; unknown kinds and nonsense are dropped. */
+export function parseFx(raw: unknown): FxHit[] {
+  const out: FxHit[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    if (out.length >= PLAN_LIMITS.maxFx || !item || typeof item !== 'object') continue;
+    const it = item as Record<string, unknown>;
+    const kind = pick(FX_KINDS, it.kind) ?? 'other';
+    const n = Number(it.bar);
+    if (!Number.isFinite(n) || n < 1 || n > PLAN_LIMITS.maxTotal) continue;
+    const len = Number(it.length);
+    const length = Number.isFinite(len) && len > 0 ? Math.min(16, Math.max(0.25, Math.round(len * 4) / 4)) : undefined;
+    const track = typeof it.track === 'string' && it.track.trim() ? it.track.trim().slice(0, 24) : undefined;
+    const search = Array.isArray(it.search) ? it.search.filter((w): w is string => typeof w === 'string' && !!w.trim()).slice(0, 6).map((w) => w.trim().slice(0, 24)) : [];
+    const sample = typeof it.sample === 'string' && it.sample.trim() ? it.sample.trim().slice(0, 80) : undefined;
+    out.push({ kind, bar: Math.round(n) - 1, ...(length ? { length } : {}), ...(track ? { track } : {}), ...(search.length ? { search } : {}), ...(sample ? { sample } : {}) });
+  }
+  return out;
 }
 
 /** Checks and repairs a model's answer: unknown fields go, bars snap to whole phrases of 4, the total is capped. Null when nothing usable is left. */
@@ -86,7 +111,8 @@ export function parsePlan(raw: unknown): ArrangePlan | null {
   if (drums) styles.drums = drums;
   const addRoles = Array.isArray(r.addRoles) ? [...new Set(r.addRoles.map((x) => pick(ADDABLE, x)).filter((x): x is Role => !!x))] : ADDABLE;
   const summary = typeof r.summary === 'string' && r.summary.trim() ? r.summary.trim().slice(0, 300) : undefined;
-  return { sections, bpm, key: normalizeKey(r.key), styles, addRoles, automation: r.automation !== false, ...(summary ? { summary } : {}) };
+  const notes = Array.isArray(r.notes) ? r.notes.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 6).map((x) => x.trim().slice(0, 200)) : [];
+  return { sections, bpm, key: normalizeKey(r.key), styles, addRoles, automation: r.automation !== false, fx: parseFx(r.fx), ...(notes.length ? { notes } : {}), ...(summary ? { summary } : {}) };
 }
 
 /** The plan's sections laid out in bars. A second drop or build plays the arranger's "2" variant (reese bass, the drop's vocal half). */

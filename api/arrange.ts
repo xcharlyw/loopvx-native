@@ -17,6 +17,8 @@ interface Body {
   tracks?: { name?: string; role?: string }[];
   /** How many library samples fit the project per category (kick/top/synth/vocal). */
   library?: Record<string, number>;
+  /** Names of library samples (effect-like ones first), so effects can be picked by name. */
+  samples?: { name?: string; category?: string; bpm?: number }[];
 }
 
 export const SYSTEM = `You arrange hard techno tracks (usually 145-165 BPM) in a small mobile DAW.
@@ -34,11 +36,23 @@ Answer ONLY with one JSON object, no prose, of this shape:
     "drums": "kit-techno" | "kit-rolling" | "kit-minimal"
   },
   "addRoles": string[],         // missing tracks to create, subset of ["drums","bass","lead","pad"]
-  "automation": boolean         // filter sweeps, reverb throws, drive build-ups, fade-out
+  "automation": boolean,        // filter sweeps, reverb throws, drive build-ups, fade-out
+  "fx": [                       // one-off sounds from the user's library, each on an audio track of its own (may be empty)
+    { "kind": "impact" | "riser" | "downlifter" | "crash" | "other",
+      "bar": number,            // bar NUMBER as shown in the ruler (1 = first bar) where the sound starts; a riser starts "length" bars BEFORE the bar it leads into
+      "length": number | null,  // bars, only if the sound must be cut or stretched, else null
+      "track": string | null,   // name of the new audio track, e.g. "Impact FX"
+      "search": string[],       // 1-4 words that appear in fitting sample names, best first (e.g. ["impact","hit","boom"])
+      "sample": string | null } // an exact name from the library list below if one clearly fits, else null
+  ],
+  "notes": string[]             // German: every request you could NOT express in this JSON (empty if none)
 }
 Roles for "mute": "drums","bass","lead","pad","kickLoop","topLoop","synthLoop","vocal". Use mute to keep a role out of a
 section (e.g. no bass in a break). "name" is a short German or English label shown as a marker (max 24 chars).
 Classic hard techno: intro 16, build 16, drop 32, break 16, build 8, drop 32, outro 16. Every arrangement needs a drop.
+The app does exactly what the JSON says and nothing else: "summary" must only describe what is in the JSON. A single sound at one position (impact,
+riser, downlifter, crash) goes into "fx", never into "sections". Anything the JSON cannot express goes into "notes", do not pretend.
+"summary" and "notes" are always in German, never in English.
 rumble = rolling sub rumble, offbeat = bouncy offbeat bass, reese = dark detuned reese, acid = 303 acid line;
 kit-rolling = busy rolling groove, kit-minimal = sparse, kit-techno = straight driving.`;
 
@@ -56,11 +70,18 @@ export function googleMessage(body: string): string {
 export function buildUserText(b: Body): string {
   const tracks = (b.tracks ?? []).slice(0, 24).map((t) => `${String(t.name ?? '').slice(0, 40)} (${String(t.role ?? 'other').slice(0, 12)})`).join(', ');
   const lib = Object.entries(b.library ?? {}).map(([k, n]) => `${k}: ${Number(n) || 0}`).join(', ');
+  const names = (b.samples ?? [])
+    .slice(0, 120)
+    .map((x) => String(x?.name ?? '').replace(/[\u0000-\u001f"]/g, ' ').trim().slice(0, 60))
+    .filter(Boolean)
+    .join('; ');
   return [
     `Project: ${Number(b.bpm) || 150} BPM, key ${String(b.key ?? 'unknown').slice(0, 16)}.`,
     `Tracks: ${tracks || 'none'}.`,
     `Library samples that fit the tempo: ${lib || 'none'}.`,
+    ...(names ? [`Library sample names (for "sample" in fx, effect-like first): ${names}.`] : []),
     `Request: ${String(b.prompt ?? '').trim().slice(0, 1500) || 'A classic peak-time hard techno arrangement.'}`,
+    'Answer "summary" and "notes" in German.',
   ].join('\n');
 }
 
@@ -99,7 +120,7 @@ export async function POST(req: Request): Promise<Response> {
   const payload = JSON.stringify({
     systemInstruction: { parts: [{ text: SYSTEM }] },
     contents: [{ role: 'user', parts: [{ text: buildUserText(body) }] }],
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
   });
   let res: Response | undefined;
   let model = main;

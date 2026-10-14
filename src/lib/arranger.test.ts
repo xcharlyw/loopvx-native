@@ -1,6 +1,6 @@
 import type { Project, Sample, Track } from '../types';
 import { laneOf, laneValue } from './automation';
-import { arrange, candidates, roleOf, sectionsFor } from './arranger';
+import { arrange, candidates, findFxSample, roleOf, sectionsFor } from './arranger';
 import { planSections } from './arrangePlan';
 import { createProject, createTrack, trackSynth } from './project';
 
@@ -169,5 +169,55 @@ describe('arrange from a plan', () => {
     expect(bass.clips.length).toBeGreaterThan(0);
     const plain = arrange(base(), [], { ...opts, sections, addRoles: ['bass'] }).project.tracks.find((t) => t.name === 'Rumble Bass')!;
     expect(JSON.stringify(bass.clips.map((c) => c.notes))).not.toEqual(JSON.stringify(plain.clips.map((c) => c.notes)));
+  });
+});
+
+describe('effect sounds', () => {
+  const fxSample = (name: string, extra: Partial<Sample> = {}): Sample => ({ id: name, name: `${name}.wav`, category: 'other', addedAt: 1, ...extra });
+  const lib = [
+    fxSample('Dark Impact 03', { duration: 2.4 }),
+    fxSample('Long Impact Tail', { duration: 20 }),
+    fxSample('SSE Pattern 05 Perc FX', { bpm: 155, duration: 3.1 }),
+    fxSample('Rise Sweep 8 Bars', { duration: 12 }),
+    sample('vocal-impact', 'vocal', { name: 'Impact Shout.wav' }),
+    sample('kick1', 'kick'),
+  ];
+
+  it('finds a sample by its name, then by words, and never a vocal', () => {
+    expect(findFxSample(lib, { kind: 'impact', sample: 'sse pattern 05 perc fx' })?.id).toBe('SSE Pattern 05 Perc FX');
+    expect(findFxSample(lib, { kind: 'impact', search: ['impact'] })?.name).toBe('Dark Impact 03.wav');
+    expect(findFxSample(lib, { kind: 'riser' })?.id).toBe('Rise Sweep 8 Bars');
+    expect(findFxSample(lib, { kind: 'crash' })).toBeUndefined();
+    expect(findFxSample([sample('vocal-impact', 'vocal', { name: 'Impact Shout.wav' })], { kind: 'impact' })).toBeUndefined();
+  });
+
+  it('puts the effect on a new audio track at the bar, the length of the sample', () => {
+    const r = arrange(base(), lib, { ...opts, addMissingTracks: false, fx: [{ kind: 'impact', bar: 64, search: ['impact'] }] });
+    const track = r.project.tracks.find((t) => t.name === 'Impact FX')!;
+    expect(r.added).toContain('Impact FX');
+    expect(track.kind).toBe('audio');
+    expect(track.clips).toHaveLength(1);
+    expect(track.clips[0].start).toBe(64);
+    expect(track.clips[0].sampleId).toBe('Dark Impact 03');
+    expect(track.clips[0].length).toBeGreaterThan(0.25);
+    expect(r.fx).toEqual([{ track: 'Impact FX', bar: 65, sample: 'Dark Impact 03' }]);
+    expect(r.fxMissing).toEqual([]);
+  });
+
+  it('says what it could not find instead of pretending', () => {
+    const r = arrange(base(), [sample('kick1', 'kick')], { ...opts, addMissingTracks: false, fx: [{ kind: 'impact', bar: 64 }] });
+    expect(r.fxMissing).toEqual(['Impact FX (Takt 65)']);
+    expect(r.project.tracks.some((t) => t.name === 'Impact FX')).toBe(false);
+  });
+
+  it('rolling again replaces the effect at that bar and keeps the track\'s other clips', () => {
+    const fx = [{ kind: 'impact' as const, bar: 64, search: ['impact'] }];
+    const first = arrange(base(), lib, { ...opts, addMissingTracks: false, fx });
+    const withOwn = { ...first.project, tracks: first.project.tracks.map((t) => (t.name === 'Impact FX' ? { ...t, clips: [...t.clips, { id: 'mine', sampleId: 'x', start: 8, length: 1, offset: 0 }] } : t)) };
+    const again = arrange(withOwn, lib, { ...opts, seed: 99, addMissingTracks: false, fx });
+    expect(again.project.tracks.filter((t) => t.name === 'Impact FX')).toHaveLength(1);
+    expect(again.added).not.toContain('Impact FX');
+    const clips = again.project.tracks.find((t) => t.name === 'Impact FX')!.clips;
+    expect(clips.map((c) => c.start).sort((a, b) => a - b)).toEqual([8, 64]);
   });
 });

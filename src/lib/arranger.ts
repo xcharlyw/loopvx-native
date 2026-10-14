@@ -1,4 +1,5 @@
 import { SUGGESTED_PRESET, applyPreset, presetById } from '../audio/presets';
+import { sampleLengthBars } from '../audio/timing';
 import type { AutoPoint, Clip, Note, Project, Sample, Track } from '../types';
 import { joinPoints, ramp, setLane, throwAt } from './automation';
 import { keysFit } from './libraryFilter';
@@ -111,6 +112,65 @@ export interface ArrangeStyles {
   drums?: 'kit-techno' | 'kit-rolling' | 'kit-minimal';
 }
 
+/** A one-off sound (impact, riser ...) from the library on its own audio track, placed at one bar. */
+export type FxKind = 'impact' | 'riser' | 'downlifter' | 'crash' | 'other';
+export interface FxHit {
+  kind: FxKind;
+  /** 0-based bar where the sound starts. */
+  bar: number;
+  /** Clip length in bars; default: the sample's own length. */
+  length?: number;
+  /** Name of the audio track it goes on (an existing track of that name is reused); default by kind. */
+  track?: string;
+  /** Words to look for in the library sample names, best first. */
+  search?: string[];
+  /** A library sample the user (or the AI) named; matched loosely against the sample names. */
+  sample?: string;
+}
+
+export const FX_KINDS: FxKind[] = ['impact', 'riser', 'downlifter', 'crash', 'other'];
+export const FX_TRACK: Record<FxKind, string> = { impact: 'Impact FX', riser: 'Riser FX', downlifter: 'Downlifter FX', crash: 'Crash FX', other: 'FX' };
+const FX_WORDS: Record<FxKind, string[]> = {
+  impact: ['impact', 'hit', 'boom', 'slam', 'downhit', 'drop'],
+  riser: ['riser', 'rise', 'uplifter', 'uplift', 'sweep', 'build', 'swell', 'tension'],
+  downlifter: ['downlifter', 'downlift', 'fall', 'down', 'reverse'],
+  crash: ['crash', 'cymbal'],
+  other: ['fx', 'effect', 'noise', 'texture', 'atmos'],
+};
+
+const plain = (v: string) => v.toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[^a-z0-9äöüß]+/g, ' ').trim();
+
+/**
+ * The library sample for an effect: a sample named by the plan (loosely matched), else the best match for the plan's search
+ * words and the kind's own words in the name and folder. Short one-shots win for hits; vocals never. One of the best three is
+ * picked, so rolling again changes the sound.
+ */
+export function findFxSample(samples: Sample[], hit: Pick<FxHit, 'kind' | 'search' | 'sample'>, rand: () => number = () => 0): Sample | undefined {
+  const usable = samples.filter((x) => x.category !== 'vocal');
+  const named = hit.sample ? plain(hit.sample) : '';
+  if (named.length >= 3) {
+    const exact = usable.find((x) => plain(x.name) === named);
+    if (exact) return exact;
+    const loose = usable.filter((x) => plain(x.name).includes(named) || named.includes(plain(x.name))).sort((a, b) => a.name.length - b.name.length);
+    if (loose.length) return loose[0];
+  }
+  const wanted = (hit.search ?? []).map(plain).filter(Boolean);
+  const own = FX_WORDS[hit.kind];
+  const oneShot = hit.kind === 'impact' || hit.kind === 'crash';
+  const scored = usable
+    .map((x) => {
+      const hay = ` ${plain(`${x.name} ${x.folder ?? ''}`)} `;
+      const has = (w: string) => hay.includes(` ${w} `) || hay.includes(w);
+      const score = wanted.filter(has).length * 2 + own.filter(has).length;
+      return { x, score: score + (oneShot && !x.bpm ? 0.5 : 0) - (x.duration && x.duration > 12 ? 1 : 0) };
+    })
+    .filter((e) => e.score >= 1)
+    .sort((a, b) => b.score - a.score || (a.x.duration ?? 99) - (b.x.duration ?? 99) || a.x.name.localeCompare(b.x.name));
+  if (!scored.length) return undefined;
+  const top = scored.filter((e) => e.score >= scored[0].score - 0.25).slice(0, 3);
+  return top[Math.floor(rand() * top.length)].x;
+}
+
 export interface ArrangeOptions {
   /** The fixed shape to use when no `sections` are given (default 128 bars). */
   length?: ArrangeLength;
@@ -124,6 +184,8 @@ export interface ArrangeOptions {
   addMissingTracks: boolean;
   /** Filter sweeps, reverb throws, drive build-ups and the fade-out. */
   automation: boolean;
+  /** One-off effect sounds from the library, each on an audio track of its own. */
+  fx?: FxHit[];
 }
 
 export interface ArrangeResult {
@@ -132,6 +194,9 @@ export interface ArrangeResult {
   /** Tracks that were added, and audio roles that had no sample in the library. */
   added: string[];
   missingSamples: string[];
+  /** The effects that were placed (bar is 1-based, as shown) and those without a matching library sample. */
+  fx: { track: string; bar: number; sample: string }[];
+  fxMissing: string[];
 }
 
 /** The tracks the arranger adds where a role is missing, with fader levels that sit together (the bass carries the track). */
@@ -253,11 +318,34 @@ export function arrange(project: Project, samples: Sample[], opts: ArrangeOption
     return next;
   });
 
+  const fx: ArrangeResult['fx'] = [];
+  const fxMissing: string[] = [];
+  for (const hit of opts.fx ?? []) {
+    const name = hit.track?.trim() || FX_TRACK[hit.kind];
+    const found = findFxSample(samples, hit, rand);
+    if (!found) {
+      fxMissing.push(`${name} (Takt ${hit.bar + 1})`);
+      continue;
+    }
+    const bars = hit.length ?? (found.duration ? sampleLengthBars(found.duration, project.bpm, found.bpm) : 2);
+    const length = Math.max(0.25, Math.min(64, Math.round(bars * 16) / 16));
+    const clip: Clip = { id: uid(), sampleId: found.id, start: hit.bar, length, offset: 0 };
+    let at = tracks.findIndex((t) => trackKind(t) === 'audio' && t.name.toLowerCase() === name.toLowerCase());
+    if (at < 0) {
+      tracks.push(createTrack('other', project.sceneCount, name, 'audio'));
+      added.push(name);
+      at = tracks.length - 1;
+    }
+    // Rolling again replaces the effect at the same bar and leaves every other clip of the track alone.
+    tracks[at] = { ...tracks[at], clips: [...tracks[at].clips.filter((c) => Math.abs(c.start - hit.bar) > 1e-6), clip] };
+    fx.push({ track: name, bar: hit.bar + 1, sample: found.name.replace(/\.[a-z0-9]{2,5}$/i, '') });
+  }
+
   // With the 909 playing the kick, bass, lead and pad pump on its real kick hits (a sidechain) instead of on every beat.
   const drums = !kickLoop ? tracks.find((t) => roleOf(t) === 'drums') : undefined;
   if (drums) tracks = tracks.map((t) => (['bass', 'lead', 'pad'].includes(roleOf(t) ?? '') && t.fx?.pump && !t.fx.pumpFrom ? { ...t, fx: { ...t.fx, pumpFrom: drums.id } } : t));
   // The sections become markers in the ruler, so the structure stays visible.
   const marked = withMarkers({ ...project, tracks, loop: { enabled: false, start: 0, end } }, sections.map((s) => ({ bar: s.start, name: s.label })));
-  return { project: marked, sections, added, missingSamples };
+  return { project: marked, sections, added, missingSamples, fx, fxMissing };
 }
 

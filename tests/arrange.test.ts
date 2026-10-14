@@ -1,4 +1,4 @@
-import { POST, buildUserText, extractJson } from '../api/arrange';
+import { POST, SYSTEM, buildUserText, extractJson } from '../api/arrange';
 
 describe('arrange prompt', () => {
   it('puts project, tracks, library and the request into the text', () => {
@@ -8,6 +8,15 @@ describe('arrange prompt', () => {
     expect(t).toContain('Rumble (bass)');
     expect(t).toContain('kick: 3');
     expect(t).toContain('dark, long break');
+  });
+
+  it('shows the sample names and asks for German texts', () => {
+    const t = buildUserText({ prompt: 'impact bei 65', samples: [{ name: 'Dark Impact 03' }, { name: 'Bad\nName "x"' }, {}] });
+    expect(t).toContain('Dark Impact 03; Bad Name  x');
+    expect(t).toContain('German');
+    expect(SYSTEM).toContain('"fx"');
+    expect(SYSTEM).toContain('"notes"');
+    expect(SYSTEM).toMatch(/never in English/);
   });
 
   it('finds the JSON in fenced or chatty answers', () => {

@@ -4,7 +4,7 @@ import { engine } from '../audio/engine';
 import { C, font, mono } from '../constants/theme';
 import { setCursor, togglePlay } from '../lib/actions';
 import { requestPlan } from '../lib/aiArrange';
-import { arrange, type ArrangeResult } from '../lib/arranger';
+import { arrange, FX_TRACK, type ArrangeResult } from '../lib/arranger';
 import { planSections, type ArrangePlan } from '../lib/arrangePlan';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
@@ -63,12 +63,14 @@ export function ArrangerPanel() {
         sections,
         styles: plan?.styles,
         addRoles: plan?.addRoles,
+        fx: plan.fx,
       });
       updateProject(() => result.project);
       setLast(result);
       setRolls((n) => n + 1);
       setCursor(0);
-      toast(result.missingSamples.length ? `Arrangement erzeugt. Keine passenden Samples für: ${result.missingSamples.join(', ')}` : 'Arrangement erzeugt');
+      const lacking = [...result.missingSamples, ...result.fxMissing];
+      toast(lacking.length ? `Arrangement erzeugt. Keine passenden Samples für: ${lacking.join(', ')}` : 'Arrangement erzeugt');
     } catch (e) {
       toast(errorText(e), 'error');
     }
@@ -114,9 +116,32 @@ export function ArrangerPanel() {
             {[plan.summary, plan.bpm && plan.bpm !== project.bpm ? `Tempo → ${plan.bpm} BPM.` : '', plan.key && plan.key !== project.key ? `Tonart → ${plan.key}.` : ''].filter(Boolean).join(' ')}
           </Txt>
         ) : (
-          <Txt style={s.note}>Z. B. Länge, Tempo, Stimmung, wo Bass oder Lead fehlen sollen. Braucht die Anmeldung mit Google.</Txt>
+          <Txt style={s.note}>Z. B. Länge, Tempo, Stimmung, wo Bass oder Lead fehlen sollen, oder „Impact FX bei Takt 65 auf neuer Spur“. Braucht die Anmeldung mit Google.</Txt>
         )}
+        {plan?.model ? <Txt style={[s.note, { color: C.dim }]}>{`Geplant mit ${plan.model}${/lite/i.test(plan.model) ? ' (Leichtmodell, weil das große gerade ausgelastet war: „Neu planen“ versucht es nochmal)' : ''}.`}</Txt> : null}
       </Section>
+
+      {plan?.notes?.length ? (
+        <Section title="Nicht umgesetzt" style={{ marginTop: 12 }}>
+          {plan.notes.map((n) => (
+            <Txt key={n} style={[s.note, { color: C.muted }]}>{`• ${n}`}</Txt>
+          ))}
+        </Section>
+      ) : null}
+
+      {plan?.fx.length ? (
+        <Section title="Effekt-Sounds aus deiner Library" style={{ marginTop: 12 }}>
+          <View style={s.sections}>
+            {plan.fx.map((f, i) => (
+              <View key={`${f.kind}${f.bar}${i}`} style={s.sec}>
+                <Txt style={s.secName}>{`${f.track ?? FX_TRACK[f.kind]} · neue Spur`}</Txt>
+                <Txt style={s.secBars}>{`Takt ${f.bar + 1}`}</Txt>
+              </View>
+            ))}
+          </View>
+          <Txt style={s.note}>Das Sample sucht die App beim Erzeugen in deiner Library (nach dem Namen, den die KI vorgibt, und typischen Wörtern wie „impact“, „hit“, „riser“).</Txt>
+        </Section>
+      ) : null}
 
       {plan && (
         <Section title={`Aufbau · ${totalBars} Takte`} style={{ marginTop: 12 }}>
@@ -159,6 +184,12 @@ export function ArrangerPanel() {
       {last && (
         <Section title="Ergebnis" style={{ marginTop: 12 }}>
           <Txt style={s.note}>{last.added.length ? `Neue Spuren: ${last.added.join(', ')}.` : 'Keine neuen Spuren.'}</Txt>
+          {last.fx.map((f) => (
+            <Txt key={`${f.track}${f.bar}`} style={s.note}>{`✓ ${f.track}: „${f.sample}“ bei Takt ${f.bar}`}</Txt>
+          ))}
+          {last.fxMissing.length > 0 && (
+            <Txt style={[s.note, { color: C.danger }]}>{`Kein passendes Sample gefunden für: ${last.fxMissing.join(', ')}. Schreib den Sample-Namen in die Beschreibung (z. B. „Impact FX mit dem Sample ‚SSE Pattern 05 Perc FX‘“) und plane neu.`}</Txt>
+          )}
           {last.missingSamples.length > 0 && <Txt style={[s.note, { color: C.muted }]}>{`Ohne passende Library-Samples geblieben: ${last.missingSamples.join(', ')}. Importiere Loops mit passendem Tempo (±8 BPM) und Tonart, dann nochmal würfeln.`}</Txt>}
           <Txt style={s.note}>Noten und Automation lassen sich danach in der Piano Roll und unter „Spur bearbeiten → Automation“ ändern.</Txt>
         </Section>

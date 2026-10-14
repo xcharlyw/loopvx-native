@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
@@ -6,9 +6,8 @@ import { auditionSample, autoDetectTempos, downloadSample, placeSample, type Aud
 import { moveSamples, prettyPath, normPath, samplesIn } from '../lib/folders';
 import { SORT_LABELS, keysFit, sortSamples, type SortBy } from '../lib/libraryFilter';
 import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
-import { deleteSample, importSamplesFromDevice, pickFile } from '../lib/samples';
-import { separateTune, type StemStep } from '../lib/stems';
-import { stemFolder, tuneName } from '../lib/stemNames';
+import { deleteSample, importSamplesFromDevice } from '../lib/samples';
+import { startStemSeparation } from '../lib/stems';
 import { errorText, getState, removeSamples, setSamples, setState, toast, upsertSample, upsertSamples, useStore } from '../lib/store';
 import { db } from '../storage/db';
 import type { Sample, SampleCategory } from '../types';
@@ -45,7 +44,16 @@ export function LibraryPanel() {
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [picking, setPicking] = useState(false);
-  const [stemStatus, setStemStatus] = useState<string | null>(null);
+  const stemStatus = useStore((st) => st.stemStatus);
+  const jump = useStore((st) => st.libraryJump);
+  // After a stem separation the Library opens the stems' folder.
+  useEffect(() => {
+    if (!jump) return;
+    setQuery('');
+    setFilter('all');
+    setPath(jump);
+    setState({ libraryJump: null });
+  }, [jump]);
   // Without a search or filter the library is browsed folder by folder; with one, all folders are searched at once.
   const browsing = !query.trim() && filter === 'all' && !tempoMatch && !keyMatch;
 
@@ -103,30 +111,6 @@ export function LibraryPanel() {
     }
   };
 
-  const STEP_TEXT: Record<StemStep, string> = { upload: 'Lade den Tune in deinen Drive-Ordner …', separate: 'ElevenLabs trennt die Stems (dauert 1–3 Minuten) …', download: 'Lade Stem' };
-  const stems = async () => {
-    try {
-      const picked = await pickFile();
-      if (!picked) return;
-      const ok = await confirmDestructive(
-        `„${tuneName(picked.name)}“ in Stems trennen?`,
-        'ElevenLabs trennt den Tune in Drums, Bass, Synth + FX, Keys, Gitarre und Vocal. Das kostet ElevenLabs-Credits (wie die AI Vocals). Tune und Stems liegen danach auch in Google Drive unter LOOPVX/Stems Export.',
-        'Trennen',
-      );
-      if (!ok) return;
-      const added = await separateTune(picked, (step, detail) => setStemStatus(`${STEP_TEXT[step]}${detail ? ` ${detail} …` : ''}`));
-      const tune = tuneName(picked.name);
-      setQuery('');
-      setFilter('all');
-      setPath(stemFolder(tune));
-      toast(`${added.length} Stems von „${tune}“ in der Library (Stems Export/${tune})`);
-    } catch (e) {
-      toast(errorText(e), 'error');
-    } finally {
-      setStemStatus(null);
-    }
-  };
-
   const togglePreview = async (x: Sample) => {
     if (previewing && previewId === x.id) {
       engine.stopPreview();
@@ -156,6 +140,16 @@ export function LibraryPanel() {
 
   return (
     <Sheet title="Library">
+      <Section title="Stems trennen">
+        <Txt style={s.note}>Einen fertigen Tune hochladen: die KI trennt ihn in Drums, Bass, Synth + FX, Keys, Gitarre und Vocal. Die Stems landen hier im Ordner „Stems Export / Name des Tunes“.</Txt>
+        <View style={[s.row, { marginTop: 10 }]}>
+          <Btn small kind="primary" disabled={stemStatus !== null} accessibilityLabel="Tune in Stems trennen" onPress={() => void startStemSeparation()}>
+            {stemStatus ? 'Läuft …' : 'Tune hochladen und trennen'}
+          </Btn>
+        </View>
+        {stemStatus && <Txt style={[s.note, { marginTop: 8, color: C.accent }]}>{stemStatus}</Txt>}
+      </Section>
+
       <Section title="Google Drive">
         <Txt style={s.note}>Samples direkt aus deinem Google Drive vorhören und einfügen, oder vom Gerät hochladen.</Txt>
         <View style={[s.row, { marginTop: 10 }]}>
@@ -164,11 +158,7 @@ export function LibraryPanel() {
             Vom Gerät hochladen
           </Btn>
           <RecordButton />
-          <Btn small disabled={stemStatus !== null} accessibilityLabel="Tune in Stems trennen" onPress={() => void stems()}>
-            Stems trennen
-          </Btn>
         </View>
-        {stemStatus && <Txt style={[s.note, { marginTop: 8, color: C.accent }]}>{stemStatus}</Txt>}
         <View style={{ marginTop: 10 }}>
           <DriveImport />
         </View>

@@ -18,6 +18,7 @@ import {
 } from '../lib/actions';
 import type { KeySpec } from '../lib/keymap';
 import { addMarker } from '../lib/markers';
+import { startStemSeparation } from '../lib/stems';
 import { createMidiTrack, createProject, createTrack, findClip, quantizeNotes, updateClip } from '../lib/project';
 import { flushSave, getState, openProject, redo, setMetronome, setState, toast, undo, updateProject, type Panel } from '../lib/store';
 import { db } from '../storage/db';
@@ -100,6 +101,7 @@ export const COMMANDS: Command[] = [
   { id: 'new', label: 'Neues Projekt', group: 'Datei', keys: [{ letter: 'n', mod: true, alt: true }], run: () => void newProject() },
   { id: 'open', label: 'Projekte öffnen …', group: 'Datei', keys: [{ letter: 'o', mod: true }], run: () => setState({ panel: 'projects' }) },
   { id: 'save', label: 'Speichern', group: 'Datei', keys: [{ letter: 's', mod: true }], run: () => void flushSave().then(() => toast('Gespeichert')) },
+  { id: 'stems', label: 'Tune in Stems trennen …', group: 'Datei', keys: [], run: () => void startStemSeparation() },
   { id: 'export', label: 'Audio exportieren …', group: 'Datei', separator: true, keys: [{ letter: 'r', mod: true, shift: true }], run: () => setState({ panel: 'export' }) },
 
   // Bearbeiten

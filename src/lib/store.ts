@@ -35,6 +35,10 @@ export interface AppState {
   sheetSize: SheetSize;
   /** 1 = a full-size panel as is; below 1 it is docked at that fraction of its full height (dragged with the handle). */
   sheetScale: number;
+  /** What a running stem separation is doing (shown in the Library), null when none runs. */
+  stemStatus: string | null;
+  /** A library folder the Library should open (set after stems arrive), consumed by the Library. */
+  libraryJump: string | null;
   /** Wide screens: the Library as Live's browser column on the left (independent of the open panel). */
   browserOpen: boolean;
   selectedTrackId: string | null;
@@ -76,6 +80,8 @@ let state: AppState = {
   panel: 'none',
   sheetSize: 'full',
   sheetScale: 1,
+  stemStatus: null,
+  libraryJump: null,
   browserOpen: false,
   selectedTrackId: null,
   selectedClipId: null,

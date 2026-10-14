@@ -4,7 +4,10 @@ import { autoDetectTempos } from './actions';
 import { FOLDER_MIME, createFile, download, driveAccessToken, driveLinked, folder, uploadLarge } from './drive';
 import { byStemOrder, stemSample, STEMS_ROOT, tuneName } from './stemNames';
 import { storeSampleAudio } from './samples';
-import { getState, setSamples, upsertSamples } from './store';
+import { errorText, getState, setSamples, setState, toast, upsertSamples } from './store';
+import { pickFile } from './samples';
+import { confirmDestructive } from '../ui/confirm';
+import { stemFolder } from './stemNames';
 import { getSession } from './supabase';
 
 export type StemStep = 'upload' | 'separate' | 'download';
@@ -56,4 +59,33 @@ export async function separateTune(file: { name: string; data: ArrayBuffer }, on
     }
   }
   return added;
+}
+
+const STEP_TEXT: Record<StemStep, string> = { upload: 'Lade den Tune in deinen Drive-Ordner …', separate: 'ElevenLabs trennt die Stems (dauert 1–3 Minuten) …', download: 'Lade Stem' };
+
+/** The whole flow from a tap (Library button or menu): pick the tune, confirm the credits, separate, open the stems' folder. */
+export async function startStemSeparation(): Promise<void> {
+  if (getState().stemStatus) {
+    toast('Es läuft schon eine Stem-Trennung.');
+    return;
+  }
+  try {
+    const picked = await pickFile(); // first, inside the tap: browsers only open the file chooser in a gesture
+    if (!picked) return;
+    const tune = tuneName(picked.name);
+    const ok = await confirmDestructive(
+      `„${tune}“ in Stems trennen?`,
+      'ElevenLabs trennt den Tune in Drums, Bass, Synth + FX, Keys, Gitarre und Vocal. Das kostet ElevenLabs-Credits (wie die AI Vocals). Tune und Stems liegen danach auch in Google Drive unter LOOPVX/Stems Export.',
+      'Trennen',
+    );
+    if (!ok) return;
+    setState({ panel: 'library', stemStatus: 'Startet …' });
+    const added = await separateTune(picked, (step, detail) => setState({ stemStatus: `${STEP_TEXT[step]}${detail ? ` ${detail} …` : ''}` }));
+    setState({ libraryJump: stemFolder(tune) });
+    toast(`${added.length} Stems von „${tune}“ in der Library (Stems Export/${tune})`);
+  } catch (e) {
+    toast(errorText(e), 'error');
+  } finally {
+    setState({ stemStatus: null });
+  }
 }

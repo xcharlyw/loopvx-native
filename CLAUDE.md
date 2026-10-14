@@ -152,7 +152,7 @@ project uses (else the oldest) and removes only copies that no stored project/sl
 
 ## Stem separation
 
-Library → "Stems trennen": pick a tune (`pickFile`), confirm (costs ElevenLabs credits), `separateTune` (`lib/stems.ts`): the tune is uploaded (`uploadLarge`, resumable,
+Library → section **"Stems trennen"** at the top (button "Tune hochladen und trennen") or Datei / ☰ → "Tune in Stems trennen …": `startStemSeparation` (picks the tune first, inside the tap, then confirms the ElevenLabs credits; progress in `state.stemStatus`, afterwards `state.libraryJump` opens the stems' folder in the Library), `separateTune` (`lib/stems.ts`): the tune is uploaded (`uploadLarge`, resumable,
 no 5 MB limit) to Drive **LOOPVX/Stems Export/<tune>/**, then `api/stems.ts` reads it there with the caller's Drive token (`driveAccessToken`, drive.file scope), sends it
 to ElevenLabs `POST /v1/music/stem-separation` (`stem_variation_id` `six_stems_v1`, env `ELEVENLABS_STEM_VARIATION`; the answer is a ZIP), and writes each stem as
 "<tune> - <Stem>.mp3" next to the tune (`api/_lib/drive.ts`, resumable). Reason for the Drive round trip: a Vercel function's request and answer stop at 4.5 MB, a tune and

@@ -42,9 +42,10 @@ Answer ONLY with one JSON object, no prose, of this shape:
   "fx": [                       // one-off sounds from the user's library, each on an audio track of its own (may be empty)
     { "kind": "impact" | "riser" | "downlifter" | "crash" | "other",
       "bar": number,            // bar NUMBER as shown in the ruler (1 = first bar) where the sound starts; a riser starts "length" bars BEFORE the bar it leads into
-      "length": number | null,  // bars, only if the sound must be cut or stretched, else null
+      "length": number | null,  // bars the clip lasts; a loop sample plays repeatedly to fill it ("loop 32 bars" -> 32, up to 128); else null for the sample's own length
+      "key": string | null,     // e.g. "F minor" when the user names a key for the sound ("Fmin"), else null
       "track": string | null,   // name of the new audio track, e.g. "Impact FX"
-      "search": string[],       // 1-4 words that appear in fitting sample names, best first: the word(s) the USER used for the sound (e.g. "impact" -> ["impact"]), then close synonyms
+      "search": string[],       // 1-4 words (sound words only, NEVER key names like "Fmin") that appear in fitting sample names, best first: the word(s) the USER used for the sound (e.g. "impact" -> ["impact"]), then close synonyms
       "sample": string | null } // ONLY a sample name the user typed himself (copy it exactly); otherwise null. Never pick or invent a name yourself: the app searches the library with "search"
   ],
   "notes": string[]             // German: every request you could NOT express in this JSON (empty if none)

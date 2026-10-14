@@ -1,4 +1,4 @@
-import { FX_KINDS, type ArrangeStyles, type FxHit, type Role, type Section, type SectionId } from './arranger';
+import { FX_KINDS, isKeyWord, type ArrangeStyles, type FxHit, type Role, type Section, type SectionId } from './arranger';
 import { KEYS } from './project';
 
 // An arrangement plan from a language model (Gemini, via api/arrange): the structure and the styles, chosen from a text
@@ -72,12 +72,13 @@ export function parseFx(raw: unknown): FxHit[] {
     const n = Number(it.bar);
     if (!Number.isFinite(n) || n < 1 || n > PLAN_LIMITS.maxTotal) continue;
     const len = Number(it.length);
-    const length = Number.isFinite(len) && len > 0 ? Math.min(16, Math.max(0.25, Math.round(len * 4) / 4)) : undefined;
+    const length = Number.isFinite(len) && len > 0 ? Math.min(128, Math.max(0.25, Math.round(len * 4) / 4)) : undefined;
     const track = typeof it.track === 'string' && it.track.trim() ? it.track.trim().slice(0, 24) : undefined;
     // One word each: a model may answer "impact fx" as one entry.
-    const search = Array.isArray(it.search) ? [...new Set(it.search.filter((w): w is string => typeof w === 'string').flatMap((w) => w.toLowerCase().split(/[^a-z0-9äöüß]+/)).filter((w) => w.length >= 2).map((w) => w.slice(0, 24)))].slice(0, 6) : [];
+    const search = Array.isArray(it.search) ? [...new Set(it.search.filter((w): w is string => typeof w === 'string').flatMap((w) => w.toLowerCase().split(/[^a-z0-9äöüß]+/)).filter((w) => w.length >= 2 && !isKeyWord(w)).map((w) => w.slice(0, 24)))].slice(0, 6) : [];
     const sample = typeof it.sample === 'string' && it.sample.trim() ? it.sample.trim().slice(0, 80) : undefined;
-    out.push({ kind, bar: Math.round(n) - 1, ...(length ? { length } : {}), ...(track ? { track } : {}), ...(search.length ? { search } : {}), ...(sample ? { sample } : {}) });
+    const key = normalizeKey(it.key);
+    out.push({ kind, bar: Math.round(n) - 1, ...(key ? { key } : {}), ...(length ? { length } : {}), ...(track ? { track } : {}), ...(search.length ? { search } : {}), ...(sample ? { sample } : {}) });
   }
   return out;
 }
@@ -158,7 +159,7 @@ export function keepNamedSamples(fx: FxHit[], prompt: string): FxHit[] {
   });
 }
 
-const STOP = new Set(['bei', 'takt', 'auf', 'neuer', 'neue', 'neuen', 'spur', 'spuren', 'sample', 'samples', 'mit', 'dem', 'den', 'der', 'die', 'das', 'ein', 'eine', 'einen', 'und', 'oder', 'the', 'add', 'track', 'new', 'bar', 'von', 'aus', 'meinen', 'meine', 'library', 'einfügen', 'füge', 'mach', 'mache', 'bitte', 'sound', 'sounds', 'effekt', 'effect', 'audio', 'nimm', 'setze', 'lege', 'platziere', 'stelle', 'stell', 'soll', 'will', 'noch', 'nach', 'vor', 'zum', 'zur', 'für']);
+const STOP = new Set(['loope', 'loop', 'looped', 'loopen', 'bars', 'takte', 'key', 'ton', 'tonart', 'in', 'ad', 'bei', 'takt', 'auf', 'neuer', 'neue', 'neuen', 'spur', 'spuren', 'sample', 'samples', 'mit', 'dem', 'den', 'der', 'die', 'das', 'ein', 'eine', 'einen', 'und', 'oder', 'the', 'add', 'track', 'new', 'bar', 'von', 'aus', 'meinen', 'meine', 'library', 'einfügen', 'füge', 'mach', 'mache', 'bitte', 'sound', 'sounds', 'effekt', 'effect', 'audio', 'nimm', 'setze', 'lege', 'platziere', 'stelle', 'stell', 'soll', 'will', 'noch', 'nach', 'vor', 'zum', 'zur', 'für']);
 
 /**
  * The words of the user's own sentence that really occur in sample names or folders of the library ("Impact" in "SSE Impact Shot 3"),
@@ -169,7 +170,7 @@ export function userSearchWords(prompt: string, samples: { name: string; folder?
   const seen = new Set<string>();
   const found: { w: string; n: number; i: number }[] = [];
   plainText(prompt).split(' ').forEach((w, i) => {
-    if (w.length < 3 || /^\d+$/.test(w) || STOP.has(w) || seen.has(w)) return;
+    if (w.length < 3 || /^\d+/.test(w) || STOP.has(w) || isKeyWord(w) || seen.has(w)) return;
     seen.add(w);
     const n = tokens.filter((t) => t.some((x) => x === w || (w.length >= 4 && x.startsWith(w)))).length;
     if (n > 0) found.push({ w, n, i });
@@ -182,4 +183,16 @@ export function withUserWords(fx: FxHit[], prompt: string, samples: { name: stri
   const words = userSearchWords(prompt, samples);
   if (!words.length) return fx;
   return fx.map((hit) => ({ ...hit, search: [...new Set([...words, ...(hit.search ?? [])])].slice(0, 6) }));
+}
+
+/** A key named in the user's text ("in key Fmin", "f minor", "a moll", "C#maj"), as an entry of KEYS; undefined when none. */
+export function keyFromPrompt(prompt: string): string | undefined {
+  const m = /(?:^|[^a-z0-9#])([a-g])\s?([#b♯♭])?\s?[- ]?(minor|moll|min|major|maj|dur|m)(?![a-z])/i.exec(prompt);
+  return m ? normalizeKey(`${m[1]}${m[2] ?? ''}${m[3]}`) : undefined;
+}
+
+/** Gives every effect the key the user named, when the model did not. */
+export function withPromptKey(fx: FxHit[], prompt: string): FxHit[] {
+  const key = keyFromPrompt(prompt);
+  return key ? fx.map((h) => ({ ...h, key: h.key ?? key })) : fx;
 }

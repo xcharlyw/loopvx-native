@@ -1,4 +1,4 @@
-import { keepNamedSamples, normalizeKey, parsePlan, planSections, userSearchWords } from './arrangePlan';
+import { keepNamedSamples, keyFromPrompt, normalizeKey, parsePlan, planSections, userSearchWords } from './arrangePlan';
 
 describe('arrange plan', () => {
   it('normalizes keys', () => {
@@ -140,5 +140,15 @@ describe('user search words', () => {
   it('splits a multi-word answer of the model', () => {
     const plan = parsePlan({ scope: 'fx_only', fx: [{ kind: 'impact', bar: 65, search: ['Impact FX', 'hit'] }] })!;
     expect(plan.fx[0].search).toEqual(['impact', 'fx', 'hit']);
+  });
+});
+
+describe('keys in the text', () => {
+  it('reads the key and keeps it out of the search words', () => {
+    expect(keyFromPrompt('Ad screech synth in key Fmin bei takt 97 und loope 32bars')).toBe('F minor');
+    expect(keyFromPrompt('impact bei takt 65')).toBeUndefined();
+    const fx = parsePlan({ scope: 'fx_only', fx: [{ kind: 'other', bar: 97, length: 32, search: ['screech', 'Fmin'], key: 'f minor' }] })!.fx;
+    expect(fx[0]).toMatchObject({ bar: 96, length: 32, key: 'F minor', search: ['screech'] });
+    expect(userSearchWords('screech synth Fmin', [{ name: 'Screech Synth Fmin' }])).toEqual(expect.not.arrayContaining(['fmin']));
   });
 });

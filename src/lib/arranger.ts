@@ -2,7 +2,7 @@ import { SUGGESTED_PRESET, applyPreset, presetById } from '../audio/presets';
 import { sampleLengthBars } from '../audio/timing';
 import type { AutoPoint, Clip, Note, Project, Sample, Track } from '../types';
 import { joinPoints, ramp, setLane, throwAt } from './automation';
-import { keysFit } from './libraryFilter';
+import { keyPitch, keysFit } from './libraryFilter';
 import { withMarkers } from './markers';
 import { generatePattern, seededRandom, type PatternStyle } from './patterns';
 import { createMidiClip, createTrack, projectHarmony, trackKind, trackSynth, uid } from './project';
@@ -126,6 +126,8 @@ export interface FxHit {
   search?: string[];
   /** A library sample the user (or the AI) named; matched loosely against the sample names. */
   sample?: string;
+  /** A key the sound must be in ("F minor"): samples known to be in another key are never picked. */
+  key?: string;
 }
 
 export const FX_KINDS: FxKind[] = ['impact', 'riser', 'downlifter', 'crash', 'other'];
@@ -138,6 +140,9 @@ const FX_WORDS: Record<FxKind, string[]> = {
   other: ['fx', 'effect', 'noise', 'texture', 'atmos'],
 };
 
+/** "fmin", "f", "c#min", "bbmoll": the name of a key, not of a sound. */
+export const isKeyWord = (w: string) => /^[a-g][#b]?(m|min|minor|maj|major|moll|dur)?$/.test(w) && w.length <= 7;
+
 const plain = (v: string) => v.toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[^a-z0-9äöüß]+/g, ' ').trim();
 
 /**
@@ -145,10 +150,11 @@ const plain = (v: string) => v.toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, '').re
  * words and the kind's own words in the name and folder. Short one-shots win for hits; vocals never. One of the best three is
  * picked, so rolling again changes the sound.
  */
-export function findFxSample(samples: Sample[], hit: Pick<FxHit, 'kind' | 'search' | 'sample'>, rand: () => number = () => 0): Sample | undefined {
+export function findFxSample(samples: Sample[], hit: Pick<FxHit, 'kind' | 'search' | 'sample' | 'key'>, rand: () => number = () => 0): Sample | undefined {
   // The category is only a guess made at import (Karl's "Impact Shots" came in as vocals): when the user's words or a name are given
   // every sample counts; vocals are left out only for the fallback by the kind's typical words.
-  const wantedWords = (hit.search ?? []).map(plain).filter(Boolean);
+  const wantedWords = (hit.search ?? []).map(plain).filter((w) => w && !isKeyWord(w));
+  const wantedKey = keyPitch(hit.key);
   const usable = wantedWords.length || hit.sample ? samples : samples.filter((x) => x.category !== 'vocal');
   const named = hit.sample ? plain(hit.sample) : '';
   if (named.length >= 3) {
@@ -164,10 +170,14 @@ export function findFxSample(samples: Sample[], hit: Pick<FxHit, 'kind' | 'searc
   const scored = usable
     .map((x) => {
       // Whole words (a word may continue: "impact" finds "Impacts"), so "hit" does not match "white" and "fx" not "fxx".
-      const tokens = plain(`${x.name} ${x.folder ?? ''}`).split(' ');
+      const tokens = plain(`${x.name} ${x.folder ?? ''} ${x.category ?? ''}`).split(' ');
       const has = (w: string) => tokens.some((t) => t === w || (w.length >= 4 && t.startsWith(w)));
       const score = words.reduce((n, w, i) => n + (has(w) ? (i === 0 ? 3 : 1) : 0), 0);
-      return { x, score: score ? score + (oneShot && !x.bpm ? 0.5 : 0) - (x.duration && x.duration > 12 ? 1 : 0) : 0 };
+      // A wanted key: a sample known to be in another key is out, one in the key wins.
+      const have = wantedKey ? keyPitch(x.key) : null;
+      if (wantedKey && have && (have.root !== wantedKey.root || (have.mode && wantedKey.mode && have.mode !== wantedKey.mode))) return { x, score: 0 };
+      const keyBonus = wantedKey && have ? 2 : 0;
+      return { x, score: score ? score + keyBonus + (oneShot && !x.bpm ? 0.5 : 0) - (x.duration && x.duration > 12 ? 1 : 0) : 0 };
     })
     .filter((e) => e.score >= 1)
     .sort((a, b) => b.score - a.score || (a.x.duration ?? 99) - (b.x.duration ?? 99) || a.x.name.localeCompare(b.x.name));
@@ -202,7 +212,7 @@ export interface ArrangeResult {
   added: string[];
   missingSamples: string[];
   /** The effects that were placed (bar is 1-based, as shown) and those without a matching library sample. */
-  fx: { track: string; bar: number; sample: string }[];
+  fx: { track: string; bar: number; sample: string; bars: number }[];
   fxMissing: string[];
 }
 
@@ -296,7 +306,7 @@ function placeFx(tracksIn: Track[], project: Project, samples: Sample[], hits: F
       continue;
     }
     const bars = hit.length ?? (found.duration ? sampleLengthBars(found.duration, project.bpm, found.bpm) : 2);
-    const length = Math.max(0.25, Math.min(64, Math.round(bars * 16) / 16));
+    const length = Math.max(0.25, Math.min(128, Math.round(bars * 16) / 16));
     const clip: Clip = { id: uid(), sampleId: found.id, start: hit.bar, length, offset: 0 };
     let at = tracks.findIndex((t) => trackKind(t) === 'audio' && t.name.toLowerCase() === name.toLowerCase());
     if (at < 0) {
@@ -306,7 +316,7 @@ function placeFx(tracksIn: Track[], project: Project, samples: Sample[], hits: F
     }
     // Rolling again replaces the effect at the same bar and leaves every other clip of the track alone.
     tracks[at] = { ...tracks[at], clips: [...tracks[at].clips.filter((c) => Math.abs(c.start - hit.bar) > 1e-6), clip] };
-    fx.push({ track: name, bar: hit.bar + 1, sample: found.name.replace(/\.[a-z0-9]{2,5}$/i, '') });
+    fx.push({ track: name, bar: hit.bar + 1, sample: found.name.replace(/\.[a-z0-9]{2,5}$/i, ''), bars: length });
   }
   return { tracks, added, fx, fxMissing };
 }

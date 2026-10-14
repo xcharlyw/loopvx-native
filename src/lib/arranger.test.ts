@@ -202,7 +202,7 @@ describe('effect sounds', () => {
     expect(track.clips[0].start).toBe(64);
     expect(track.clips[0].sampleId).toBe('Dark Impact 03');
     expect(track.clips[0].length).toBeGreaterThan(0.25);
-    expect(r.fx).toEqual([{ track: 'Impact FX', bar: 65, sample: 'Dark Impact 03' }]);
+    expect(r.fx).toMatchObject([{ track: 'Impact FX', bar: 65, sample: 'Dark Impact 03' }]);
     expect(r.fxMissing).toEqual([]);
   });
 
@@ -258,5 +258,23 @@ describe('effect sounds', () => {
     const r = arrange(base(), lib2, { ...opts, addMissingTracks: false, fxOnly: true, fx: [hit] });
     expect(r.fx[0].sample).toMatch(/^SSE Impact Shot \d$/);
     expect(r.fxMissing).toEqual([]);
+  });
+});
+
+describe('fx with a key and a loop length', () => {
+  const mk = (id: string, name: string, key?: string, extra: Partial<Sample> = {}): Sample => ({ id, name, key, bpm: 155, category: 'synth', addedAt: 1, ...extra } as Sample);
+  it('picks the screech synth in F minor, never a vocal that only has the key in its name', () => {
+    const lib = [mk('v', '003_PSP_PYREZ_FULL_VOCAL_155_BPM_Fmin', 'F min', { category: 'vocal' }), mk('a', 'Screech Synth Loop 155 BPM Cmin', 'C min'), mk('b', 'Screech Synth Loop 155 BPM Fmin', 'F min')];
+    expect(findFxSample(lib, { kind: 'other', search: ['screech', 'synth', 'fmin'], key: 'F minor' })?.id).toBe('b');
+  });
+  it('finds nothing rather than a sample that only matches the key', () => {
+    const lib = [mk('v', 'FULL_VOCAL_Fmin', 'F min', { category: 'vocal' })];
+    expect(findFxSample(lib, { kind: 'other', search: ['screech', 'synth', 'fmin'], key: 'F minor' })).toBeUndefined();
+  });
+  it('loops the sample over the asked 32 bars from bar 97', () => {
+    const r = arrange(base(), [mk('b', 'Screech Synth Loop Fmin', 'F min', { duration: 6 })], { ...opts, addMissingTracks: false, fxOnly: true, fx: [{ kind: 'other', bar: 96, length: 32, search: ['screech'], key: 'F minor', track: 'Screech Synth' }] });
+    const clip = r.project.tracks.find((t) => t.name === 'Screech Synth')!.clips[0];
+    expect(clip).toMatchObject({ start: 96, length: 32 });
+    expect(r.fx[0]).toMatchObject({ bar: 97, bars: 32 });
   });
 });

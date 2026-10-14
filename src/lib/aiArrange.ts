@@ -1,7 +1,7 @@
 import { ARRANGE_ENDPOINT } from '../config';
 import type { Project, Sample } from '../types';
 import { candidates, roleOf } from './arranger';
-import { keepNamedSamples, parsePlan, withUserWords, type ArrangePlan } from './arrangePlan';
+import { keepNamedSamples, parsePlan, withPromptKey, withUserWords, type ArrangePlan } from './arrangePlan';
 import { getSession } from './supabase';
 
 /** Asks Gemini (through api/arrange) for a plan that fits the text; the answer is checked by `parsePlan`. */
@@ -25,5 +25,5 @@ export async function requestPlan(prompt: string, project: Project, samples: Sam
   const answer = (await res.json()) as { plan?: unknown; model?: string };
   const plan = parsePlan(answer.plan);
   if (!plan) throw new Error('Die KI hat keinen brauchbaren Plan geliefert, bitte nochmal versuchen.');
-  return { ...plan, fx: withUserWords(keepNamedSamples(plan.fx, prompt), prompt, samples), ...(typeof answer.model === 'string' ? { model: answer.model } : {}) };
+  return { ...plan, fx: withPromptKey(withUserWords(keepNamedSamples(plan.fx, prompt), prompt, samples), prompt), ...(typeof answer.model === 'string' ? { model: answer.model } : {}) };
 }

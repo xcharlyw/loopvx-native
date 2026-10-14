@@ -120,7 +120,7 @@ export function ArrangerPanel() {
           {/* For single additions only what the app really did counts (the model's own summary may promise more). */}
           {plan.summary && !fxOnly ? <Txt style={[s.note, { color: C.text }]}>{plan.summary}</Txt> : null}
           {last?.fx.map((f) => (
-            <Txt key={`${f.track}${f.bar}`} style={s.note}>{`✓ ${f.track}: „${f.sample}“ bei Takt ${f.bar}`}</Txt>
+            <Txt key={`${f.track}${f.bar}`} style={s.note}>{`✓ ${f.track}: „${f.sample}“ ab Takt ${f.bar}${f.bars > 4 ? `, ${f.bars} Takte` : ''}`}</Txt>
           ))}
           {last && !fxOnly && last.added.length > 0 && <Txt style={s.note}>{`Neue Spuren: ${last.added.join(', ')}.`}</Txt>}
           {last && last.fxMissing.length > 0 && (

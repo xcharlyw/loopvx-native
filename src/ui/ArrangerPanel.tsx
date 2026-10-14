@@ -5,6 +5,7 @@ import { C, font } from '../constants/theme';
 import { setCursor, togglePlay } from '../lib/actions';
 import { requestPlan } from '../lib/aiArrange';
 import { arrange, type ArrangeResult } from '../lib/arranger';
+import { fetchMissingFx } from '../lib/fxDrive';
 import { planSections, type ArrangePlan } from '../lib/arrangePlan';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
@@ -23,9 +24,11 @@ export function ArrangerPanel() {
   const [plan, setPlan] = useState<ArrangePlan | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const apply = (p: ArrangePlan) => {
+  const apply = async (p: ArrangePlan) => {
     const fxOnly = p.scope === 'fx_only';
     if (engine.playing) engine.stop();
+    // Sounds that are not in the library yet are looked up in the user's Drive and imported first.
+    const fromDrive = await fetchMissingFx(p.fx, getState().project);
     // A full plan may set tempo and key; they change with the arrangement (one undo step).
     const current = getState().project;
     const source = fxOnly ? current : { ...current, bpm: p.bpm ?? current.bpm, key: p.key ?? current.key, ...(p.key && p.key !== current.key ? { scale: undefined } : {}) };
@@ -43,7 +46,7 @@ export function ArrangerPanel() {
     setLast(result);
     if (!fxOnly) setCursor(0);
     const lacking = [...result.missingSamples, ...result.fxMissing];
-    toast(lacking.length ? `Fertig. Keine passenden Samples für: ${lacking.join(', ')}` : 'Fertig');
+    toast(lacking.length ? `Fertig. Keine passenden Samples für: ${lacking.join(', ')}` : fromDrive.length ? `Fertig, aus Google Drive geladen: ${fromDrive.map((x) => x.name).join(', ')}` : 'Fertig');
   };
 
   const go = async () => {
@@ -57,7 +60,7 @@ export function ArrangerPanel() {
         const ok = await confirmDestructive('Vorhandene Clips ersetzen?', `${next.summary ?? 'Die KI plant ein neues Arrangement.'}\n\nDas ersetzt die Clips der Spuren, die es belegt. Mit „Rückgängig“ (↩) bekommst du dein altes Arrangement zurück.`, 'Ersetzen');
         if (!ok) return;
       }
-      apply(next);
+      await apply(next);
     } catch (e) {
       toast(errorText(e), 'error');
     } finally {
@@ -65,10 +68,10 @@ export function ArrangerPanel() {
     }
   };
 
-  const again = () => {
+  const again = async () => {
     if (!plan) return;
     try {
-      apply(plan);
+      await apply(plan);
     } catch (e) {
       toast(errorText(e), 'error');
     }
@@ -104,7 +107,7 @@ export function ArrangerPanel() {
           {busy ? 'KI arbeitet …' : 'Ausführen'}
         </Btn>
         {last && (
-          <Btn accessibilityLabel={fxOnly ? 'Anderes Sample' : 'Anderes Ergebnis'} disabled={busy} onPress={again}>
+          <Btn accessibilityLabel={fxOnly ? 'Anderes Sample' : 'Anderes Ergebnis'} disabled={busy} onPress={() => void again()}>
             {fxOnly ? 'Anderes Sample' : 'Anderes Ergebnis'}
           </Btn>
         )}

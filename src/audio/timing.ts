@@ -212,7 +212,7 @@ export function parseCategory(name: string, folder = ''): SampleCategory {
 
 export function parseSampleName(name: string, folder = ''): ParsedName {
   const base = name.replace(/\.[a-z0-9]+$/i, '');
-  const tokens = base.split(/[_\-\s.]+/).filter(Boolean);
+  const tokens = base.split(/[_\-\s.()\[\]]+/).filter(Boolean);
   let key: string | undefined;
   // Keys usually sit at the end of the name, so scan backwards.
   for (let i = tokens.length - 1; i >= Math.max(0, tokens.length - 3); i--) {

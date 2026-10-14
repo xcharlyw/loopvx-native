@@ -22,7 +22,7 @@ const AUDIO_EXT = /\.(wav|wave|mp3|m4a|aif|aiff|flac|ogg)$/i;
 export const isFolder = (f: DriveEntry) => f.mimeType === FOLDER_MIME;
 
 /** Audio the app can play. Google's own document types (Docs, Sheets ...) never count, whatever their name says. */
-export const isAudio = (f: DriveEntry) => !isFolder(f) && !f.mimeType?.startsWith('application/vnd.google-apps.') && (!!f.mimeType?.startsWith('audio/') || AUDIO_EXT.test(f.name));
+export const isAudio = (f: DriveEntry) => !isFolder(f) && !/midi/i.test(f.mimeType ?? '') && !/\.midi?$/i.test(f.name) && !f.mimeType?.startsWith('application/vnd.google-apps.') && (!!f.mimeType?.startsWith('audio/') || AUDIO_EXT.test(f.name));
 
 const byName = (a: DriveEntry, b: DriveEntry) => a.name.localeCompare(b.name, 'de', { numeric: true, sensitivity: 'base' });
 

@@ -189,3 +189,10 @@ describe('planPreview', () => {
     expect(planPreview({ positionBars: null, projectBpm: 150, durationSec: 0.4 }).loop).toBe(false);
   });
 });
+
+describe('keys in brackets', () => {
+  it('reads "(F)" and "(C#)" at the end of a name', () => {
+    expect(parseSampleName('KSHMR Synth - PAJANE - Screech Mymind (F).wav').key).toBe('F');
+    expect(parseSampleName('KSHMR Riser (C#) - Screech.wav').key).toBe('C#');
+  });
+});

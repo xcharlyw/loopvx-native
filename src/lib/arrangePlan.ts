@@ -109,10 +109,10 @@ export function parsePlan(raw: unknown): ArrangePlan | null {
   if (bass) styles.bass = bass;
   if (lead) styles.lead = lead;
   if (drums) styles.drums = drums;
-  const addRoles = Array.isArray(r.addRoles) ? [...new Set(r.addRoles.map((x) => pick(ADDABLE, x)).filter((x): x is Role => !!x))] : ADDABLE;
+  const addRoles = Array.isArray(r.addRoles) ? [...new Set(r.addRoles.map((x) => pick(ADDABLE, x)).filter((x): x is Role => !!x))] : []; // the plan decides: no list, no new tracks
   const summary = typeof r.summary === 'string' && r.summary.trim() ? r.summary.trim().slice(0, 300) : undefined;
   const notes = Array.isArray(r.notes) ? r.notes.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 6).map((x) => x.trim().slice(0, 200)) : [];
-  return { sections, bpm, key: normalizeKey(r.key), styles, addRoles, automation: r.automation !== false, fx: parseFx(r.fx), ...(notes.length ? { notes } : {}), ...(summary ? { summary } : {}) };
+  return { sections, bpm, key: normalizeKey(r.key), styles, addRoles, automation: r.automation === true, fx: parseFx(r.fx), ...(notes.length ? { notes } : {}), ...(summary ? { summary } : {}) };
 }
 
 /** The plan's sections laid out in bars. A second drop or build plays the arranger's "2" variant (reese bass, the drop's vocal half). */

@@ -35,8 +35,8 @@ Answer ONLY with one JSON object, no prose, of this shape:
     "lead": "trance" | "hypnotic" | "arp" | "prog" | "stabs" | "rave",
     "drums": "kit-techno" | "kit-rolling" | "kit-minimal"
   },
-  "addRoles": string[],         // missing tracks to create, subset of ["drums","bass","lead","pad"]
-  "automation": boolean,        // filter sweeps, reverb throws, drive build-ups, fade-out
+  "addRoles": string[],         // new MIDI tracks to create, subset of ["drums","bass","lead","pad"]: ONLY roles the request needs and the project lacks; [] when the existing tracks are enough
+  "automation": boolean,        // true = filter sweeps, reverb throws, drive build-ups and a fade-out are added (normally true for a full arrangement), false = none
   "fx": [                       // one-off sounds from the user's library, each on an audio track of its own (may be empty)
     { "kind": "impact" | "riser" | "downlifter" | "crash" | "other",
       "bar": number,            // bar NUMBER as shown in the ruler (1 = first bar) where the sound starts; a riser starts "length" bars BEFORE the bar it leads into

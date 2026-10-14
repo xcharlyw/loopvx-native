@@ -48,8 +48,10 @@ describe('arrange plan', () => {
     const long = parsePlan({ sections: Array.from({ length: 20 }, () => ({ type: 'drop', bars: 64 })) })!;
     expect(long.sections.reduce((n, s) => n + s.bars, 0)).toBe(256);
     expect(long.bpm).toBeUndefined();
-    expect(long.addRoles).toEqual(['drums', 'bass', 'lead', 'pad']);
-    expect(long.automation).toBe(true);
+    // the plan decides: what it does not mention is not added
+    expect(long.addRoles).toEqual([]);
+    expect(long.automation).toBe(false);
+    expect(parsePlan({ sections: [{ type: 'drop', bars: 8 }], addRoles: ['pad'], automation: true })).toMatchObject({ addRoles: ['pad'], automation: true });
   });
 
   it('lays sections out and numbers repeats', () => {

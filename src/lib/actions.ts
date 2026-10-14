@@ -13,7 +13,7 @@ import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
-import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, trackForSample, uid, updateClip } from './project';
+import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, copyProject, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
@@ -450,6 +450,18 @@ export async function importProjectFile() {
     await db.putProject(saved);
     await openProject(saved);
     toast(`„${saved.name}“ geöffnet${samples.length ? ` (${samples.length} Samples)` : ''}.`);
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Save a copy of a project next to it and open the copy (e.g. to try the AI arrangement without touching the original). */
+export async function duplicateProject(project: Project) {
+  try {
+    const copy = copyProject(project);
+    await db.putProject(copy);
+    await openProject(copy);
+    toast(`„${copy.name}“ angelegt und geöffnet.`);
   } catch (e) {
     toast(errorText(e), 'error');
   }

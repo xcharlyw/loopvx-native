@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
-import { exportProjectFile, importProjectFile } from '../lib/actions';
+import { duplicateProject, exportProjectFile, importProjectFile } from '../lib/actions';
 import { driveLinked } from '../lib/drive';
 import { createProject } from '../lib/project';
 import { errorText, getState, openProject, toast, updateProject, useStore } from '../lib/store';
@@ -9,7 +9,7 @@ import { resetSync, syncNow } from '../lib/sync';
 import { signIn, signOut, useSession } from '../lib/supabase';
 import { db } from '../storage/db';
 import type { Project } from '../types';
-import { Export, Plus, Trash, Upload } from './icons';
+import { Copy, Export, Plus, Trash, Upload } from './icons';
 import { confirmDestructive } from './confirm';
 import { Btn, IconBtn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
@@ -65,7 +65,7 @@ export function ProjectsPanel() {
       </Section>
 
       <Section title="Alle Projekte">
-        <Txt style={[s.note, { marginBottom: 4 }]}>Pfeil-Symbol: Projekt samt Samples als .loopvx-Datei sichern (Backup, auch ohne Google Drive).</Txt>
+        <Txt style={[s.note, { marginBottom: 4 }]}>Doppel-Symbol: Kopie des Projekts anlegen. Pfeil-Symbol: Projekt samt Samples als .loopvx-Datei sichern (Backup, auch ohne Google Drive).</Txt>
         {projects.map((p) => (
           <View key={p.id} style={s.item}>
             <Pressable style={{ flex: 1, minWidth: 0 }} onPress={() => void openProject(p)}>
@@ -76,6 +76,9 @@ export function ProjectsPanel() {
                 {p.bpm} BPM · {p.key} · {new Date(p.updatedAt).toLocaleString('de-AT')}
               </Txt>
             </Pressable>
+            <IconBtn onPress={() => void duplicateProject(p.id === current.id ? current : p)} accessibilityLabel="Projekt duplizieren">
+              <Copy size={16} />
+            </IconBtn>
             <IconBtn onPress={() => void exportProjectFile(p.id === current.id ? current : p)} accessibilityLabel="Als Datei sichern">
               <Export size={16} />
             </IconBtn>

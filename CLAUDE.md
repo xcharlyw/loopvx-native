@@ -224,6 +224,7 @@ Track order: `moveTrack(project, id, delta)` (pure, tested), buttons "▲ Nach o
 device automation lanes (`dev:<id>:<key>`) are remapped to the copy's devices. `duplicateSelectedTrack` selects the copy. Cmd/Ctrl+D = `duplicateSelection`: the
 selected clips, or the selected track when no clip is selected (like Live); also "⧉ Duplizieren" in the TrackPanel, the copy button in the BottomBar's track group and
 Erstellen → Spur duplizieren.
+**Duplicate a project**: `copyProject` (project.ts, tested) + `duplicateProject` (actions.ts): a deep copy "<Name> (Kopie)" under a new id, saved and opened; the Projekte list has a copy button next to the backup arrow. Samples are shared through the library. (Opening a `.loopvx` backup of a project that already exists also makes a "(Kopie)".)
 
 ## Device chain (plugin slots)
 

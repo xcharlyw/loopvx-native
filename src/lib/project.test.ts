@@ -1,4 +1,4 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -404,5 +404,18 @@ describe('duplicateTrack', () => {
   it('an unknown track changes nothing', () => {
     const { p } = setup();
     expect(duplicateTrack(p, 'nope').project).toBe(p);
+  });
+});
+
+describe('copyProject', () => {
+  it('is an independent copy under a new id and name', () => {
+    const p = createProject();
+    const c = copyProject(p, 123);
+    expect(c.id).not.toBe(p.id);
+    expect(c.name).toBe(`${p.name} (Kopie)`);
+    expect(c.updatedAt).toBe(123);
+    expect(c.tracks).toEqual(p.tracks);
+    c.tracks[0].volume = 0.1;
+    expect(p.tracks[0].volume).not.toBe(0.1);
   });
 });

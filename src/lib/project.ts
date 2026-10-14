@@ -146,6 +146,12 @@ export function findClip(project: Project, clipId: string): { track: Track; clip
   return null;
 }
 
+/** A copy of a whole project under a new id ("<name> (Kopie)"), for trying something out without touching the original. Samples are shared through the library. */
+export function copyProject(project: Project, now: number = Date.now()): Project {
+  const copy = JSON.parse(JSON.stringify(project)) as Project;
+  return { ...copy, id: uid(), name: `${project.name} (Kopie)`, updatedAt: now };
+}
+
 /**
  * A copy of the track right below it (Live: Cmd+D on a track): clips, instrument, effects, devices, automation and session
  * slots, with fresh ids for the track, its clips and devices (device automation lanes follow the new device ids). The name

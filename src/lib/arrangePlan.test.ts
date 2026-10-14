@@ -93,3 +93,22 @@ describe('plan effects', () => {
     expect(parsePlan({ ...base, fx: 'impact' })!.fx).toEqual([]);
   });
 });
+
+describe('plan scope', () => {
+  it('fx_only needs no structure and touches nothing else', () => {
+    const plan = parsePlan({ scope: 'fx_only', summary: 'Impact bei Takt 65.', sections: [{ type: 'drop', bars: 32 }], addRoles: ['bass'], automation: true, bpm: 170, fx: [{ kind: 'impact', bar: 65 }] })!;
+    expect(plan.scope).toBe('fx_only');
+    expect(plan.sections).toEqual([]);
+    expect(plan.addRoles).toEqual([]);
+    expect(plan.automation).toBe(false);
+    expect(plan.bpm).toBeUndefined();
+    expect(plan.fx).toEqual([{ kind: 'impact', bar: 64 }]);
+  });
+  it('fx_only without a usable effect is no plan', () => {
+    expect(parsePlan({ scope: 'fx_only', fx: [] })).toBeNull();
+    expect(parsePlan({ scope: 'fx_only', fx: [{ kind: 'impact', bar: 0 }] })).toBeNull();
+  });
+  it('anything else is a full plan', () => {
+    expect(parsePlan({ sections: [{ type: 'drop', bars: 8 }] })!.scope).toBe('full');
+  });
+});

@@ -220,4 +220,15 @@ describe('effect sounds', () => {
     const clips = again.project.tracks.find((t) => t.name === 'Impact FX')!.clips;
     expect(clips.map((c) => c.start).sort((a, b) => a - b)).toEqual([8, 64]);
   });
+
+  it('fxOnly leaves the whole arrangement as it is', () => {
+    const start = arrange(base(), lib, { ...opts, addMissingTracks: true });
+    const before = JSON.stringify(start.project);
+    const r = arrange(start.project, lib, { ...opts, seed: 5, fxOnly: true, fx: [{ kind: 'impact', bar: 64, search: ['impact'] }] });
+    const kept = r.project.tracks.filter((t) => t.name !== 'Impact FX');
+    expect(JSON.stringify({ ...r.project, tracks: kept })).toBe(before);
+    expect(r.project.tracks.find((t) => t.name === 'Impact FX')!.clips[0].start).toBe(64);
+    expect(r.added).toEqual(['Impact FX']);
+    expect(r.sections).toEqual([]);
+  });
 });

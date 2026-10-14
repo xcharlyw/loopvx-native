@@ -8,66 +8,67 @@ import { arrange, type ArrangeResult } from '../lib/arranger';
 import { planSections, type ArrangePlan } from '../lib/arrangePlan';
 import { errorText, getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
-import { Btn, Chip, Section, Txt } from './kit';
+import { Btn, Section, Txt } from './kit';
 import { Sheet } from './Sheet';
 
 /**
- * Arrangement from a text: Gemini plans the structure (`requestPlan`), then "Arrangement erzeugen" lays it out from the
- * project's tracks and the library with MIDI grooves and automation (rule based, a new roll gives another variation).
- * There is no plan-less default any more: the plan decides the sections.
+ * One step: the text goes to Gemini, which answers with a plan (`requestPlan`), and the app applies it right away. A request for
+ * single additions ("Impact FX bei Takt 65") only places those; a request for an arrangement lays out the whole track from the
+ * project's tracks and the library (rule based, "Anderes Ergebnis" rolls another variation). Everything is one undo step.
  */
 export function ArrangerPanel() {
   const project = useStore((st) => st.project);
-  const samples = useStore((st) => st.samples);
   const [last, setLast] = useState<ArrangeResult | null>(null);
-  const [rolls, setRolls] = useState(0);
   const [prompt, setPrompt] = useState('');
   const [plan, setPlan] = useState<ArrangePlan | null>(null);
-  const [thinking, setThinking] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const sections = plan ? planSections(plan) : [];
+  const apply = (p: ArrangePlan) => {
+    const fxOnly = p.scope === 'fx_only';
+    if (engine.playing) engine.stop();
+    // A full plan may set tempo and key; they change with the arrangement (one undo step).
+    const current = getState().project;
+    const source = fxOnly ? current : { ...current, bpm: p.bpm ?? current.bpm, key: p.key ?? current.key, ...(p.key && p.key !== current.key ? { scale: undefined } : {}) };
+    const result = arrange(source, getState().samples, {
+      seed: Math.floor(Math.random() * 2 ** 31),
+      addMissingTracks: true,
+      automation: p.automation,
+      sections: planSections(p),
+      styles: p.styles,
+      addRoles: p.addRoles,
+      fx: p.fx,
+      fxOnly,
+    });
+    updateProject(() => result.project);
+    setLast(result);
+    if (!fxOnly) setCursor(0);
+    const lacking = [...result.missingSamples, ...result.fxMissing];
+    toast(lacking.length ? `Fertig. Keine passenden Samples für: ${lacking.join(', ')}` : 'Fertig');
+  };
 
-  const askAi = async () => {
-    setThinking(true);
+  const go = async () => {
+    setBusy(true);
     try {
       const next = await requestPlan(prompt, getState().project, getState().samples);
       setPlan(next);
       setLast(null);
-      setRolls(0);
+      // Only a whole new arrangement replaces clips: ask first (after the AI has said what it would do).
+      if (next.scope === 'full' && getState().project.tracks.some((t) => t.clips.length > 0)) {
+        const ok = await confirmDestructive('Vorhandene Clips ersetzen?', `${next.summary ?? 'Die KI plant ein neues Arrangement.'}\n\nDas ersetzt die Clips der Spuren, die es belegt. Mit „Rückgängig“ (↩) bekommst du dein altes Arrangement zurück.`, 'Ersetzen');
+        if (!ok) return;
+      }
+      apply(next);
     } catch (e) {
       toast(errorText(e), 'error');
     } finally {
-      setThinking(false);
+      setBusy(false);
     }
   };
-  const hasClips = project.tracks.some((t) => t.clips.length > 0);
 
-  const run = async () => {
+  const again = () => {
     if (!plan) return;
-    if (hasClips && !last) {
-      const ok = await confirmDestructive('Vorhandene Clips ersetzen?', 'Das Arrangement ersetzt die Clips aller Spuren, die es belegt. Mit „Rückgängig“ (↩) bekommst du dein altes Arrangement zurück.', 'Ersetzen');
-      if (!ok) return;
-    }
     try {
-      if (engine.playing) engine.stop();
-      // A plan may set tempo and key; they change with the arrangement (one undo step).
-      const current = getState().project;
-      const source = { ...current, bpm: plan.bpm ?? current.bpm, key: plan.key ?? current.key, ...(plan.key && plan.key !== current.key ? { scale: undefined } : {}) };
-      const result = arrange(source, getState().samples, {
-        seed: Math.floor(Math.random() * 2 ** 31),
-        addMissingTracks: true,
-        automation: plan.automation,
-        sections,
-        styles: plan?.styles,
-        addRoles: plan?.addRoles,
-        fx: plan.fx,
-      });
-      updateProject(() => result.project);
-      setLast(result);
-      setRolls((n) => n + 1);
-      setCursor(0);
-      const lacking = [...result.missingSamples, ...result.fxMissing];
-      toast(lacking.length ? `Arrangement erzeugt. Keine passenden Samples für: ${lacking.join(', ')}` : 'Arrangement erzeugt');
+      apply(plan);
     } catch (e) {
       toast(errorText(e), 'error');
     }
@@ -79,75 +80,56 @@ export function ArrangerPanel() {
     void togglePlay();
   };
 
+  const fxOnly = plan?.scope === 'fx_only';
   return (
     <Sheet title="Arrangement">
       <Txt style={s.note}>
-        {`Beschreibe dein Hard-Techno-Stück (${project.bpm} BPM, ${project.key}). Die KI plant den Aufbau, danach legt die App Clips, MIDI-Grooves und Automationen aus deinen Spuren und passenden Library-Samples an.`}
+        {`Schreib, was die KI machen soll (${project.bpm} BPM, ${project.key}). Sie setzt es sofort um, z. B. „Impact FX bei Takt 65 auf neuer Spur“ oder „baue ein 128-Takte-Arrangement mit langem Break“. Mit „Rückgängig“ (↩) nimmst du alles zurück.`}
       </Txt>
 
-      <Section title="Mit KI (Gemini)">
-        <View style={s.promptBox}>
-          <TextInput
-            style={s.input}
-            multiline
-            placeholder="Beschreibe das Stück, z. B. „düster, 160 BPM, langer Break ohne Bass, Acid im zweiten Drop“"
-            placeholderTextColor={C.dim}
-            value={prompt}
-            onChangeText={setPrompt}
-            accessibilityLabel="Beschreibung für die KI"
-          />
-        </View>
-        <View style={s.chips}>
-          <Btn kind={plan ? undefined : 'primary'} disabled={thinking || !prompt.trim()} accessibilityLabel="Mit KI planen" onPress={() => void askAi()}>
-            {thinking ? <ActivityIndicator size="small" color={C.text} /> : null}
-            {plan ? 'Neu planen' : 'Mit KI planen'}
-          </Btn>
-          {plan && (
-            <Chip variant="ghost" accessibilityLabel="KI-Plan verwerfen" onPress={() => setPlan(null)}>
-              Plan verwerfen
-            </Chip>
-          )}
-        </View>
-        {plan ? (
-          <Txt style={[s.note, { color: C.text }]}>
-            {[plan.summary, plan.bpm && plan.bpm !== project.bpm ? `Tempo → ${plan.bpm} BPM.` : '', plan.key && plan.key !== project.key ? `Tonart → ${plan.key}.` : ''].filter(Boolean).join(' ')}
-          </Txt>
-        ) : (
-          <Txt style={s.note}>Z. B. Länge, Tempo, Stimmung, wo Bass oder Lead fehlen sollen, oder „Impact FX bei Takt 65 auf neuer Spur“. Braucht die Anmeldung mit Google.</Txt>
-        )}
-        {plan?.model ? <Txt style={[s.note, { color: C.dim }]}>{`Geplant mit ${plan.model}${/lite/i.test(plan.model) ? ' (Leichtmodell, weil das große gerade ausgelastet war: „Neu planen“ versucht es nochmal)' : ''}.`}</Txt> : null}
-      </Section>
-
-      {plan?.notes?.length ? (
-        <Section title="Nicht umgesetzt" style={{ marginTop: 12 }}>
-          {plan.notes.map((n) => (
-            <Txt key={n} style={[s.note, { color: C.muted }]}>{`• ${n}`}</Txt>
-          ))}
-        </Section>
-      ) : null}
-
-      <View style={[s.chips, { marginTop: 14 }]}>
-        <Btn kind="primary" disabled={!plan} accessibilityLabel="Arrangement erzeugen" onPress={() => void run()}>
-          {rolls ? 'Neu würfeln' : plan ? 'Arrangement erzeugen' : 'Zuerst mit KI planen'}
+      <View style={s.promptBox}>
+        <TextInput
+          style={s.input}
+          multiline
+          placeholder="Was soll die KI machen?"
+          placeholderTextColor={C.dim}
+          value={prompt}
+          onChangeText={setPrompt}
+          accessibilityLabel="Beschreibung für die KI"
+        />
+      </View>
+      <View style={s.chips}>
+        <Btn kind="primary" disabled={busy || !prompt.trim()} accessibilityLabel="KI ausführen" onPress={() => void go()}>
+          {busy ? <ActivityIndicator size="small" color={C.accentInk} /> : null}
+          {busy ? 'KI arbeitet …' : 'Ausführen'}
         </Btn>
         {last && (
+          <Btn accessibilityLabel={fxOnly ? 'Anderes Sample' : 'Anderes Ergebnis'} disabled={busy} onPress={again}>
+            {fxOnly ? 'Anderes Sample' : 'Anderes Ergebnis'}
+          </Btn>
+        )}
+        {last && !fxOnly && (
           <Btn accessibilityLabel="Arrangement anhören" onPress={listen}>
             Anhören
           </Btn>
         )}
       </View>
 
-      {last && (
+      {plan && (
         <Section title="Ergebnis" style={{ marginTop: 12 }}>
-          <Txt style={s.note}>{last.added.length ? `Neue Spuren: ${last.added.join(', ')}.` : 'Keine neuen Spuren.'}</Txt>
-          {last.fx.map((f) => (
+          {plan.summary ? <Txt style={[s.note, { color: C.text }]}>{plan.summary}</Txt> : null}
+          {last?.fx.map((f) => (
             <Txt key={`${f.track}${f.bar}`} style={s.note}>{`✓ ${f.track}: „${f.sample}“ bei Takt ${f.bar}`}</Txt>
           ))}
-          {last.fxMissing.length > 0 && (
-            <Txt style={[s.note, { color: C.danger }]}>{`Kein passendes Sample gefunden für: ${last.fxMissing.join(', ')}. Schreib den Sample-Namen in die Beschreibung (z. B. „Impact FX mit dem Sample ‚SSE Pattern 05 Perc FX‘“) und plane neu.`}</Txt>
+          {last && !fxOnly && last.added.length > 0 && <Txt style={s.note}>{`Neue Spuren: ${last.added.join(', ')}.`}</Txt>}
+          {last && last.fxMissing.length > 0 && (
+            <Txt style={[s.note, { color: C.danger }]}>{`Kein passendes Sample gefunden für: ${last.fxMissing.join(', ')}. Schreib den Sample-Namen in die Anfrage (z. B. „… mit dem Sample ‚SSE Pattern 05 Perc FX‘“).`}</Txt>
           )}
-          {last.missingSamples.length > 0 && <Txt style={[s.note, { color: C.muted }]}>{`Ohne passende Library-Samples geblieben: ${last.missingSamples.join(', ')}. Importiere Loops mit passendem Tempo (±8 BPM) und Tonart, dann nochmal würfeln.`}</Txt>}
-          <Txt style={s.note}>Noten und Automation lassen sich danach in der Piano Roll und unter „Spur bearbeiten → Automation“ ändern.</Txt>
+          {last && !fxOnly && last.missingSamples.length > 0 && <Txt style={[s.note, { color: C.muted }]}>{`Ohne passende Library-Samples geblieben: ${last.missingSamples.join(', ')}.`}</Txt>}
+          {plan.notes?.map((n) => (
+            <Txt key={n} style={[s.note, { color: C.muted }]}>{`Nicht umgesetzt: ${n}`}</Txt>
+          ))}
+          {plan.model ? <Txt style={[s.note, { color: C.dim }]}>{`Geplant mit ${plan.model}${/lite/i.test(plan.model) ? ' (Leichtmodell, weil das große gerade ausgelastet war: nochmal „Ausführen“ versucht es erneut)' : ''}.`}</Txt> : null}
         </Section>
       )}
     </Sheet>

@@ -16,6 +16,7 @@ describe('arrange prompt', () => {
     expect(t).toContain('German');
     expect(SYSTEM).toContain('"fx"');
     expect(SYSTEM).toContain('"notes"');
+    expect(SYSTEM).toContain('fx_only');
     expect(SYSTEM).toMatch(/never in English/);
   });
 

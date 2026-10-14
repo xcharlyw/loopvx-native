@@ -26,6 +26,8 @@ export interface ArrangePlan {
   summary?: string;
   /** One-off effect sounds from the library on their own audio tracks (impact at the vocal break ...). */
   fx: FxHit[];
+  /** 'fx_only': the text only asks for single additions (an effect at a bar): nothing else of the project is touched. */
+  scope: 'full' | 'fx_only';
   /** What the text asked for that a plan cannot express; shown so nothing is silently dropped. */
   notes?: string[];
   /** The model that planned it (the server may fall back to a lighter one). */
@@ -83,6 +85,14 @@ export function parseFx(raw: unknown): FxHit[] {
 export function parsePlan(raw: unknown): ArrangePlan | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
+  if (r.scope === 'fx_only') {
+    // Only effects: no structure is needed (or wanted); without a usable effect there is nothing to do.
+    const fx = parseFx(r.fx);
+    if (!fx.length) return null;
+    const summary = typeof r.summary === 'string' && r.summary.trim() ? r.summary.trim().slice(0, 300) : undefined;
+    const notes = Array.isArray(r.notes) ? r.notes.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 6).map((x) => x.trim().slice(0, 200)) : [];
+    return { scope: 'fx_only', sections: [], styles: {}, addRoles: [], automation: false, fx, ...(notes.length ? { notes } : {}), ...(summary ? { summary } : {}) };
+  }
   const sections: PlanSection[] = [];
   let total = 0;
   for (const item of Array.isArray(r.sections) ? r.sections : []) {
@@ -112,7 +122,7 @@ export function parsePlan(raw: unknown): ArrangePlan | null {
   const addRoles = Array.isArray(r.addRoles) ? [...new Set(r.addRoles.map((x) => pick(ADDABLE, x)).filter((x): x is Role => !!x))] : []; // the plan decides: no list, no new tracks
   const summary = typeof r.summary === 'string' && r.summary.trim() ? r.summary.trim().slice(0, 300) : undefined;
   const notes = Array.isArray(r.notes) ? r.notes.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 6).map((x) => x.trim().slice(0, 200)) : [];
-  return { sections, bpm, key: normalizeKey(r.key), styles, addRoles, automation: r.automation === true, fx: parseFx(r.fx), ...(notes.length ? { notes } : {}), ...(summary ? { summary } : {}) };
+  return { scope: 'full', sections, bpm, key: normalizeKey(r.key), styles, addRoles, automation: r.automation === true, fx: parseFx(r.fx), ...(notes.length ? { notes } : {}), ...(summary ? { summary } : {}) };
 }
 
 /** The plan's sections laid out in bars. A second drop or build plays the arranger's "2" variant (reese bass, the drop's vocal half). */

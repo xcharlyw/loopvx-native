@@ -186,6 +186,8 @@ export interface ArrangeOptions {
   automation: boolean;
   /** One-off effect sounds from the library, each on an audio track of its own. */
   fx?: FxHit[];
+  /** Place only `fx` and leave everything else of the project untouched (a request like "an impact at bar 65"). */
+  fxOnly?: boolean;
 }
 
 export interface ArrangeResult {
@@ -275,12 +277,46 @@ function automationFor(role: Role, track: Track, sections: Section[], end: numbe
   return lanes;
 }
 
+/** Puts each effect on an audio track of its own (new, or an existing one of the same name) and says which ones found no sample. */
+function placeFx(tracksIn: Track[], project: Project, samples: Sample[], hits: FxHit[], rand: () => number): { tracks: Track[]; added: string[]; fx: ArrangeResult['fx']; fxMissing: string[] } {
+  const tracks = [...tracksIn];
+  const added: string[] = [];
+  const fx: ArrangeResult['fx'] = [];
+  const fxMissing: string[] = [];
+  for (const hit of hits) {
+    const name = hit.track?.trim() || FX_TRACK[hit.kind];
+    const found = findFxSample(samples, hit, rand);
+    if (!found) {
+      fxMissing.push(`${name} (Takt ${hit.bar + 1})`);
+      continue;
+    }
+    const bars = hit.length ?? (found.duration ? sampleLengthBars(found.duration, project.bpm, found.bpm) : 2);
+    const length = Math.max(0.25, Math.min(64, Math.round(bars * 16) / 16));
+    const clip: Clip = { id: uid(), sampleId: found.id, start: hit.bar, length, offset: 0 };
+    let at = tracks.findIndex((t) => trackKind(t) === 'audio' && t.name.toLowerCase() === name.toLowerCase());
+    if (at < 0) {
+      tracks.push(createTrack('other', project.sceneCount, name, 'audio'));
+      added.push(name);
+      at = tracks.length - 1;
+    }
+    // Rolling again replaces the effect at the same bar and leaves every other clip of the track alone.
+    tracks[at] = { ...tracks[at], clips: [...tracks[at].clips.filter((c) => Math.abs(c.start - hit.bar) > 1e-6), clip] };
+    fx.push({ track: name, bar: hit.bar + 1, sample: found.name.replace(/\.[a-z0-9]{2,5}$/i, '') });
+  }
+  return { tracks, added, fx, fxMissing };
+}
+
 /**
  * Lays out the arrangement on `project`. Existing clips are replaced; tracks keep their instruments and effects (a
  * pump is added to bass, lead and pad when they have none). Missing roles can be added as new MIDI tracks.
  */
 export function arrange(project: Project, samples: Sample[], opts: ArrangeOptions): ArrangeResult {
   const rand = seededRandom(opts.seed);
+  // Only effects: the arrangement stays exactly as it is (no clips replaced, no tracks added, no markers or loop changed).
+  if (opts.fxOnly) {
+    const only = placeFx(project.tracks, project, samples, opts.fx ?? [], rand);
+    return { project: { ...project, tracks: only.tracks }, sections: [], added: only.added, missingSamples: [], fx: only.fx, fxMissing: only.fxMissing };
+  }
   const sections = opts.sections?.length ? opts.sections : sectionsFor(opts.length ?? 128);
   const end = sections.reduce((e, sec) => Math.max(e, sec.start + sec.bars), 0);
   const added: string[] = [];
@@ -318,28 +354,10 @@ export function arrange(project: Project, samples: Sample[], opts: ArrangeOption
     return next;
   });
 
-  const fx: ArrangeResult['fx'] = [];
-  const fxMissing: string[] = [];
-  for (const hit of opts.fx ?? []) {
-    const name = hit.track?.trim() || FX_TRACK[hit.kind];
-    const found = findFxSample(samples, hit, rand);
-    if (!found) {
-      fxMissing.push(`${name} (Takt ${hit.bar + 1})`);
-      continue;
-    }
-    const bars = hit.length ?? (found.duration ? sampleLengthBars(found.duration, project.bpm, found.bpm) : 2);
-    const length = Math.max(0.25, Math.min(64, Math.round(bars * 16) / 16));
-    const clip: Clip = { id: uid(), sampleId: found.id, start: hit.bar, length, offset: 0 };
-    let at = tracks.findIndex((t) => trackKind(t) === 'audio' && t.name.toLowerCase() === name.toLowerCase());
-    if (at < 0) {
-      tracks.push(createTrack('other', project.sceneCount, name, 'audio'));
-      added.push(name);
-      at = tracks.length - 1;
-    }
-    // Rolling again replaces the effect at the same bar and leaves every other clip of the track alone.
-    tracks[at] = { ...tracks[at], clips: [...tracks[at].clips.filter((c) => Math.abs(c.start - hit.bar) > 1e-6), clip] };
-    fx.push({ track: name, bar: hit.bar + 1, sample: found.name.replace(/\.[a-z0-9]{2,5}$/i, '') });
-  }
+  const placed = placeFx(tracks, project, samples, opts.fx ?? [], rand);
+  tracks = placed.tracks;
+  added.push(...placed.added);
+  const { fx, fxMissing } = placed;
 
   // With the 909 playing the kick, bass, lead and pad pump on its real kick hits (a sidechain) instead of on every beat.
   const drums = !kickLoop ? tracks.find((t) => roleOf(t) === 'drums') : undefined;

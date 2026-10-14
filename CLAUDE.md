@@ -370,7 +370,12 @@ reused and re-rolling replaces only the clip at that bar. No match = `fxMissing`
 for that the plan cannot express ("Nicht umgesetzt" in the panel), so the model cannot pretend; `requestPlan` also sends up to 120 sample names (effect-like first) and the
 server prompt demands German texts (`summary`, `notes`) and low temperature; the model that answered is shown (the lite fallback gives noticeably worse plans). UI `ArrangerPanel` (FAB
 "Arrangement" next to "AI Vocals") is **AI only**: the plan-less default (fixed 64/128 shape, "Arrangement erzeugen" without a text) was removed from the UI at Karl's request;
-"Arrangement erzeugen" stays disabled until Gemini has planned. The panel is kept lean at Karl's request: text field, summary, "Nicht umgesetzt" notes, the button and the result; **no section list and no option chips** (new tracks only for the plan's `addRoles`, automation only when `plan.automation` is true; **what the plan does not mention is not done**). `arrange()` itself still works without `sections` (default `sectionsFor(128)`), tests rely on it. Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
+**One step** at Karl's request: the text goes to Gemini and the plan is applied at once ("Ausführen"; no separate "plan" step, no plan list, no option chips). The plan has a `scope`:
+`fx_only` (single additions such as "Impact FX bei Takt 65 auf neuer Spur": only `placeFx` runs via `ArrangeOptions.fxOnly`, nothing else of the project is touched: no clips replaced,
+no tracks added, no markers/loop/tempo change, no confirm) or `full` (a whole arrangement; if clips exist the app first asks "Vorhandene Clips ersetzen?" with the AI's summary).
+The prompt says "when in doubt fx_only"; `parsePlan` turns an `fx_only` answer into a plan without structure (and rejects it when it has no usable effect). In `full` plans new
+tracks come only from `addRoles` and automation only when `plan.automation` is true: **what the plan does not mention is not done**. After a run the panel offers "Anderes Ergebnis"
+(`Anderes Sample` for fx_only; same plan, new seed, no AI call) and "Anhören"; everything is one undo step. `arrange()` itself still works without `sections` (default `sectionsFor(128)`), tests rely on it. Offline renders: the three added tracks come out at peaks 0.5 / 0.2 / 0.3 and the drop at 0.55 on the master.
 
 ## 909 drum machine (issue #4)
 

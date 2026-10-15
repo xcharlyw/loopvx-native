@@ -6,7 +6,8 @@ import { uid } from '../lib/project';
 import { errorText, setState, toast, useStore } from '../lib/store';
 import { db } from '../storage/db';
 import { GENRES, ideaText, requestLyrics, type Genre, type LyricIdea } from '../lib/lyrics';
-import { inspirationOf, removeSongText, titleFromText, upsertSongText, type SongText } from '../lib/songTexts';
+import { inspirationOf, lyricsFromFile, removeSongText, titleFromText, upsertSongText, type SongText } from '../lib/songTexts';
+import { pickFile } from '../lib/samples';
 import { transcribeSample } from '../lib/transcribe';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
@@ -47,7 +48,7 @@ export function PromptBar() {
   const [inspo, setInspo] = useState<string[]>([]);
   const [tOpen, setTOpen] = useState(false);
   const [tSource, setTSource] = useState<string | null>(null);
-  const [tSearch, setTSearch] = useState('');
+  const [tMode, setTMode] = useState<'vocals' | 'load'>('vocals');
   const [tText, setTText] = useState('');
   const [tTitle, setTTitle] = useState('');
   const [tBusy, setTBusy] = useState(false);
@@ -135,6 +136,27 @@ export function PromptBar() {
       toast(errorText(e), 'error');
     } finally {
       setTBusy(false);
+    }
+  };
+  const loadLyrics = async () => {
+    try {
+      const f = await pickFile();
+      if (!f) return;
+      if (f.data.byteLength > 512_000) throw new Error('Die Datei ist zu groß für einen Songtext (max. 500 KB).');
+      const { title, text } = lyricsFromFile(f.name, new TextDecoder().decode(f.data));
+      if (!text) throw new Error('In der Datei steht kein Text. Nimm eine .txt- oder .lrc-Datei.');
+      setTText(text);
+      setTTitle(title);
+      toast(`„${title}“ geladen: ${text.split('\n').filter((l) => l.trim()).length} Zeilen.`);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
+  };
+  const openTexts = (mode: 'vocals' | 'load') => {
+    if (tOpen && tMode === mode) setTOpen(false);
+    else {
+      setTMode(mode);
+      setTOpen(true);
     }
   };
   const saveText = () => {
@@ -338,26 +360,42 @@ export function PromptBar() {
         </View>
         <View style={s.row}>
           <Txt style={s.small}>Songtexte:</Txt>
-          <Chip variant={tOpen ? 'on' : 'ghost'} onPress={() => setTOpen(!tOpen)}>
+          <Chip variant={tOpen && tMode === 'vocals' ? 'on' : 'ghost'} onPress={() => openTexts('vocals')}>
             Text aus Vocals
+          </Chip>
+          <Chip variant={tOpen && tMode === 'load' ? 'on' : 'ghost'} onPress={() => openTexts('load')}>
+            Lyrics laden
           </Chip>
           {songTexts.length > 0 && <Txt style={s.small}>{`${songTexts.length} gespeichert, ${inspo.length} als Inspiration an`}</Txt>}
         </View>
         {tOpen && (
           <View style={s.lyrics}>
-            <Txt style={s.small}>Wandelt Gesang oder Rap in Text um. Wähle ein Sample oder nimm direkt auf. Den Text kannst du prüfen, als Songtext speichern und als Inspiration für die Text-Ideen verwenden (die KI übernimmt nur den Stil, keine Zeilen).</Txt>
-            <View style={s.row}>
-              <RecordButton hidePlace onSaved={(x) => setTSource(x.id)} />
-            </View>
-            <SamplePicker samples={samples} value={tSource} onChange={setTSource} />
-            <View style={s.row}>
-              <Btn kind="primary" onPress={() => void toText()} disabled={!tSource || tBusy}>
-                {tBusy ? 'hört zu …' : 'In Text umwandeln'}
-              </Btn>
-            </View>
-            {tText !== '' && (
+            {tMode === 'vocals' ? (
+                <View>
+                <Txt style={s.small}>Wandelt Gesang oder Rap in Text um. Wähle ein Sample oder nimm direkt auf. Den Text kannst du prüfen, als Songtext speichern und als Inspiration für die Text-Ideen verwenden (die KI übernimmt nur den Stil, keine Zeilen).</Txt>
+                <View style={s.row}>
+                  <RecordButton hidePlace onSaved={(x) => setTSource(x.id)} />
+                </View>
+                <SamplePicker samples={samples} value={tSource} onChange={setTSource} />
+                <View style={s.row}>
+                  <Btn kind="primary" onPress={() => void toText()} disabled={!tSource || tBusy}>
+                    {tBusy ? 'hört zu …' : 'In Text umwandeln'}
+                  </Btn>
+              </View>
+              </View>
+            ) : (
               <View>
-                <TextInput style={[s.input, s.textInput, { minHeight: 90, textAlignVertical: 'top' }]} multiline placeholder="Erkannter Text" placeholderTextColor={C.dim} value={tText} onChangeText={setTText} />
+                <Txt style={s.small}>Lade einen Songtext als Datei (.txt, .lrc mit Zeitstempeln geht auch) oder füg ihn unten ein. Dann kannst du ihn als Songtext speichern, als Inspiration für die Text-Ideen nutzen oder direkt ins Textfeld übernehmen.</Txt>
+                <View style={s.row}>
+                  <Btn kind="primary" onPress={() => void loadLyrics()}>
+                    Textdatei wählen
+                  </Btn>
+                </View>
+              </View>
+            )}
+            {(tText !== '' || tMode === 'load') && (
+              <View>
+                <TextInput style={[s.input, s.textInput, { minHeight: 90, textAlignVertical: 'top' }]} multiline placeholder={tMode === 'load' ? 'Songtext hier einfügen' : 'Erkannter Text'} placeholderTextColor={C.dim} value={tText} onChangeText={setTText} />
                 <TextInput style={[s.input, s.textInput, { marginTop: 6 }]} placeholder="Titel" placeholderTextColor={C.dim} value={tTitle} onChangeText={setTTitle} />
                 <View style={s.row}>
                   <Chip variant="solid" onPress={saveText}>

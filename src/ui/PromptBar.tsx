@@ -12,6 +12,7 @@ import { useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
 import { Btn, Chip, IconBtn, Spacer, Txt } from './kit';
 import { RecordButton } from './RecordButton';
+import { Knob, KnobRow } from './synth/Knob';
 
 const LENGTHS = [4, 8, 16, 32];
 
@@ -30,6 +31,12 @@ export function PromptBar() {
   const samples = useStore((st) => st.samples);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | null>(null);
+  const [gender, setGender] = useState<'male' | 'female' | null>(null);
+  const [style, setStyle] = useState<'rap' | 'spoken' | 'sing' | null>(null);
+  const [language, setLanguage] = useState<'de' | 'es' | 'en' | null>(null);
+  const [speed, setSpeed] = useState(1);
+  const [expression, setExpression] = useState(0.3);
+  const [stability, setStability] = useState(0.5);
   const [cloning, setCloning] = useState(false);
   const [cloneFrom, setCloneFrom] = useState<string | null>(null);
   const [cloneName, setCloneName] = useState('');
@@ -42,6 +49,14 @@ export function PromptBar() {
       if (chosen && list.some((v) => v.id === chosen)) setVoiceId(chosen);
     });
   }, []);
+  // the style chips are a quick pick for the voice knobs: rap = faster, livelier, less calm; speaking = natural
+  const pickStyle = (st: 'rap' | 'spoken') => {
+    if (style === st) return setStyle(null);
+    setStyle(st);
+    setSpeed(st === 'rap' ? 1.1 : 1);
+    setExpression(st === 'rap' ? 0.6 : 0.3);
+    setStability(st === 'rap' ? 0.35 : 0.5);
+  };
   const pickVoice = (id: string | null) => {
     setVoiceId(id);
     void db.setKv('voiceId', id);
@@ -74,8 +89,17 @@ export function PromptBar() {
     setBusy(true);
     toast('Vocal wird generiert, das kann bis zu einer Minute dauern …');
     try {
-      const s = await generateVocal({ prompt, lyrics, bars, vocalsOnly, ...(voiceId ? { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name } : {}) });
-      toast(`${voiceId ? `In der Stimme „${voices.find((v) => v.id === voiceId)?.name}“ gesungen: ` : ''}„${s.name}“ liegt auf der Vocal-Spur bei Takt ${Math.floor(cursor) + 1}`);
+      const s = await generateVocal({
+        prompt,
+        lyrics,
+        bars,
+        vocalsOnly,
+        ...(language ? { language } : {}),
+        ...(voiceId
+          ? { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name, ...(style && style !== 'sing' ? { style } : {}), speed, expression, stability }
+          : { ...(gender ? { gender } : {}), ...(style ? { style } : {}) }),
+      });
+      toast(`${voiceId ? `In der Stimme „${voices.find((v) => v.id === voiceId)?.name}“ gesprochen: ` : ''}„${s.name}“ liegt auf der Vocal-Spur bei Takt ${Math.floor(cursor) + 1}`);
     } catch (e) {
       toast(errorText(e), 'error');
     } finally {
@@ -146,7 +170,7 @@ export function PromptBar() {
         <View style={s.lyrics}>
           <TextInput
             style={[s.input, s.textInput]}
-            placeholder="Text, der gesungen werden soll (optional)"
+            placeholder={voiceId ? 'Text, den deine Stimme sprechen soll' : 'Text, der gesungen werden soll (optional)'}
             placeholderTextColor={C.dim}
             value={lyrics}
             onChangeText={setLyrics}
@@ -158,8 +182,41 @@ export function PromptBar() {
               {`${l} Takte`}
             </Chip>
           ))}
-          <Chip variant={vocalsOnly || voiceId ? 'on' : 'ghost'} onPress={() => setVocalsOnly(!vocalsOnly)}>
+          <Chip variant={vocalsOnly ? 'on' : 'ghost'} onPress={() => setVocalsOnly(!vocalsOnly)}>
             Nur Vocals
+          </Chip>
+        </View>
+        <View style={s.row}>
+          <Txt style={s.small}>Schnellwahl:</Txt>
+          {voiceId === null && (
+            <>
+              <Chip variant={gender === 'male' ? 'on' : 'ghost'} onPress={() => setGender(gender === 'male' ? null : 'male')}>
+                Männlich
+              </Chip>
+              <Chip variant={gender === 'female' ? 'on' : 'ghost'} onPress={() => setGender(gender === 'female' ? null : 'female')}>
+                Weiblich
+              </Chip>
+            </>
+          )}
+          <Chip variant={style === 'rap' ? 'on' : 'ghost'} onPress={() => pickStyle('rap')}>
+            Rap
+          </Chip>
+          <Chip variant={style === 'spoken' ? 'on' : 'ghost'} onPress={() => pickStyle('spoken')}>
+            Sprechen
+          </Chip>
+          {voiceId === null && (
+            <Chip variant={style === 'sing' ? 'on' : 'ghost'} onPress={() => setStyle(style === 'sing' ? null : 'sing')}>
+              Gesang
+            </Chip>
+          )}
+          <Chip variant={language === 'de' ? 'on' : 'ghost'} onPress={() => setLanguage(language === 'de' ? null : 'de')}>
+            Deutsch
+          </Chip>
+          <Chip variant={language === 'es' ? 'on' : 'ghost'} onPress={() => setLanguage(language === 'es' ? null : 'es')}>
+            Spanisch
+          </Chip>
+          <Chip variant={language === 'en' ? 'on' : 'ghost'} onPress={() => setLanguage(language === 'en' ? null : 'en')}>
+            Englisch
           </Chip>
         </View>
         <View style={s.row}>
@@ -178,9 +235,16 @@ export function PromptBar() {
         </View>
         {voiceId !== null && (
           <View style={s.row}>
-            <Txt style={s.small}>Die Vocals werden zuerst erzeugt und dann in dieser Stimme gesungen (Voice Changer). Ob das bei Gesang so klingt wie gewünscht, probier es kurz aus.</Txt>
+            <Txt style={s.small}>Deine Stimme spricht den Text (sie singt nicht): schreib ihn unten in der gewünschten Sprache. Die Regler stellen Tempo, Ausdruck und Ruhe der Stimme ein.</Txt>
             <Chip onPress={() => void dropVoice(voices.find((v) => v.id === voiceId)!)}>Stimme löschen</Chip>
           </View>
+        )}
+        {voiceId !== null && (
+          <KnobRow>
+            <Knob label="Tempo" value={speed} min={0.7} max={1.2} step={0.05} reset={1} format={(v) => `${v.toFixed(2)}x`} onChange={setSpeed} />
+            <Knob label="Ausdruck" value={expression} min={0} max={1} step={0.05} reset={0.3} format={(v) => `${Math.round(v * 100)} %`} onChange={setExpression} />
+            <Knob label="Ruhe" value={stability} min={0} max={1} step={0.05} reset={0.5} format={(v) => `${Math.round(v * 100)} %`} onChange={setStability} />
+          </KnobRow>
         )}
         {cloning && (
           <View style={s.lyrics}>

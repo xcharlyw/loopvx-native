@@ -15,10 +15,47 @@ interface Body {
   vocalsOnly?: boolean;
   /** A cloned voice (see voice.ts): the generated vocal is converted to it with the Voice Changer. */
   voiceId?: string;
+  /** With a voice: speak the text in it (Text-to-Speech) instead of generating a song; a cloned voice does not sing. */
+  speak?: boolean;
+  gender?: 'male' | 'female';
+  style?: 'rap' | 'spoken' | 'sing';
+  language?: 'de' | 'es' | 'en';
+  /** Spoken-voice settings, 0..1 (speed 0.7..1.2). */
+  stability?: number;
+  expression?: number;
+  speed?: number;
+}
+
+const LANGUAGE_NAME = { de: 'German', es: 'Spanish', en: 'English' } as const;
+const STYLE_TEXT = { rap: 'rapped, rhythmic rap delivery', spoken: 'spoken word, talking, not sung', sing: 'sung melodic' } as const;
+
+/** Gender, delivery and language as a sentence for the music prompt. */
+export function traitsText(b: Body): string {
+  const parts: string[] = [];
+  if (b.gender === 'male' || b.gender === 'female') parts.push(`${b.gender === 'male' ? 'Male' : 'Female'} vocalist`);
+  if (b.style && STYLE_TEXT[b.style]) parts.push(`${STYLE_TEXT[b.style]} vocal`);
+  if (b.language && LANGUAGE_NAME[b.language]) parts.push(`in ${LANGUAGE_NAME[b.language]} language, ${LANGUAGE_NAME[b.language]} lyrics only`);
+  return parts.length ? `${parts.join(', ')}.` : '';
+}
+
+const clamp = (n: unknown, lo: number, hi: number, fallback: number) => (typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback);
+
+/** ElevenLabs Text-to-Speech settings from the knobs; rap runs a bit faster than plain speech unless the knob says otherwise. */
+export function speechSettings(b: Body) {
+  const rap = b.style === 'rap';
+  return {
+    stability: clamp(b.stability, 0, 1, rap ? 0.35 : 0.5),
+    similarity_boost: 0.85,
+    style: clamp(b.expression, 0, 1, rap ? 0.6 : 0.3),
+    speed: clamp(b.speed, 0.7, 1.2, rap ? 1.1 : 1),
+    use_speaker_boost: true,
+  };
 }
 
 export function buildPrompt(b: Body): string {
   const parts = [b.prompt?.trim() || 'Powerful female vocal hook for a hard techno track'];
+  const traits = traitsText(b);
+  if (traits) parts.push(traits);
   if (b.bpm) parts.push(`Tempo exactly ${b.bpm} BPM.`);
   if (b.key) parts.push(`Key: ${b.key}.`);
   if (b.vocalsOnly) parts.push('Focus on a clear, upfront lead vocal with minimal backing.');
@@ -49,6 +86,29 @@ export async function POST(req: Request): Promise<Response> {
     body = (await req.json()) as Body;
   } catch {
     return text(400, 'Ungültige Anfrage');
+  }
+
+  if (body.speak) {
+    if (!body.voiceId || !/^[\w-]{6,64}$/.test(body.voiceId)) return text(400, 'Ungültige Stimmen-ID');
+    const words = (body.lyrics?.trim() || body.prompt?.trim() || '').slice(0, 2500);
+    if (!words) return text(400, 'Bitte gib den Text ein, den deine Stimme sprechen soll');
+    const model = process.env.ELEVENLABS_TTS_MODEL ?? 'eleven_multilingual_v2';
+    const tts = await fetch(`${ELEVEN}/text-to-speech/${body.voiceId}?output_format=mp3_44100_128`, {
+      method: 'POST',
+      headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: words,
+        model_id: model,
+        voice_settings: speechSettings(body),
+        // the multilingual model finds the language in the text; the faster models take it explicitly
+        ...(body.language && /turbo|flash/.test(model) ? { language_code: body.language } : {}),
+      }),
+    });
+    if (!tts.ok) return text(tts.status, `ElevenLabs Sprechen: ${await tts.text()}`);
+    return new Response(await tts.arrayBuffer(), {
+      status: 200,
+      headers: { 'Content-Type': tts.headers.get('content-type') ?? 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Id': body.voiceId },
+    });
   }
 
   const music = await fetch(`${ELEVEN}/music`, {

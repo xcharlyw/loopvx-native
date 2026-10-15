@@ -1,5 +1,5 @@
 import { zipSync } from 'fflate';
-import { POST, buildPrompt, lengthMs } from '../api/vocals';
+import { POST, buildPrompt, lengthMs, speechSettings, traitsText } from '../api/vocals';
 
 describe('vocal request building', () => {
   it('puts tempo, key and lyrics into the prompt', () => {
@@ -48,6 +48,7 @@ describe('POST /api/vocals', () => {
         const zip = zipSync({ 'instrumental.mp3': new Uint8Array([9]), 'vocals.mp3': new Uint8Array([7, 7]) });
         return new Response(zip, { headers: { 'content-type': 'application/zip' } });
       }
+      if (url.includes('/v1/text-to-speech/')) return new Response(new Uint8Array([4, 4]), { headers: { 'content-type': 'audio/mpeg' } });
       if (url.includes('/v1/speech-to-speech/')) return new Response(new Uint8Array([5, 5, 5]), { headers: { 'content-type': 'audio/mpeg' } });
       return new Response('not found', { status: 404 });
     });
@@ -95,5 +96,40 @@ describe('POST /api/vocals', () => {
   it('rejects a malformed voice id', async () => {
     setup();
     expect((await POST(request({ prompt: 'x', voiceId: '../x' }))).status).toBe(400);
+  });
+
+  it('speaks the text in a cloned voice instead of generating a song', async () => {
+    const calls = setup();
+    const res = await POST(request({ speak: true, voiceId: 'voice_abc123', lyrics: 'Hallo Welt', style: 'rap', speed: 1.15 }));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-voice-id')).toBe('voice_abc123');
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([4, 4]));
+    expect(calls.some((c) => c.url.endsWith('/v1/music'))).toBe(false);
+    const tts = calls.find((c) => c.url.includes('/v1/text-to-speech/voice_abc123'))!;
+    const body = JSON.parse(tts.init!.body as string);
+    expect(body.text).toBe('Hallo Welt');
+    expect(body.voice_settings.speed).toBe(1.15);
+  });
+
+  it('needs a text to speak', async () => {
+    setup();
+    expect((await POST(request({ speak: true, voiceId: 'voice_abc123' }))).status).toBe(400);
+  });
+});
+
+describe('vocal traits', () => {
+  it('describes gender, delivery and language for the music prompt', () => {
+    const t = traitsText({ gender: 'male', style: 'rap', language: 'de' });
+    expect(t).toContain('Male vocalist');
+    expect(t).toContain('rap');
+    expect(t).toContain('German');
+    expect(buildPrompt({ prompt: 'hook', gender: 'female', style: 'sing', language: 'es' })).toContain('Spanish');
+    expect(traitsText({})).toBe('');
+  });
+
+  it('turns the knobs into speech settings within range', () => {
+    expect(speechSettings({ speed: 5, stability: -1 })).toMatchObject({ speed: 1.2, stability: 0 });
+    expect(speechSettings({ style: 'rap' }).speed).toBeGreaterThan(1);
+    expect(speechSettings({}).speed).toBe(1);
   });
 });

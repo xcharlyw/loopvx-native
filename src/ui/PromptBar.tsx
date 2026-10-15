@@ -10,7 +10,7 @@ import { inspirationOf, removeSongText, titleFromText, upsertSongText, type Song
 import { transcribeSample } from '../lib/transcribe';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
-import { voiceSources } from '../lib/voiceClip';
+import { SamplePicker } from './SamplePicker';
 import { FACTORY_PRESETS, presetVoice, removePreset, upsertPreset, type VocalPreset } from '../lib/vocalPresets';
 import { cloneVoice, loadVoices, removeVoice, type Voice } from '../lib/voices';
 import { useSmall } from './hooks';
@@ -193,8 +193,6 @@ export function PromptBar() {
     setVoiceId(id);
     void db.setKv('voiceId', id);
   };
-  const [search, setSearch] = useState('');
-  const sources = voiceSources(samples, search);
 
   if (!open) {
     return (
@@ -351,14 +349,7 @@ export function PromptBar() {
             <View style={s.row}>
               <RecordButton hidePlace onSaved={(x) => setTSource(x.id)} />
             </View>
-            <TextInput style={[s.input, s.textInput]} placeholder="Aufnahme suchen (Name)" placeholderTextColor={C.dim} value={tSearch} onChangeText={setTSearch} />
-            <View style={s.row}>
-              {voiceSources(samples, tSearch).map((x) => (
-                <Chip key={x.id} variant={tSource === x.id ? 'on' : 'ghost'} onPress={() => setTSource(x.id)}>
-                  {x.name.slice(0, 28)}
-                </Chip>
-              ))}
-            </View>
+            <SamplePicker samples={samples} value={tSource} onChange={setTSource} />
             <View style={s.row}>
               <Btn kind="primary" onPress={() => void toText()} disabled={!tSource || tBusy}>
                 {tBusy ? 'hört zu …' : 'In Text umwandeln'}
@@ -552,15 +543,7 @@ export function PromptBar() {
                 }}
               />
             </View>
-            <TextInput style={[s.input, s.textInput, { marginTop: 8 }]} placeholder="Aufnahme suchen (Name)" placeholderTextColor={C.dim} value={search} onChangeText={setSearch} />
-            <View style={s.row}>
-              {sources.length === 0 && <Txt style={s.small}>Keine passende Aufnahme in der Library.</Txt>}
-              {sources.map((x) => (
-                <Chip key={x.id} variant={cloneFrom === x.id ? 'on' : 'ghost'} onPress={() => setCloneFrom(x.id)}>
-                  {x.name.slice(0, 28)}
-                </Chip>
-              ))}
-            </View>
+            <SamplePicker samples={samples} value={cloneFrom} onChange={setCloneFrom} />
             <TextInput style={[s.input, s.textInput, { marginTop: 8 }]} placeholder="Name der Stimme" placeholderTextColor={C.dim} value={cloneName} onChangeText={setCloneName} />
             <View style={s.row}>
               <Chip variant={consent ? 'on' : 'ghost'} onPress={() => setConsent(!consent)}>

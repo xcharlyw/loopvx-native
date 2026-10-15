@@ -1,4 +1,4 @@
-import { voiceClip, voiceSources } from './voiceClip';
+import { samplesInFolder, sourceFolders, voiceClip, voiceSources } from './voiceClip';
 
 describe('voiceClip', () => {
   it('mixes to mono and goes down to about 22 kHz', () => {
@@ -31,5 +31,30 @@ describe('voiceSources', () => {
   it('narrows by name and limits the list', () => {
     expect(voiceSources(list, 'memo').map((x) => x.name)).toEqual(['Sprachmemo.m4a']);
     expect(voiceSources(list, '', 1)).toHaveLength(1);
+  });
+});
+
+describe('sourceFolders / samplesInFolder', () => {
+  const list = [
+    { name: 'a.wav', folder: 'Vocals', addedAt: 1 },
+    { name: 'b.wav', folder: 'Vocals', addedAt: 3 },
+    { name: 'memo.m4a', addedAt: 2 },
+    { name: 'k.wav', folder: 'Aufnahmen', addedAt: 4 },
+    { name: 'ai.mp3', folder: 'AI Vocals', addedAt: 5 },
+  ];
+
+  it('lists the folders with counts, no-folder last, without AI Vocals', () => {
+    expect(sourceFolders(list)).toEqual([
+      { path: 'Aufnahmen', count: 1 },
+      { path: 'Vocals', count: 2 },
+      { path: '', count: 1 },
+    ]);
+  });
+
+  it('shows one folder newest first, all folders, or searches everywhere', () => {
+    expect(samplesInFolder(list, 'Vocals', '').map((x) => x.name)).toEqual(['b.wav', 'a.wav']);
+    expect(samplesInFolder(list, '', '').map((x) => x.name)).toEqual(['memo.m4a']);
+    expect(samplesInFolder(list, null, '').map((x) => x.name)).toEqual(['k.wav', 'b.wav', 'memo.m4a', 'a.wav']);
+    expect(samplesInFolder(list, 'Vocals', 'memo').map((x) => x.name)).toEqual(['memo.m4a']);
   });
 });

@@ -41,3 +41,37 @@ export function voiceSources<T extends SourceLike>(samples: T[], query: string, 
     .sort((a, b) => b.addedAt - a.addedAt)
     .slice(0, limit);
 }
+
+export interface SourceFolder {
+  /** Folder path as stored on the samples ('' = samples without a folder). */
+  path: string;
+  count: number;
+}
+
+/** The Library folders that hold samples to pick from (generated "AI Vocals" left out), by name; no-folder samples last. */
+export function sourceFolders<T extends SourceLike>(samples: T[]): SourceFolder[] {
+  const counts = new Map<string, number>();
+  for (const x of samples) {
+    if (x.folder === 'AI Vocals') continue;
+    const p = x.folder ?? '';
+    counts.set(p, (counts.get(p) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([path, count]) => ({ path, count }))
+    .sort((a, b) => (a.path === '' ? 1 : b.path === '' ? -1 : a.path.localeCompare(b.path, 'de', { numeric: true })));
+}
+
+/**
+ * Samples of one Library folder (`folder` null = every folder, '' = samples without a folder), narrowed by a name search.
+ * A search looks through all folders. Newest first within the folder.
+ */
+export function samplesInFolder<T extends SourceLike>(samples: T[], folder: string | null, query: string): T[] {
+  const q = query.trim().toLowerCase();
+  return samples
+    .filter((x) => {
+      if (x.folder === 'AI Vocals') return false;
+      if (q) return x.name.toLowerCase().includes(q);
+      return folder === null || (x.folder ?? '') === folder;
+    })
+    .sort((a, b) => b.addedAt - a.addedAt);
+}

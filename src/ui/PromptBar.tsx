@@ -5,6 +5,7 @@ import { formatBarPosition } from '../audio/timing';
 import { errorText, setState, toast, useStore } from '../lib/store';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
+import { voiceSources } from '../lib/voiceClip';
 import { cloneVoice, loadVoices, removeVoice, type Voice } from '../lib/voices';
 import { useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
@@ -35,11 +36,8 @@ export function PromptBar() {
   useEffect(() => {
     void loadVoices().then(setVoices);
   }, []);
-  // own recordings, uploaded mp3s and vocal samples (not the generated ones)
-  const sources = samples
-    .filter((x) => (x.category === 'vocal' || x.folder === 'Aufnahmen') && x.folder !== 'AI Vocals')
-    .sort((a, b) => b.addedAt - a.addedAt)
-    .slice(0, 12);
+  const [search, setSearch] = useState('');
+  const sources = voiceSources(samples, search);
 
   if (!open) {
     return (
@@ -176,9 +174,10 @@ export function PromptBar() {
         )}
         {cloning && (
           <View style={s.lyrics}>
-            <Txt style={s.small}>Wähle eine Aufnahme aus der Library (Library → Aufnahme, oder eine mp3 hochladen). Je mehr saubere Stimme, desto besser: am besten eine bis zwei Minuten, es werden höchstens die ersten 80 Sekunden verwendet.</Txt>
+            <Txt style={s.small}>Wähle eine Aufnahme aus der Library: eine eigene Aufnahme, ein hochgeladenes iPhone-Sprachmemo oder eine mp3 (egal in welcher Kategorie, die neuesten stehen oben, mit dem Suchfeld findest du den Rest). Je mehr saubere Stimme, desto besser: am besten eine bis zwei Minuten, es werden höchstens die ersten 80 Sekunden verwendet.</Txt>
+            <TextInput style={[s.input, s.textInput, { marginTop: 8 }]} placeholder="Aufnahme suchen (Name)" placeholderTextColor={C.dim} value={search} onChangeText={setSearch} />
             <View style={s.row}>
-              {sources.length === 0 && <Txt style={s.small}>Noch keine Aufnahme in der Library.</Txt>}
+              {sources.length === 0 && <Txt style={s.small}>Keine passende Aufnahme in der Library.</Txt>}
               {sources.map((x) => (
                 <Chip key={x.id} variant={cloneFrom === x.id ? 'on' : 'ghost'} onPress={() => setCloneFrom(x.id)}>
                   {x.name.slice(0, 28)}

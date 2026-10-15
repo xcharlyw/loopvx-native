@@ -18,3 +18,21 @@ export function voiceClip(channels: Float32Array[], sampleRate: number, maxSecon
   return { data: out, sampleRate: sampleRate / factor };
 }
 
+
+interface SourceLike {
+  name: string;
+  folder?: string;
+  addedAt: number;
+}
+
+/**
+ * Samples that can be cloned from: any sample (an iPhone voice memo is not filed as a vocal, it can come in as a loop or
+ * anything), newest first, optionally narrowed by a name search. The generated "AI Vocals" are left out.
+ */
+export function voiceSources<T extends SourceLike>(samples: T[], query: string, limit = 12): T[] {
+  const q = query.trim().toLowerCase();
+  return samples
+    .filter((x) => x.folder !== 'AI Vocals' && (!q || x.name.toLowerCase().includes(q)))
+    .sort((a, b) => b.addedAt - a.addedAt)
+    .slice(0, limit);
+}

@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { formatBarPosition } from '../audio/timing';
+import { uid } from '../lib/project';
 import { errorText, setState, toast, useStore } from '../lib/store';
 import { db } from '../storage/db';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
 import { voiceSources } from '../lib/voiceClip';
+import { presetVoice, removePreset, upsertPreset, type VocalPreset } from '../lib/vocalPresets';
 import { cloneVoice, loadVoices, removeVoice, type Voice } from '../lib/voices';
 import { useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
@@ -37,11 +39,18 @@ export function PromptBar() {
   const [speed, setSpeed] = useState(1);
   const [expression, setExpression] = useState(0.3);
   const [stability, setStability] = useState(0.5);
+  const [presets, setPresets] = useState<VocalPreset[]>([]);
+  const [presetId, setPresetId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [presetName, setPresetName] = useState('');
   const [cloning, setCloning] = useState(false);
   const [cloneFrom, setCloneFrom] = useState<string | null>(null);
   const [cloneName, setCloneName] = useState('');
   const [consent, setConsent] = useState(false);
   const [cloneBusy, setCloneBusy] = useState(false);
+  useEffect(() => {
+    void db.getKv<VocalPreset[]>('vocalPresets').then((p) => setPresets(p ?? []));
+  }, []);
   useEffect(() => {
     // the chosen voice is remembered, otherwise every restart goes back to the AI voice
     void Promise.all([loadVoices(), db.getKv<string>('voiceId')]).then(([list, chosen]) => {
@@ -49,6 +58,35 @@ export function PromptBar() {
       if (chosen && list.some((v) => v.id === chosen)) setVoiceId(chosen);
     });
   }, []);
+  const storePresets = (list: VocalPreset[]) => {
+    setPresets(list);
+    void db.setKv('vocalPresets', list);
+  };
+  const savePreset = () => {
+    const name = presetName.trim();
+    if (!name) return;
+    const preset: VocalPreset = { id: uid(), name, prompt, lyrics, bars, vocalsOnly, gender, style, language, speed, expression, stability, voiceId };
+    const list = upsertPreset(presets, preset);
+    storePresets(list);
+    setPresetId(list.find((p) => p.name.toLowerCase() === name.toLowerCase())?.id ?? null);
+    setSaving(false);
+    setPresetName('');
+    toast(`Preset „${name}“ gespeichert.`);
+  };
+  const loadPreset = (p: VocalPreset) => {
+    setPresetId(p.id);
+    setPrompt(p.prompt);
+    setLyrics(p.lyrics);
+    setBars(p.bars);
+    setVocalsOnly(p.vocalsOnly);
+    setGender(p.gender);
+    setStyle(p.style);
+    setLanguage(p.language);
+    setSpeed(p.speed);
+    setExpression(p.expression);
+    setStability(p.stability);
+    pickVoice(presetVoice(p, voices.map((v) => v.id)));
+  };
   // the style chips are a quick pick for the voice knobs: rap = faster, livelier, less calm; speaking = natural
   const pickStyle = (st: 'rap' | 'spoken') => {
     if (style === st) return setStyle(null);
@@ -186,6 +224,36 @@ export function PromptBar() {
             Nur Vocals
           </Chip>
         </View>
+        <View style={s.row}>
+          <Txt style={s.small}>Presets:</Txt>
+          {presets.length === 0 && <Txt style={s.small}>noch keine gespeichert</Txt>}
+          {presets.map((p) => (
+            <Chip key={p.id} variant={presetId === p.id ? 'on' : 'ghost'} onPress={() => loadPreset(p)}>
+              {p.name}
+            </Chip>
+          ))}
+          <Chip variant={saving ? 'on' : 'ghost'} onPress={() => setSaving(!saving)}>
+            ＋ Speichern
+          </Chip>
+          {presetId !== null && (
+            <Chip
+              onPress={() => {
+                storePresets(removePreset(presets, presetId));
+                setPresetId(null);
+              }}
+            >
+              Preset löschen
+            </Chip>
+          )}
+        </View>
+        {saving && (
+          <View style={s.row}>
+            <TextInput style={[s.input, s.textInput]} placeholder="Name des Presets, z. B. Rave-Hook deutsch" placeholderTextColor={C.dim} value={presetName} onChangeText={setPresetName} onSubmitEditing={savePreset} />
+            <Btn kind="primary" onPress={savePreset} disabled={!presetName.trim()}>
+              Speichern
+            </Btn>
+          </View>
+        )}
         <View style={s.row}>
           <Txt style={s.small}>Schnellwahl:</Txt>
           {voiceId === null && (

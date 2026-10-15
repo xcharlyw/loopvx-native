@@ -62,14 +62,13 @@ export function sourceFolders<T extends SourceLike>(samples: T[]): SourceFolder[
 }
 
 /**
- * Samples of one Library folder (`folder` null = every folder, '' = samples without a folder), narrowed by a name search.
+ * Samples of one Library folder, the generated "AI Vocals" included (`folder` null = every folder, '' = samples without a folder), narrowed by a name search.
  * A search looks through all folders. Newest first within the folder.
  */
 export function samplesInFolder<T extends SourceLike>(samples: T[], folder: string | null, query: string): T[] {
   const q = query.trim().toLowerCase();
   return samples
     .filter((x) => {
-      if (x.folder === 'AI Vocals') return false;
       if (q) return x.name.toLowerCase().includes(q);
       return folder === null || (x.folder ?? '') === folder;
     })

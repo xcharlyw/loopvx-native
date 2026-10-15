@@ -19,8 +19,7 @@ export function SamplePicker({ samples, value, onChange }: { samples: PickSample
   const [path, setPath] = useState('');
   const [query, setQuery] = useState('');
   const searching = query.trim() !== '';
-  const usable = samples.filter((x) => x.folder !== 'AI Vocals');
-  const folders = childFolders(allFolders(usable, extra), path).filter((f) => f !== 'AI Vocals');
+  const folders = childFolders(allFolders(samples, extra), path);
   const here = searching ? samplesInFolder(samples, null, query) : samplesInFolder(samples, path, '').filter((x) => normPath(x.folder) === path);
   const parts = path ? path.split('/') : [];
   return (
@@ -41,7 +40,7 @@ export function SamplePicker({ samples, value, onChange }: { samples: PickSample
           folders.map((f) => (
             <Pressable key={f} style={s.folder} onPress={() => setPath(f)} accessibilityLabel={`Ordner ${nameOf(f)}`}>
               <Txt style={s.rowName} numberOfLines={1}>{`📁 ${nameOf(f)}`}</Txt>
-              <Txt style={s.rowFolder}>{countIn(usable, f).total}</Txt>
+              <Txt style={s.rowFolder}>{countIn(samples, f).total}</Txt>
             </Pressable>
           ))}
         {here.map((x) => (

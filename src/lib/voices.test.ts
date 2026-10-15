@@ -54,7 +54,8 @@ describe('sourceFolders / samplesInFolder', () => {
   it('shows one folder newest first, all folders, or searches everywhere', () => {
     expect(samplesInFolder(list, 'Vocals', '').map((x) => x.name)).toEqual(['b.wav', 'a.wav']);
     expect(samplesInFolder(list, '', '').map((x) => x.name)).toEqual(['memo.m4a']);
-    expect(samplesInFolder(list, null, '').map((x) => x.name)).toEqual(['k.wav', 'b.wav', 'memo.m4a', 'a.wav']);
+    expect(samplesInFolder(list, null, '').map((x) => x.name)).toEqual(['ai.mp3', 'k.wav', 'b.wav', 'memo.m4a', 'a.wav']);
+    expect(samplesInFolder(list, 'AI Vocals', '').map((x) => x.name)).toEqual(['ai.mp3']);
     expect(samplesInFolder(list, 'Vocals', 'memo').map((x) => x.name)).toEqual(['memo.m4a']);
   });
 });

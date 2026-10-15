@@ -13,7 +13,8 @@ import {
   PeriodicWave,
 } from 'react-native-audio-api';
 import { Platform } from 'react-native';
-import type { Clip, OscWave, Project, Sample, SynthSettings, Track } from '../types';
+import type { ArpSettings, Clip, OscWave, Project, Sample, SeqSettings, SynthSettings, Track } from '../types';
+import { applyNoteFx } from './notefx';
 import { arrangementSampleIds, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { DECAY_FLOOR, padAt, planHit } from './drum909';
@@ -448,6 +449,7 @@ function scheduleNotes(
   ctx: AnyContext,
   clip: Clip,
   synth: SynthSettings,
+  fx: { arp?: ArpSettings; seq?: SeqSettings },
   buffers: Map<string, AudioBuffer>,
   dest: AudioNode,
   spb: number,
@@ -461,7 +463,9 @@ function scheduleNotes(
   const clipEnd = clip.start + clip.length;
   const kit = synth.wave === 'kit909';
   let openHat: { voice: Voice; at: number } | undefined; // a closed hat cuts the open hat before it
-  for (const note of kit ? [...(clip.notes ?? [])].sort((a, b) => a.start - b.start) : clip.notes ?? []) {
+  // The track's MIDI effects (arpeggiator, step sequencer) rewrite the notes right before they are scheduled: live and export alike.
+  const played = applyNoteFx(clip.notes ?? [], fx, clip.length);
+  for (const note of kit ? [...played].sort((a, b) => a.start - b.start) : played) {
     const start = clip.start + note.start;
     const end = Math.min(start + note.length, clipEnd, cutBar);
     const begin = Math.max(start, fromBar);
@@ -503,7 +507,7 @@ function scheduleWindow(
     for (const clip of track.clips) {
       if (clip.muted) continue; // deactivated clip: silent live and in the export
       if (clip.notes) {
-        sources.push(...scheduleNotes(ctx, clip, trackSynth(track), buffers, trackDest(track), spb, time, fromBar, toBar, cutBar, fresh));
+        sources.push(...scheduleNotes(ctx, clip, trackSynth(track), { arp: track.arp, seq: track.seq }, buffers, trackDest(track), spb, time, fromBar, toBar, cutBar, fresh));
         continue;
       }
       const sample = samples.get(clip.sampleId);

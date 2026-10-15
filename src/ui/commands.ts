@@ -20,8 +20,10 @@ import type { KeySpec } from '../lib/keymap';
 import { addMarker } from '../lib/markers';
 import { startStemSeparation } from '../lib/stems';
 import { runLoadMissing } from '../lib/sync';
+import { closeWindow } from '../lib/windowActions';
+import type { WinId } from '../lib/windows';
 import { createMidiTrack, createProject, createTrack, findClip, quantizeNotes, updateClip } from '../lib/project';
-import { flushSave, getState, openProject, redo, setMetronome, setState, toast, undo, updateProject, type Panel } from '../lib/store';
+import { flushSave, getState, openProject, redo, setMetronome, setState, toast, undo, updateProject, type AppState, type Panel } from '../lib/store';
 import { db } from '../storage/db';
 import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 
@@ -30,6 +32,13 @@ import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 // for itself (Cmd+T new tab, Cmd+N new window, Cmd+W close) a second key is listed that the browser leaves alone.
 
 export type MenuGroup = 'Datei' | 'Bearbeiten' | 'Erstellen' | 'Ansicht' | 'Optionen' | 'Hilfe';
+/** Opens a plugin panel (a floating window on wide screens, a sheet on a phone), or closes it when it is already open. */
+function togglePlugin(id: WinId, extra: Partial<AppState> = {}) {
+  const s = getState();
+  if (s.windows.some((w) => w.id === id)) return closeWindow(id);
+  setState({ ...extra, panel: s.panel === id ? 'none' : id });
+}
+
 export const MENU_GROUPS: MenuGroup[] = ['Datei', 'Bearbeiten', 'Erstellen', 'Ansicht', 'Optionen', 'Hilfe'];
 
 export interface Command {
@@ -134,7 +143,9 @@ export const COMMANDS: Command[] = [
   { id: 'view', label: 'Session / Arrangement umschalten', group: 'Ansicht', keys: [{ keys: ['Tab'], shift: false }], run: () => { engine.stop(); setState((st) => ({ view: st.view === 'arrange' ? 'session' : 'arrange', armedSampleId: null })); } },
   { id: 'browser', label: 'Browser (Library)', group: 'Ansicht', separator: true, keys: [{ letter: 'b', mod: true, alt: true }], run: toggleBrowser },
   { id: 'mixer', label: 'Mixer', group: 'Ansicht', keys: [{ letter: 'm', mod: true, alt: true }], run: () => toggle('mixer') },
-  { id: 'devices', label: 'Geräte der Spur', group: 'Ansicht', keys: [{ letter: 'l', mod: true, alt: true }], run: () => selectedTrack() && setState((st) => ({ panel: st.panel === 'devices' ? 'none' : 'devices', devicesFor: 'track' })), enabled: () => !!selectedTrack() },
+  { id: 'devices', label: 'Geräte der Spur', group: 'Ansicht', keys: [{ letter: 'l', mod: true, alt: true }], run: () => selectedTrack() && togglePlugin('devices', { devicesFor: 'track' }), enabled: () => !!selectedTrack() },
+  { id: 'instrument', label: 'Sound der Spur (Synth)', group: 'Ansicht', run: () => selectedTrack() && togglePlugin('instrument'), enabled: () => !!selectedTrack() },
+  { id: 'notefx', label: 'MIDI-Effekte (Arpeggiator, Sequencer)', group: 'Ansicht', run: () => selectedTrack() && togglePlugin('notefx'), enabled: () => !!selectedTrack() },
   { id: 'clipView', label: 'Clip / Piano Roll', group: 'Ansicht', keys: [{ keys: ['Tab'], shift: true }], run: () => getState().selectedClipId && setState((st) => ({ panel: st.panel === 'clip' ? 'piano' : 'clip' })), enabled: hasClip },
   { id: 'autoMode', label: 'Automations-Modus', group: 'Ansicht', separator: true, keys: [{ letter: 'a' }], run: () => setState((st) => ({ autoMode: !st.autoMode })), enabled: arrange },
   { id: 'zoomIn', label: 'Hineinzoomen', group: 'Ansicht', separator: true, keys: [{ keys: ['+', '='] }], run: () => zoom(1.4) },

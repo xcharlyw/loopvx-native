@@ -223,6 +223,9 @@ export function TrackPanel() {
           <Btn kind="primary" onPress={() => setState({ panel: 'instrument' })}>
             Sound wählen & bearbeiten
           </Btn>
+          <Btn accessibilityLabel="MIDI-Effekte öffnen" onPress={() => setState({ panel: 'notefx' })}>
+            Arpeggiator · Sequencer
+          </Btn>
         </View>
       </Section>
         </>

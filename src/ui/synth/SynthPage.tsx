@@ -44,7 +44,7 @@ interface Props {
 }
 
 /** A section with a Serum-like header: a LED (on/off where the section can be switched), the title in small caps, a control on the right. */
-function Panel({ title, on, onToggle, right, color = C.accent, children, style }: { title: string; on?: boolean; onToggle?: () => void; right?: ReactNode; color?: string; children: ReactNode; style?: object }) {
+export function Panel({ title, on, onToggle, right, color = C.accent, children, style }: { title: string; on?: boolean; onToggle?: () => void; right?: ReactNode; color?: string; children: ReactNode; style?: object }) {
   return (
     <View style={[s.panel, style]}>
       <View style={s.head}>

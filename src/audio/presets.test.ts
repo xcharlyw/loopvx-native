@@ -103,3 +103,16 @@ describe('wavetable presets', () => {
     }
   });
 });
+
+describe('the 40 genre presets', () => {
+  it('bring the library to at least 70 sounds with the families Karl asked for', () => {
+    expect(PRESETS.length).toBeGreaterThanOrEqual(70);
+    const named = (re: RegExp) => PRESETS.filter((p) => re.test(p.name)).length;
+    expect(named(/reese/i)).toBeGreaterThanOrEqual(8);
+    expect(named(/hoover|mentasm/i)).toBeGreaterThanOrEqual(5);
+    expect(named(/screech/i)).toBeGreaterThanOrEqual(6);
+    expect(named(/trance lead|uplifting|pluck lead|voice lead/i)).toBeGreaterThanOrEqual(5);
+    expect(named(/stab/i)).toBeGreaterThanOrEqual(7);
+    expect(named(/pluck|pizzicato|kalimba/i)).toBeGreaterThanOrEqual(8);
+  });
+});

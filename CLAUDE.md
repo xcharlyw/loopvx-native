@@ -256,6 +256,28 @@ position is modulated by a crossfade of two frames** (pos and pos+amount, `morph
 first posA / posB slot is used. Measured offline in Chromium: Fold position 0 → 1 raises the zero-crossing rate 230 → 1711 Hz, an LFO on the cutoff moves the level over time (0.087 → 0.059),
 ENV 2 → position opens the sound at the note start (385 vs 230 Hz), pan LFO swings the left channel (0.04 ↔ 0.11). UI (`ui/synth/SynthPage.tsx`, Karl: "like Serum 2, but simple, few knobs"): for the Synth instrument the Sound panel is **one page** (tabs SYNTH / FX), sections with a Serum-like head (LED, title): OSC A and OSC B (◀ name ▶ through the four basic waves and the wavetables, tap the name for the list, the picture (`TableScope` stack or `WaveScope`), knobs Pos / Unison / Detune, B: LED switch, Oktave, Level), FILTER (LP/HP/BP, 24 dB, picture, Cutoff / Reso / Env), AMP (ADSR, Sub, Noise) and MOD (the matrix rows: tap source / target to cycle, Betrag knob, ✕; LFO 1 rate + shape + cutoff depth; LFO 2 and ENV 2 settings appear once a routing uses them). Side by side on wide panels (>= 620 px), stacked on a phone. Picking a wavetable on a sound with a dull filter (cutoff < 6 kHz) opens the cutoff to 9 kHz: the table's colour is in the upper harmonics, so every table sounded alike behind a closed filter. Not heard on a phone; native `createPeriodicWave` is untested (web only).
 
+## 40 genre presets, arpeggiator and step sequencer, plugin windows
+
+**Presets** (`presets.ts`, now 77): next to the first set there are Reese (Dark, Wide, Growl, Neuro, Sub, Rave), Hoover (Classic with the env→pitch dive, Mentasm sync, Gabber, Soft), Screech (Sync, Fold,
+Acid, Dirty, High), Trance Leads (Classic, Uplifting, Pluck, Hard, Soft, Voice), Stabs (Hoover, Minor, Hard, FM, Organ, Detuned), Plucks (Sine, Saw, Square, Pizzicato, Kalimba, Glass), Bass (Long Rumble,
+Wobble, FM, Sub Boom) and Pads (Glass, Ocean, Choir). They use the wavetables and the mod matrix where that makes the sound (`presets.test.ts` checks the families and the sane ranges).
+
+**MIDI effects** (`audio/notefx.ts`, pure, tested; types `ArpSettings`/`SeqSettings` on `Track.arp` / `Track.seq`, **not** in `track.synth`, so loading a sound preset keeps them): they rewrite a clip's notes right
+before `scheduleNotes` (live and export alike, `applyNoteFx`, cached per notes array); the clips and the piano roll stay as drawn. **Arpeggiator** (`arpNotes`): at every step of the grid the notes held at that moment
+become one note of the run: pattern up / down / up-down (ends not doubled) / random (seeded by the step) / played / chord, rate 1/8, 1/8T, 1/16, 1/16T, 1/32 (steps per bar 8, 12, 16, 24, 32), 1–4 octaves, gate, swing
+(every second step late); the run restarts when a new note begins. **Step sequencer** (`seqNotes`): 16 steps (on, semitones, accent), length 1–16, the pattern is aligned to the bar grid and plays on **every held note**,
+shifted to that note: draw one long root note and the preset makes the line (rolling bass, acid, gallop …). Only one of the two is on (turning one on turns the other off; sequencer first if both were). Presets in
+`notefxPresets.ts` (13 arp, 16 sequencer, tested). UI `NoteFxPanel.tsx` (panel `notefx`, opened from the TrackPanel button "Arpeggiator · Sequencer" or Ansicht → "MIDI-Effekte"): tabs, a ◀ preset ▶ bar with a list,
+a one-bar picture of what the effect plays for a demo chord / root note, pattern and rate chips, knobs, and for the sequencer a step grid (tap a step to select it, then on/off, accent, "Ton" knob). Measured offline in Chromium:
+arp up on a held chord = one note per 1/16 (16 active windows), chord 1/8 = every second window, a 4-step pattern with steps 1 and 3 = alternating windows.
+
+**Plugin windows** (Karl: "as own windows to drag around like Ableton"): on wide screens (web, the menu bar shown) the panels `instrument`, `devices` and `notefx` are not docked sheets but **floating windows**
+(`FloatingWindow.tsx`, list logic in `lib/windows.ts`, tested: cascade, front, close, move/resize clamped so the title bar stays reachable, collapse, refit; actions in `lib/windowActions.ts`; `state.windows`, the last is in
+front, `state.winMemory` reopens a window where it was closed). `Shell` redirects `panel: 'instrument' | 'devices' | 'notefx'` to `openWindow` (like the Library column), so every existing "open the sound / devices" button works
+unchanged; the panels' own title row is the title bar (`Sheet` gets `SheetPlace.floating`: drag handlers, ▾ collapse, ✕), the corner grip resizes, a touch anywhere raises the window (`onStartShouldSetResponderCapture`), several can be open
+at once, and a resized browser refits them. The commands "Geräte der Spur" (⌥⌘L), "Sound der Spur (Synth)" and "MIDI-Effekte" toggle them. Phones keep the sheets. Checked in Chromium with the mouse: drag 270/176 px moved the window by
+exactly that, the corner resized, three windows open at once.
+
 ## Sound panel (Serum-style)
 
 `InstrumentPanel` is built like a plugin: preset switcher (◀ ▶ through `PRESETS`), "Instrument laden" tiles

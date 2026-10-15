@@ -109,6 +109,44 @@ export interface SynthSettings {
 
 export type OscWave = 'sawtooth' | 'square' | 'sine' | 'triangle';
 
+export type ArpPattern = 'up' | 'down' | 'updown' | 'random' | 'played' | 'chord';
+
+/** Arpeggiator (a MIDI effect of the track): turns the notes held at each step into a run. Positions are in bars. */
+export interface ArpSettings {
+  on: boolean;
+  pattern: ArpPattern;
+  /** Steps per bar: 8 = 1/8, 16 = 1/16, 24 = 1/16 triplets, 32 = 1/32. */
+  rate: number;
+  /** Octaves the run climbs through, 1..4. */
+  octaves: number;
+  /** Note length as a fraction of a step, 0.05..1. */
+  gate: number;
+  /** Delay of every second step as a fraction of a step, 0..0.5. */
+  swing: number;
+  /** Id of the arp preset this started from (display only). */
+  preset?: string;
+}
+
+/** One step of the step sequencer: on/off, the semitones above the held note, and an accent. */
+export interface SeqStep {
+  on: boolean;
+  semi: number;
+  accent?: boolean;
+}
+
+/** Step sequencer (a MIDI effect of the track): every held note plays the pattern, transposed to that note. */
+export interface SeqSettings {
+  on: boolean;
+  /** Steps per bar (see ArpSettings.rate). */
+  rate: number;
+  /** How many of the 16 steps the pattern uses (1..16). */
+  length: number;
+  steps: SeqStep[];
+  gate: number;
+  swing: number;
+  preset?: string;
+}
+
 export type ModSource = 'lfo1' | 'lfo2' | 'env2';
 export type ModTarget = 'cutoff' | 'reso' | 'pitch' | 'posA' | 'posB' | 'level' | 'pan';
 export interface ModSlot {
@@ -210,6 +248,9 @@ export interface Track {
   fx?: TrackFx;
   /** Plugin slots after the instrument, in signal order (before the DJ filter, drive and fader). */
   devices?: Device[];
+  /** Arpeggiator and step sequencer: MIDI effects that rewrite the track's notes while they play (the clips stay as drawn). */
+  arp?: ArpSettings;
+  seq?: SeqSettings;
   /** Parameter curves over the arrangement (filter sweeps, reverb throws, fades); at most one lane per parameter. */
   automation?: AutomationLane[];
   /** Session grid: one slot per scene. */

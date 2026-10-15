@@ -4,11 +4,12 @@ import { db } from '../storage/db';
 import type { Project, Sample } from '../types';
 import { History } from './history';
 import { createProject, isProject, repairProject } from './project';
+import type { WinRect } from './windows';
 
 export type View = 'arrange' | 'session';
 /** Size of the open panel: full, half (docked below, the arrangement stays usable) or only its title bar. */
 export type SheetSize = 'full' | 'half' | 'bar';
-export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'automation' | 'arranger' | 'markers' | 'shortcuts' | 'menu';
+export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'notefx' | 'automation' | 'arranger' | 'markers' | 'shortcuts' | 'menu';
 
 export interface Toast {
   id: number;
@@ -53,6 +54,10 @@ export interface AppState {
   autoMode: boolean;
   /** Ableton's draw mode (B): a drag over an automation curve draws the line freehand instead of moving points. */
   drawMode: boolean;
+  /** Wide screens: the plugin windows (Sound, Geräte, MIDI-Effekte) floating above the arrangement; the last one is in front. */
+  windows: WinRect[];
+  /** Where each plugin window was when it was closed, so it opens there again. */
+  winMemory: Partial<Record<WinRect['id'], WinRect>>;
   /** What the device panel shows: the selected track's chain or the master bus. */
   devicesFor: 'track' | 'master';
   /** Playhead when stopped (bars). */
@@ -90,6 +95,8 @@ let state: AppState = {
   multiSelect: false,
   autoMode: false,
   drawMode: false,
+  windows: [],
+  winMemory: {},
   devicesFor: 'track',
   cursor: 0,
   zoom: 56,

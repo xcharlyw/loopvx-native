@@ -36,8 +36,15 @@ import { useSmall } from './hooks';
 import { browserWidth, clampScale, fullHeight, placementFor } from './sheetLayout';
 import { useDrag, web } from './drag';
 import { SheetPlace } from './Sheet';
+import { FloatingWindow } from './FloatingWindow';
+import { NoteFxPanel } from './NoteFxPanel';
+import { openWindow, refitWindows } from '../lib/windowActions';
+import { isFloatPanel, type WinId } from '../lib/windows';
+import type { ReactNode } from 'react';
 
 const BROWSER_PLACE = { column: true, onClose: () => setState({ browserOpen: false }) };
+
+const WINDOW_PANELS: Record<WinId, ReactNode> = { instrument: <InstrumentPanel />, devices: <DevicePanel />, notefx: <NoteFxPanel /> };
 
 function Shell() {
   const view = useStore((st) => st.view);
@@ -51,7 +58,10 @@ function Shell() {
   const menuBar = Platform.OS === 'web' && !small;
   const [bottomH, setBottomH] = useState(0);
   const close = () => setState({ panel: 'none' });
-  const open = panel !== 'none';
+  const windows = useStore((st) => st.windows);
+  // Wide screens: the plugin panels float as windows instead of opening as a sheet (see the effect below).
+  const floated = menuBar && isFloatPanel(panel);
+  const open = panel !== 'none' && !floated;
   const browserOpen = useStore((st) => st.browserOpen);
   const browser = menuBar && browserOpen;
   const browserW = browser ? browserWidth(width) : 0;
@@ -72,6 +82,15 @@ function Shell() {
   useEffect(() => {
     if (menuBar && panel === 'library') setState({ panel: 'none', browserOpen: true });
   }, [menuBar, panel]);
+
+  // Plugin windows: opening Sound, Geräte or MIDI-Effekte on a wide screen opens (or raises) a floating window.
+  useEffect(() => {
+    if (floated && isFloatPanel(panel)) openWindow(panel);
+  }, [floated, panel]);
+  // A resized browser window pulls the plugin windows back on screen.
+  useEffect(() => {
+    refitWindows();
+  }, [width, height]);
 
   // The Android back button closes the panel (the panel used to be a Modal that did this).
   useEffect(() => {
@@ -125,6 +144,7 @@ function Shell() {
               {panel === 'piano' && <PianoRollPanel />}
               {panel === 'instrument' && <InstrumentPanel />}
               {panel === 'devices' && <DevicePanel />}
+              {panel === 'notefx' && <NoteFxPanel />}
               {panel === 'automation' && <AutomationPanel />}
               {panel === 'arranger' && <ArrangerPanel />}
               {panel === 'markers' && <MarkersPanel />}
@@ -134,6 +154,13 @@ function Shell() {
           </View>
         </View>
       )}
+
+      {menuBar &&
+        windows.map((w, i) => (
+          <FloatingWindow key={w.id} win={w} z={i}>
+            {WINDOW_PANELS[w.id]}
+          </FloatingWindow>
+        ))}
 
       <View pointerEvents="none" style={[s.toasts, { top: 12 + insets.top, width: Math.min(440, width - 24), left: (width - Math.min(440, width - 24)) / 2 }]}>
         {toasts.map((t) => (

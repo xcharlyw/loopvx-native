@@ -1,14 +1,15 @@
-import { POST, SYSTEM, buildUserText, parseIdeas } from '../api/lyrics';
+import { POST, SYSTEM, buildUserText, parseIdeas, systemFor } from '../api/lyrics';
 
 describe('lyrics prompt', () => {
   it('asks for the language, the theme, the count and what to avoid', () => {
-    const t = buildUserText({ theme: 'Hitze, Nacht', language: 'de', count: 3, lines: 4, gender: 'female', style: 'rap', bpm: 140.4, avoid: ['DARK DESIRE', 'NO SLEEP'] });
+    const t = buildUserText({ theme: 'Hitze, Nacht', language: 'de', count: 3, lines: 4, gender: 'female', style: 'rap', genre: 'hard-techno', avoid: ['DARK DESIRE', 'NO SLEEP'] });
     expect(t).toContain('3 new hook ideas');
     expect(t).toContain('exactly 4 lines');
     expect(t).toContain('in German');
     expect(t).toContain('Hitze, Nacht');
     expect(t).toContain('rhythmic rap');
-    expect(t).toContain('140 BPM');
+    expect(t).toContain('Genre: hard techno');
+    expect(t).not.toMatch(/BPM/);
     expect(t).toContain('DARK DESIRE, NO SLEEP');
     expect(SYSTEM).toContain('stylePrompt');
     expect(SYSTEM).toContain('DARK DESIRE');
@@ -17,6 +18,17 @@ describe('lyrics prompt', () => {
   it('works without any input', () => {
     expect(buildUserText({})).toContain('surprise');
     expect(buildUserText({ count: 99 })).toContain('8 new hook ideas');
+  });
+});
+
+describe('style prompt scope', () => {
+  it('describes the whole track normally and only the voice when only the vocal is generated', () => {
+    expect(systemFor(false)).toContain('bass and kick');
+    expect(systemFor(true)).toContain('ONLY the voice');
+    expect(systemFor(true)).not.toContain('bass and kick');
+    expect(systemFor(true)).not.toContain('@@');
+    expect(systemFor(false)).toContain('Never put a BPM');
+    expect(SYSTEM).toBe(systemFor(false));
   });
 });
 

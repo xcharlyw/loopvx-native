@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { formatBarPosition } from '../audio/timing';
 import { uid } from '../lib/project';
 import { errorText, setState, toast, useStore } from '../lib/store';
 import { db } from '../storage/db';
-import { ideaText, requestLyrics, type LyricIdea } from '../lib/lyrics';
+import { GENRES, ideaText, requestLyrics, type Genre, type LyricIdea } from '../lib/lyrics';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
 import { voiceSources } from '../lib/voiceClip';
@@ -41,6 +41,8 @@ export function PromptBar() {
   const [gender, setGender] = useState<'male' | 'female' | null>(null);
   const [style, setStyle] = useState<'rap' | 'spoken' | 'sing' | null>(null);
   const [language, setLanguage] = useState<'de' | 'es' | 'en' | null>(null);
+  const [genre, setGenre] = useState<Genre | null>(null);
+  const [menu, setMenu] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [expression, setExpression] = useState(0.3);
   const [stability, setStability] = useState(0.5);
@@ -81,7 +83,8 @@ export function PromptBar() {
         language: language ?? 'de',
         ...(voiceId === null && gender ? { gender } : {}),
         ...(style ? { style } : {}),
-        bpm: project.bpm,
+        ...(genre ? { genre } : {}),
+        vocalsOnly,
         count: 4,
         avoid: (fresh ? [] : ideas).map((i) => i.title),
       });
@@ -105,7 +108,7 @@ export function PromptBar() {
   const savePreset = () => {
     const name = presetName.trim();
     if (!name) return;
-    const preset: VocalPreset = { id: uid(), name, prompt, lyrics, bars, vocalsOnly, gender, style, language, speed, expression, stability, voiceId };
+    const preset: VocalPreset = { id: uid(), name, prompt, lyrics, bars, vocalsOnly, gender, style, language, genre, speed, expression, stability, voiceId };
     const list = upsertPreset(presets, preset);
     storePresets(list);
     setPresetId(list.find((p) => p.name.toLowerCase() === name.toLowerCase())?.id ?? null);
@@ -122,6 +125,7 @@ export function PromptBar() {
     setGender(p.gender);
     setStyle(p.style);
     setLanguage(p.language);
+    setGenre(p.genre ?? null);
     setSpeed(p.speed);
     setExpression(p.expression);
     setStability(p.stability);
@@ -173,6 +177,7 @@ export function PromptBar() {
         bars,
         vocalsOnly,
         ...(language ? { language } : {}),
+        ...(genre ? { genre } : {}),
         ...(voiceId
           ? { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name, ...(style && style !== 'sing' ? { style } : {}), speed, expression, stability }
           : { ...(gender ? { gender } : {}), ...(style ? { style } : {}) }),
@@ -236,7 +241,7 @@ export function PromptBar() {
           <TextInput
             style={[s.input, s.textarea]}
             multiline
-            placeholder={`Beschreibe die Vocals, z. B. „dunkle Frauenstimme, Rave-Hook, hallig“ (${project.bpm} BPM, ${project.key})`}
+            placeholder={`Beschreibe die Vocals, z. B. „dunkle Frauenstimme, Rave-Hook, hallig“`}
             placeholderTextColor={C.dim}
             value={prompt}
             onChangeText={setPrompt}
@@ -288,35 +293,60 @@ export function PromptBar() {
           </View>
         ))}
         <View style={s.row}>
-          <Txt style={s.small}>Vorlagen:</Txt>
-          {FACTORY_PRESETS.map((p) => (
-            <Chip key={p.id} variant={presetId === p.id ? 'on' : 'ghost'} onPress={() => loadPreset(p)}>
-              {p.name}
-            </Chip>
-          ))}
-        </View>
-        <View style={s.row}>
-          <Txt style={s.small}>Meine Presets:</Txt>
-          {presets.length === 0 && <Txt style={s.small}>noch keine gespeichert</Txt>}
-          {presets.map((p) => (
-            <Chip key={p.id} variant={presetId === p.id ? 'on' : 'ghost'} onPress={() => loadPreset(p)}>
-              {p.name}
-            </Chip>
-          ))}
+          <Txt style={s.small}>Preset:</Txt>
+          <Pressable style={s.drop} onPress={() => setMenu(!menu)} accessibilityLabel="Preset wählen">
+            <Txt style={s.dropText} numberOfLines={1}>
+              {[...FACTORY_PRESETS, ...presets].find((p) => p.id === presetId)?.name ?? 'Preset wählen'}
+            </Txt>
+            <Txt style={s.dropArrow}>{menu ? '▴' : '▾'}</Txt>
+          </Pressable>
           <Chip variant={saving ? 'on' : 'ghost'} onPress={() => setSaving(!saving)}>
             ＋ Speichern
           </Chip>
-          {presetId !== null && presets.some((p) => p.id === presetId) && (
-            <Chip
-              onPress={() => {
-                storePresets(removePreset(presets, presetId));
-                setPresetId(null);
-              }}
-            >
-              Preset löschen
-            </Chip>
-          )}
         </View>
+        {menu && (
+          <View style={s.menu}>
+            <ScrollView style={{ maxHeight: 260 }} nestedScrollEnabled>
+              <Txt style={s.menuHead}>Vorlagen</Txt>
+              {FACTORY_PRESETS.map((p) => (
+                <Pressable
+                  key={p.id}
+                  style={[s.menuItem, presetId === p.id && s.menuItemOn]}
+                  onPress={() => {
+                    loadPreset(p);
+                    setMenu(false);
+                  }}
+                >
+                  <Txt style={[s.menuText, presetId === p.id && { color: C.accentInk }]}>{p.name}</Txt>
+                </Pressable>
+              ))}
+              <Txt style={s.menuHead}>Meine Presets</Txt>
+              {presets.length === 0 && <Txt style={[s.small, { paddingHorizontal: 12, paddingVertical: 6 }]}>noch keine gespeichert: stell alles ein und tippe auf „＋ Speichern“</Txt>}
+              {presets.map((p) => (
+                <View key={p.id} style={[s.menuItem, { flexDirection: 'row', alignItems: 'center' }, presetId === p.id && s.menuItemOn]}>
+                  <Pressable
+                    style={{ flex: 1 }}
+                    onPress={() => {
+                      loadPreset(p);
+                      setMenu(false);
+                    }}
+                  >
+                    <Txt style={[s.menuText, presetId === p.id && { color: C.accentInk }]}>{p.name}</Txt>
+                  </Pressable>
+                  <Pressable
+                    accessibilityLabel={`Preset ${p.name} löschen`}
+                    onPress={() => {
+                      storePresets(removePreset(presets, p.id));
+                      if (presetId === p.id) setPresetId(null);
+                    }}
+                  >
+                    <Txt style={[s.menuText, { paddingLeft: 12 }]}>✕</Txt>
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         {saving && (
           <View style={s.row}>
             <TextInput style={[s.input, s.textInput]} placeholder="Name des Presets, z. B. Rave-Hook deutsch" placeholderTextColor={C.dim} value={presetName} onChangeText={setPresetName} onSubmitEditing={savePreset} />
@@ -325,6 +355,14 @@ export function PromptBar() {
             </Btn>
           </View>
         )}
+        <View style={s.row}>
+          <Txt style={s.small}>Genre:</Txt>
+          {GENRES.map((g) => (
+            <Chip key={g.id} variant={genre === g.id ? 'on' : 'ghost'} onPress={() => setGenre(genre === g.id ? null : g.id)}>
+              {g.label}
+            </Chip>
+          ))}
+        </View>
         <View style={s.row}>
           <Txt style={s.small}>Schnellwahl:</Txt>
           {voiceId === null && (
@@ -455,6 +493,14 @@ const s = StyleSheet.create({
   idea: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 8, paddingTop: 8 },
   ideaTitle: { color: C.accent, fontSize: 12, ...font(700) },
   ideaLines: { color: C.text, fontSize: 13, lineHeight: 18, marginTop: 2 },
+  drop: { flex: 1, minWidth: 180, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1d1d22', borderWidth: 1, borderColor: '#34343a', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  dropText: { color: C.text, fontSize: 13, ...font(600), flexShrink: 1 },
+  dropArrow: { color: C.accent, fontSize: 12, marginLeft: 8 },
+  menu: { backgroundColor: '#1d1d22', borderWidth: 1, borderColor: '#34343a', borderRadius: 12, marginTop: 6, overflow: 'hidden' },
+  menuHead: { color: C.muted, fontSize: 10, ...font(700), textTransform: 'uppercase', letterSpacing: 1, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 2 },
+  menuItem: { paddingHorizontal: 12, paddingVertical: 9 },
+  menuItemOn: { backgroundColor: C.accent },
+  menuText: { color: C.text, fontSize: 13 },
   small: { color: C.muted, fontSize: 11, lineHeight: 15 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 },
 });

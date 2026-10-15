@@ -9,6 +9,8 @@ export interface VocalPreset {
   gender: 'male' | 'female' | null;
   style: 'rap' | 'spoken' | 'sing' | null;
   language: 'de' | 'es' | 'en' | null;
+  /** Genre chip (older presets have none). */
+  genre?: 'techno' | 'hard-techno' | 'melodic-techno' | 'tech-house' | 'house' | 'trance' | null;
   speed: number;
   expression: number;
   stability: number;

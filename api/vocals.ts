@@ -20,6 +20,7 @@ interface Body {
   gender?: 'male' | 'female';
   style?: 'rap' | 'spoken' | 'sing';
   language?: 'de' | 'es' | 'en';
+  genre?: keyof typeof GENRE_TEXT;
   /** Spoken-voice settings, 0..1 (speed 0.7..1.2). */
   stability?: number;
   expression?: number;
@@ -27,6 +28,7 @@ interface Body {
 }
 
 const LANGUAGE_NAME = { de: 'German', es: 'Spanish', en: 'English' } as const;
+export const GENRE_TEXT = { techno: 'techno', 'hard-techno': 'hard techno', 'melodic-techno': 'melodic techno', 'tech-house': 'tech house', house: 'house', trance: 'trance' } as const;
 const STYLE_TEXT = { rap: 'rapped, rhythmic rap delivery', spoken: 'spoken word, talking, not sung', sing: 'sung melodic' } as const;
 
 /** Gender, delivery and language as a sentence for the music prompt. */
@@ -34,6 +36,7 @@ export function traitsText(b: Body): string {
   const parts: string[] = [];
   if (b.gender === 'male' || b.gender === 'female') parts.push(`${b.gender === 'male' ? 'Male' : 'Female'} vocalist`);
   if (b.style && STYLE_TEXT[b.style]) parts.push(`${STYLE_TEXT[b.style]} vocal`);
+  if (b.genre && GENRE_TEXT[b.genre]) parts.push(`${GENRE_TEXT[b.genre]} club track`);
   if (b.language && LANGUAGE_NAME[b.language]) parts.push(`in ${LANGUAGE_NAME[b.language]} language, ${LANGUAGE_NAME[b.language]} lyrics only`);
   return parts.length ? `${parts.join(', ')}.` : '';
 }

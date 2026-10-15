@@ -20,6 +20,7 @@ export interface VocalRequest {
   gender?: 'male' | 'female';
   style?: 'rap' | 'spoken' | 'sing';
   language?: 'de' | 'es' | 'en';
+  genre?: string;
   /** Knobs for the spoken voice: stability and expression 0..1, speed 0.7..1.2. */
   stability?: number;
   expression?: number;
@@ -35,7 +36,7 @@ export async function generateVocal(req: VocalRequest): Promise<{ sample: Sample
   const res = await fetch(VOCALS_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ prompt: req.prompt, lyrics: req.lyrics, bars: req.bars, vocalsOnly: req.vocalsOnly, voiceId: req.voiceId, speak: !!req.voiceId, gender: req.gender, style: req.style, language: req.language, stability: req.stability, expression: req.expression, speed: req.speed, bpm: project.bpm, key: project.key }),
+    body: JSON.stringify({ prompt: req.prompt, lyrics: req.lyrics, bars: req.bars, vocalsOnly: req.vocalsOnly, voiceId: req.voiceId, speak: !!req.voiceId, gender: req.gender, style: req.style, language: req.language, genre: req.genre, stability: req.stability, expression: req.expression, speed: req.speed, bpm: project.bpm, key: project.key }),
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => '');

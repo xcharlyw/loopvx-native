@@ -1,6 +1,16 @@
 import { LYRICS_ENDPOINT } from '../config';
 import { getSession } from './supabase';
 
+export type Genre = 'techno' | 'hard-techno' | 'melodic-techno' | 'tech-house' | 'house' | 'trance';
+export const GENRES: { id: Genre; label: string }[] = [
+  { id: 'techno', label: 'Techno' },
+  { id: 'hard-techno', label: 'Hard Techno' },
+  { id: 'melodic-techno', label: 'Melodic Techno' },
+  { id: 'tech-house', label: 'Tech House' },
+  { id: 'house', label: 'House' },
+  { id: 'trance', label: 'Trance' },
+];
+
 export interface LyricIdea {
   title: string;
   genre: string;
@@ -13,7 +23,8 @@ export interface LyricRequest {
   language?: 'de' | 'es' | 'en';
   gender?: 'male' | 'female';
   style?: 'rap' | 'spoken' | 'sing';
-  bpm?: number;
+  genre?: Genre | null;
+  vocalsOnly?: boolean;
   count?: number;
   lines?: number;
   /** Titles shown so far: new ideas must differ. */

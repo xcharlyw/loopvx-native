@@ -125,6 +125,7 @@ describe('vocal traits', () => {
     expect(t).toContain('German');
     expect(buildPrompt({ prompt: 'hook', gender: 'female', style: 'sing', language: 'es' })).toContain('Spanish');
     expect(traitsText({})).toBe('');
+    expect(traitsText({ genre: 'melodic-techno' })).toContain('melodic techno');
   });
 
   it('turns the knobs into speech settings within range', () => {

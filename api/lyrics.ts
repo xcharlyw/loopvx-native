@@ -16,7 +16,7 @@ interface Body {
   genre?: 'techno' | 'hard-techno' | 'melodic-techno' | 'tech-house' | 'house' | 'trance';
   /** Only the vocal is generated: the style prompt then describes just the voice. */
   vocalsOnly?: boolean;
-  /** How many ideas (1..8) and how many lines each (2..8). */
+  /** How many ideas (1..8) and how many lines each (2..16). */
   count?: number;
   lines?: number;
   /** Titles already shown, so "more ideas" are new ones. */
@@ -37,7 +37,7 @@ const GENRE = { techno: 'techno', 'hard-techno': 'hard techno', 'melodic-techno'
 const BASE = `You write short, high-energy hook lyrics and matching AI-music style prompts for techno / rave vocals (hard techno, peak-time, dark club, neo rave).
 Answer ONLY with one JSON object, no prose, of this shape:
 { "ideas": [ { "title": string, "genre": string, "lines": string[], "stylePrompt": string } ] }
-Rules for "lines": a catchy, hypnotic, DJ-friendly hook, short punchy lines (3-7 words), a clear rhyme scheme (AABB or ABAB), repetition is welcome, a strong last line that works twice before the drop. No filler, no clichés about "dancing all night" only; every idea needs its own image and mood.
+Rules for "lines": with 8 or more lines build it as verse + hook (the hook returns and repeats its key line) instead of 8 or 16 unrelated lines; a catchy, hypnotic, DJ-friendly hook, short punchy lines (3-7 words), a clear rhyme scheme (AABB or ABAB), repetition is welcome, a strong last line that works twice before the drop. No filler, no clichés about "dancing all night" only; every idea needs its own image and mood.
 Rules for "title": 1-3 words, upper case.
 Rules for "genre": e.g. "Dark Techno / Peak-Time", "Hard Techno / Rave", "Melodic Techno / Dark Club".
 Never put a BPM number or a tempo into "stylePrompt", and never name the language of the lyrics in it.
@@ -59,7 +59,7 @@ const clamp = (n: unknown, lo: number, hi: number, fallback: number) => (typeof 
 
 export function buildUserText(b: Body): string {
   const count = clamp(b.count, 1, 8, 4);
-  const lines = clamp(b.lines, 2, 8, 4);
+  const lines = clamp(b.lines, 2, 16, 4);
   const lang = LANGUAGE[b.language ?? 'en'] ?? 'English';
   const parts = [`Write ${count} new hook ideas with exactly ${lines} lines each. The lyrics must be in ${lang}; the style prompts always in English.`];
   if (b.theme?.trim()) parts.push(`Theme / words to build on: "${b.theme.replace(/["\n]/g, ' ').trim().slice(0, 200)}".`);

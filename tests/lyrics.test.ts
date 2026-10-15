@@ -15,6 +15,12 @@ describe('lyrics prompt', () => {
     expect(SYSTEM).toContain('DARK DESIRE');
   });
 
+  it('allows 8 and 16 lines, not more', () => {
+    expect(buildUserText({ lines: 16 })).toContain('exactly 16 lines');
+    expect(buildUserText({ lines: 99 })).toContain('exactly 16 lines');
+    expect(buildUserText({ lines: 8 })).toContain('exactly 8 lines');
+  });
+
   it('works without any input', () => {
     expect(buildUserText({})).toContain('surprise');
     expect(buildUserText({ count: 99 })).toContain('8 new hook ideas');
@@ -39,6 +45,12 @@ describe('parseIdeas', () => {
     const out = parseIdeas({ ideas: [good, { title: 'x' }, { ...good, lines: ['only one'] }, { ...good, stylePrompt: '' }] }, 4);
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ title: 'NO SLEEP', lines: ['a', 'b', 'c', 'd'] });
+  });
+
+  it('keeps up to 16 lines when asked for them', () => {
+    const lines = Array.from({ length: 20 }, (_, i) => `line ${i}`);
+    expect(parseIdeas({ ideas: [{ ...good, lines }] }, 16)[0].lines).toHaveLength(16);
+    expect(parseIdeas({ ideas: [{ ...good, lines }] }, 8)[0].lines).toHaveLength(8);
   });
 
   it('returns nothing for garbage', () => {

@@ -41,6 +41,7 @@ export function PromptBar() {
   const [gender, setGender] = useState<'male' | 'female' | null>(null);
   const [style, setStyle] = useState<'rap' | 'spoken' | 'sing' | null>(null);
   const [language, setLanguage] = useState<'de' | 'es' | 'en' | null>(null);
+  const [lineCount, setLineCount] = useState<4 | 8 | 16>(4);
   const [genre, setGenre] = useState<Genre | null>(null);
   const [menu, setMenu] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -85,7 +86,9 @@ export function PromptBar() {
         ...(style ? { style } : {}),
         ...(genre ? { genre } : {}),
         vocalsOnly,
-        count: 4,
+        lines: lineCount,
+        // longer texts, fewer ideas per round
+        count: lineCount === 4 ? 4 : lineCount === 8 ? 3 : 2,
         avoid: (fresh ? [] : ideas).map((i) => i.title),
       });
       setIdeas((old) => (fresh ? list : [...old, ...list]));
@@ -279,6 +282,14 @@ export function PromptBar() {
               Mehr Ideen
             </Btn>
           )}
+        </View>
+        <View style={s.row}>
+          <Txt style={s.small}>Textlänge:</Txt>
+          {([4, 8, 16] as const).map((n) => (
+            <Chip key={n} variant={lineCount === n ? 'on' : 'ghost'} onPress={() => setLineCount(n)}>
+              {`${n} Zeilen`}
+            </Chip>
+          ))}
         </View>
         {ideas.map((i) => (
           <View key={i.title + i.lines[0]} style={s.idea}>

@@ -58,4 +58,16 @@ describe('drum split', () => {
     expect(t.notes.filter((n) => n.pitch === 39)).toHaveLength(0);
     expect(t.notes.filter((n) => n.pitch === 36)).toHaveLength(16);
   });
+
+  it('starts bar 1 at the first kick and cuts what comes before', () => {
+    const t = transcribeDrums(drums(4, 0.13), SR, BPM);
+    expect(Math.abs(t.downbeatMs - 130)).toBeLessThan(6);
+    expect(t.notes[0]).toMatchObject({ pitch: 36, start: 0 });
+  });
+
+  it('measures the exact tempo at 22.05 kHz (no 0.2 % tick error)', () => {
+    const t = transcribeDrums(drums(8, 0.5), SR, BPM);
+    expect(Math.abs(t.bpm - BPM)).toBeLessThan(0.03);
+    expect(Math.abs(t.downbeatMs - 500)).toBeLessThan(6);
+  });
 });

@@ -65,16 +65,19 @@ export function monoForAnalysis(channels: Float32Array[], sampleRate: number): {
   return { data: out, sampleRate: sampleRate / factor };
 }
 
-/** Peak envelope sampled every millisecond. */
+/**
+ * Peak envelope sampled every millisecond, exactly: tick i covers the samples of [i ms, i + 1 ms). (A whole-sample hop of
+ * 22 at 22.05 kHz made a tick 0.998 ms and put the fitted tempo 0.3 BPM off.)
+ */
 function envelope(x: Float32Array, sampleRate: number): Float32Array {
-  const hop = Math.max(1, Math.round(sampleRate / 1000));
-  const out = new Float32Array(Math.ceil(x.length / hop));
+  const perMs = sampleRate / 1000;
+  const out = new Float32Array(Math.ceil(x.length / perMs));
   const release = Math.exp(-1 / (0.03 * 1000)); // 30 ms per 1 ms tick
   let env = 0;
   for (let i = 0; i < out.length; i++) {
     let peak = 0;
-    const end = Math.min(x.length, (i + 1) * hop);
-    for (let j = i * hop; j < end; j++) peak = Math.max(peak, Math.abs(x[j]));
+    const end = Math.min(x.length, Math.round((i + 1) * perMs));
+    for (let j = Math.round(i * perMs); j < end; j++) peak = Math.max(peak, Math.abs(x[j]));
     env = peak > env ? peak : env * release;
     out[i] = env;
   }
@@ -105,6 +108,8 @@ export interface DrumTranscript {
   /** The tempo the grid was fitted to, and where its first beat sits (ms from the start of the audio). */
   bpm: number;
   phaseMs: number;
+  /** Where bar 1 starts in the audio (ms): the first kick on a beat, kept on the bar grid. */
+  downbeatMs: number;
   bars: number;
 }
 
@@ -155,12 +160,17 @@ export function transcribeDrums(x: Float32Array, sampleRate: number, bpm: number
   const hatOnKick = percentile(kick.flatMap((k, s) => (k && !clap[s] ? [rise.hat[s]] : [])), 0.25);
   const hat = rise.hat.map((r, s) => hit('hat', s, 0.35) && (clap[s] ? r > hatOnClap * 1.6 : kick[s] ? r > hatOnKick * 1.6 : true));
 
+  // Bar 1 starts with the first kick on a beat (tunes start on a downbeat); the bar grid keeps that phase all through, so a kick
+  // that enters later still lands on its bar line. Anything before the first bar (a pickup, silence) is cut.
+  const firstKick = kick.findIndex((k, s) => k && s % 4 === 0);
+  const barStart = firstKick < 0 ? 0 : firstKick % 16;
   const notes: Note[] = [];
   const vel = (p: DrumPart, s: number) => Math.round(Math.min(1, 0.45 + 0.55 * Math.min(1, rise[p][s] / norm[p])) * 100) / 100;
-  for (let s = 0; s < steps; s++) {
-    if (kick[s]) notes.push({ pitch: DRUM_PITCH.kick, start: s / 16, length: 1 / 16, velocity: vel('kick', s) });
-    if (clap[s]) notes.push({ pitch: DRUM_PITCH.clap, start: s / 16, length: 1 / 16, velocity: vel('clap', s) });
-    if (hat[s]) notes.push({ pitch: DRUM_PITCH.hat, start: s / 16, length: 1 / 16, velocity: vel('hat', s) });
+  for (let s = barStart; s < steps; s++) {
+    const start = (s - barStart) / 16;
+    if (kick[s]) notes.push({ pitch: DRUM_PITCH.kick, start, length: 1 / 16, velocity: vel('kick', s) });
+    if (clap[s]) notes.push({ pitch: DRUM_PITCH.clap, start, length: 1 / 16, velocity: vel('clap', s) });
+    if (hat[s]) notes.push({ pitch: DRUM_PITCH.hat, start, length: 1 / 16, velocity: vel('hat', s) });
   }
-  return { notes, bpm: grid.bpm, phaseMs: grid.phase, bars: Math.max(1, Math.ceil(steps / 16)) };
+  return { notes, bpm: grid.bpm, phaseMs: grid.phase, downbeatMs: grid.phase + barStart * stepMs, bars: Math.max(1, Math.ceil((steps - barStart) / 16)) };
 }

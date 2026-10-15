@@ -32,7 +32,7 @@ export function ReferenceRebuild() {
     void work(`${folder}#orig`, async () => {
       const r = await rebuildWithOriginalStems(folder);
       setCursor(0);
-      return `✓ „${tune}“ aus den Original-Stems nachgebaut (${r.bpm} BPM): ${structureText(r.sections)}. Spuren: ${r.tracks.join(', ')}`;
+      return `✓ „${tune}“ aus den Original-Stems nachgebaut (${r.bpm} BPM${r.offsetSec > 0.02 ? `, Takt 1 beginnt bei ${r.offsetSec.toFixed(2).replace('.', ',')} s` : ''}): ${structureText(r.sections)}. Spuren: ${r.tracks.join(', ')}`;
     });
   const midi = (folder: string, tune: string) =>
     void work(`${folder}#midi`, async () => {

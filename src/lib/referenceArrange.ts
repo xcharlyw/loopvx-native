@@ -16,14 +16,15 @@ export function stemKindOf(name: string): StemKind | undefined {
   return s === 'drums' ? 'drums' : s === 'bass' ? 'bass' : s === 'vocal' ? 'vocal' : 'synth';
 }
 
-/** RMS level of every bar (4/4 at `bpm`), from the start of the audio. */
-export function barLevels(data: Float32Array, sampleRate: number, bpm: number): number[] {
-  const perBar = Math.round((sampleRate * 240) / bpm);
-  const bars = Math.ceil(data.length / perBar);
+/** RMS level of every bar (4/4 at `bpm`), bar 1 starting `offsetSec` into the audio. */
+export function barLevels(data: Float32Array, sampleRate: number, bpm: number, offsetSec = 0): number[] {
+  const perBar = (sampleRate * 240) / bpm;
+  const first = Math.round(offsetSec * sampleRate);
+  const bars = Math.ceil((data.length - first) / perBar);
   const out: number[] = [];
   for (let b = 0; b < bars; b++) {
-    const from = b * perBar;
-    const to = Math.min(data.length, from + perBar);
+    const from = first + Math.round(b * perBar);
+    const to = Math.min(data.length, first + Math.round((b + 1) * perBar));
     let sum = 0;
     // Every 4th sample is plenty for a level.
     let n = 0;

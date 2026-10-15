@@ -412,6 +412,12 @@ plays in at least half its bars, neighbours merge, clip offset = its start, so i
 the tune's**. A second run replaces the clips of the "Stem …" tracks; other tracks are untouched. The earlier rebuild with the user's own sounds is the chip "Aufbau mit eigenen
 Sounds". Checked in Chromium with synthetic WAV stems in IndexedDB: 3 tracks, "Intro 16 · Drop 32 · Outro 16".
 
+**Bar 1 and exact tempo** (`tuneGrid` in referenceRun.ts, used by all three: original stems, own sounds, drums → MIDI): measured on the drums stem with `transcribeDrums`:
+the grid's tempo (kept as named when within 0.015 BPM) and `downbeatMs` = the first kick on a beat (tunes start on a downbeat), kept on the bar grid, so a pickup or silence
+before it is cut; `barLevels(…, offsetSec)` starts bar 1 there, the stem clips get `offset = start + offsetBars`, the MIDI notes start at that bar, and when the measured tempo
+differs the stems' `bpm` and the project tempo are set to it. Envelope ticks are exactly 1 ms (fractional hop): a whole-sample hop of 22 at 22.05 kHz had put the tempo 0.3 BPM
+off (found in the browser check). Checked in Chromium with stems starting after 0.5 s of silence: "150 BPM, Takt 1 beginnt bei 0,50 s", same sections as without the lead.
+
 **Drums of a stemmed tune** (same section, per tune): `drumSplit.ts` (pure, tested on synthetic drums incl. a late start, a 0.2 BPM wrong tempo and a tune without
 claps). "Drums → MIDI" = `drumsToMidi` (referenceRun.ts): the drums stem mono at ≤ 24 kHz (`monoForAnalysis`), band filters (RBJ biquads, 24 dB/oct: kick < 150 Hz, clap
 500–5000 Hz, hats > 7 kHz), 1 ms peak envelopes, the grid fitted to the kicks (`fitGrid`: tempo ±0.25 BPM and the first beat's phase), then per 16th step and band the jump

@@ -409,8 +409,7 @@ tracks and the user's samples). Confirm before replacing clips; one undo step. T
 **"Aufbau nachbauen" = the original stems** (Karl: "simple first"): `rebuildWithOriginalStems` puts each stem of the tune on its own audio track "Stem Drums / Stem Bass /
 Stem Synth + FX …" (stems silent all through are left out), with clips only in the sections where that stem plays (`stemClipRanges`, tested: a section gets the stem when it
 plays in at least half its bars, neighbours merge, clip offset = its start, so it is exactly that part of the original), the sections as markers and **the project tempo set to
-the tune's**. A second run replaces the clips of the "Stem …" tracks; other tracks are untouched. The earlier rebuild with the user's own sounds is the chip "Aufbau mit eigenen
-Sounds". Checked in Chromium with synthetic WAV stems in IndexedDB: 3 tracks, "Intro 16 · Drop 32 · Outro 16".
+the tune's**. A second run replaces the clips of the "Stem …" tracks; other tracks are untouched. The MIDI-based chips ("Aufbau mit eigenen Sounds", "Drums → MIDI") were removed from the UI at Karl's request ("funktioniert nicht"); `rebuildFromStems`/`drumsToMidi` stay in referenceRun.ts, unused. Checked in Chromium with synthetic WAV stems in IndexedDB: 3 tracks, "Intro 16 · Drop 32 · Outro 16".
 
 **Separate drums in the rebuild** (Karl: "use the separated drums for the rebuild, not only the full drums"): `rebuildWithOriginalStems` looks for drum part files in the
 tune's library folder (`drumPartLabel`: the app's own split "<tune> - Kick / Clap + Snare / HiHats", or files from another tool such as Moises named kick / snare / clap /

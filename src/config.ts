@@ -16,6 +16,8 @@ export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_XlXcSoqbc0Wb5koV_b-nyg_D
 const API_BASE = Platform.OS === 'web' ? '/api' : 'https://loopvx-native.vercel.app/api';
 /** The ElevenLabs proxy. */
 export const VOCALS_ENDPOINT = `${API_BASE}/vocals`;
+/** Voice cloning (ElevenLabs Instant Voice Cloning). */
+export const VOICE_ENDPOINT = `${API_BASE}/voice`;
 /** Stem separation (ElevenLabs; the tune and its stems travel through the user's Drive). */
 export const STEMS_ENDPOINT = `${API_BASE}/stems`;
 /** Gemini arrangement planner (the key stays on the server). */

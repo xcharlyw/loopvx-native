@@ -12,6 +12,8 @@ export interface VocalRequest {
   lyrics: string;
   bars: number;
   vocalsOnly: boolean;
+  /** A cloned voice (lib/voices.ts): the generated vocal is sung in it. */
+  voiceId?: string;
 }
 
 /** Generate a vocal with the ElevenLabs Music API (via api/vocals) and drop it on the vocal track at the playhead. */

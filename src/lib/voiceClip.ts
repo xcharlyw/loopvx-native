@@ -1,0 +1,20 @@
+/** About 80 s of mono 22 kHz 16-bit WAV is 3.5 MB; the function accepts 4.4 MB. */
+export const MAX_VOICE_SECONDS = 80;
+const VOICE_RATE = 22050;
+
+/**
+ * Mono, about 22 kHz, at most `maxSeconds` from the loudest part of the start: small enough for one request, plenty for cloning.
+ * (Box averaging of whole frames; ElevenLabs resamples anyway.)
+ */
+export function voiceClip(channels: Float32Array[], sampleRate: number, maxSeconds = MAX_VOICE_SECONDS): { data: Float32Array; sampleRate: number } {
+  const factor = Math.max(1, Math.round(sampleRate / VOICE_RATE));
+  const frames = Math.min(Math.floor(channels[0].length / factor), Math.floor(((maxSeconds * sampleRate) / factor)));
+  const out = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) {
+    let sum = 0;
+    for (const ch of channels) for (let k = 0; k < factor; k++) sum += ch[i * factor + k] ?? 0;
+    out[i] = sum / (channels.length * factor);
+  }
+  return { data: out, sampleRate: sampleRate / factor };
+}
+

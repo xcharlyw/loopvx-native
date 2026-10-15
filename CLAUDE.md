@@ -161,6 +161,10 @@ kick, Synth + FX/Keys/Gitarre → synth, Vocal → vocal), all with the tune's t
 Synth + FX (ElevenLabs "other"), Keys, Gitarre, Vocal: **there is no separate FX stem** in the six-stem model. `maxDuration` 300 s in `vercel.json`. Tested with mocks only
 (no ElevenLabs/Drive in the sandbox); never run against the real APIs.
 
+## Voice cloning (AI Vocals)
+
+PromptBar → row "Stimme": "AI-Stimme" or one of the cloned voices, "＋ Stimme klonen". Cloning takes a library sample (own recording from Library → Aufnahme, an uploaded mp3, any vocal sample; never the generated "AI Vocals"), the user names it and **must tick the consent chip** (own voice or the person's permission; the function refuses without `consent=1`). `cloneVoice` (`lib/voices.ts`) decodes it, `voiceClip` (`voiceClip.ts`, tested) mixes to mono ~22 kHz and cuts at 80 s (one Vercel request is limited to 4.5 MB), posts multipart to `api/voice.ts` (ElevenLabs Instant Voice Cloning `POST /v1/voices/add`, `remove_background_noise`), and only `{id, name}` is kept on the device (kv `voices`); delete = `{action:'delete'}` → `DELETE /v1/voices/{id}`. Using a voice: `generateVocal({ voiceId })` → `api/vocals.ts` generates the song, **always separates the vocal** (two_stems_v1) and runs it through the Voice Changer (`POST /v1/speech-to-speech/{voiceId}`, model `eleven_multilingual_sts_v2` or env `ELEVENLABS_STS_MODEL`). The Music API itself has **no voice parameter**, so this is a conversion of the generated vocal. **Unverified**: whether the Voice Changer keeps melody and tuning of sung material (only checked against mocks; the ElevenLabs docs were not reachable from the sandbox), and which plan is needed for cloning/Voice Changer.
+
 ## Library folders
 
 `Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (the pack name), Splice (the pack name) and the user. Folders that hold samples exist by themselves;

@@ -13,6 +13,8 @@ interface Body {
   key?: string;
   bars?: number;
   vocalsOnly?: boolean;
+  /** A cloned voice (see voice.ts): the generated vocal is converted to it with the Voice Changer. */
+  voiceId?: string;
 }
 
 export function buildPrompt(b: Body): string {
@@ -63,7 +65,9 @@ export async function POST(req: Request): Promise<Response> {
   let audio: Uint8Array = new Uint8Array(await music.arrayBuffer());
   let type = music.headers.get('content-type') ?? 'audio/mpeg';
 
-  if (body.vocalsOnly) {
+  if (body.voiceId && !/^[\w-]{6,64}$/.test(body.voiceId)) return text(400, 'Ungültige Stimmen-ID');
+  // A voice change needs the vocal on its own, so a cloned voice always works on the separated vocal.
+  if (body.vocalsOnly || body.voiceId) {
     const form = new FormData();
     form.append('file', new Blob([audio as BlobPart], { type }), 'song.mp3');
     form.append('stem_variation_id', 'two_stems_v1');
@@ -77,6 +81,17 @@ export async function POST(req: Request): Promise<Response> {
     if (!vocal) return text(502, 'Stem-Trennung lieferte keine Dateien');
     audio = vocal.data;
     type = /\.wav$/i.test(vocal.name) ? 'audio/wav' : 'audio/mpeg';
+  }
+
+  if (body.voiceId) {
+    const sts = new FormData();
+    sts.append('audio', new Blob([audio as BlobPart], { type }), /wav/.test(type) ? 'vocal.wav' : 'vocal.mp3');
+    sts.append('model_id', process.env.ELEVENLABS_STS_MODEL ?? 'eleven_multilingual_sts_v2');
+    sts.append('remove_background_noise', 'true');
+    const converted = await fetch(`${ELEVEN}/speech-to-speech/${body.voiceId}`, { method: 'POST', headers: { 'xi-api-key': apiKey }, body: sts });
+    if (!converted.ok) return text(converted.status, `ElevenLabs Stimmen-Wechsel: ${await converted.text()}`);
+    audio = new Uint8Array(await converted.arrayBuffer());
+    type = converted.headers.get('content-type') ?? 'audio/mpeg';
   }
 
   return new Response(audio as BodyInit, {

@@ -48,6 +48,7 @@ describe('POST /api/vocals', () => {
         const zip = zipSync({ 'instrumental.mp3': new Uint8Array([9]), 'vocals.mp3': new Uint8Array([7, 7]) });
         return new Response(zip, { headers: { 'content-type': 'application/zip' } });
       }
+      if (url.includes('/v1/speech-to-speech/')) return new Response(new Uint8Array([5, 5, 5]), { headers: { 'content-type': 'audio/mpeg' } });
       return new Response('not found', { status: 404 });
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -78,5 +79,20 @@ describe('POST /api/vocals', () => {
     const res = await POST(request({ prompt: 'x', vocalsOnly: false }));
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
     expect(calls.some((c) => c.url.includes('stem-separation'))).toBe(false);
+  });
+
+  it('converts the separated vocal to a cloned voice', async () => {
+    const calls = setup();
+    const res = await POST(request({ prompt: 'x', voiceId: 'voice_abc123' }));
+    expect(res.status).toBe(200);
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([5, 5, 5]));
+    expect(calls.some((c) => c.url.endsWith('/v1/music/stem-separation'))).toBe(true);
+    const sts = calls.find((c) => c.url.endsWith('/v1/speech-to-speech/voice_abc123'))!;
+    expect((sts.init!.body as FormData).get('model_id')).toBe('eleven_multilingual_sts_v2');
+  });
+
+  it('rejects a malformed voice id', async () => {
+    setup();
+    expect((await POST(request({ prompt: 'x', voiceId: '../x' }))).status).toBe(400);
   });
 });

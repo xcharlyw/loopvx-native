@@ -12,7 +12,7 @@ import type { Sample } from '../types';
 import { Btn, Txt } from './kit';
 
 /** Records from the microphone into the library (folder "Aufnahmen"); the last take can go straight onto a track. */
-export function RecordButton() {
+export function RecordButton({ onSaved, hidePlace }: { onSaved?: (sample: Sample) => void; hidePlace?: boolean } = {}) {
   const [phase, setPhase] = useState<'idle' | 'starting' | 'recording' | 'saving'>('idle');
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0);
@@ -57,6 +57,7 @@ export function RecordButton() {
       const stored = await storeSampleAudio(sample, take.data, 'wav');
       setSamples([...getState().samples.filter((x) => x.id !== stored.id), stored]);
       setLast(stored);
+      onSaved?.(stored);
       toast(`${clock(take.seconds)} aufgenommen, zu finden im Ordner „Aufnahmen“`);
     } catch (e) {
       toast(errorText(e), 'error');
@@ -87,7 +88,7 @@ export function RecordButton() {
           <View style={[s.meterFill, { width: `${Math.min(100, Math.round(level * 140))}%` }]} />
         </View>
       )}
-      {last && phase === 'idle' && (
+      {last && phase === 'idle' && !hidePlace && (
         <Btn small accessibilityLabel="Aufnahme auf Spur legen" onPress={place}>
           Auf Spur legen
         </Btn>

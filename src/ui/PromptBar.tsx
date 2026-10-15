@@ -10,6 +10,7 @@ import { cloneVoice, loadVoices, removeVoice, type Voice } from '../lib/voices';
 import { useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
 import { Btn, Chip, IconBtn, Spacer, Txt } from './kit';
+import { RecordButton } from './RecordButton';
 
 const LENGTHS = [4, 8, 16, 32];
 
@@ -175,6 +176,16 @@ export function PromptBar() {
         {cloning && (
           <View style={s.lyrics}>
             <Txt style={s.small}>Wähle eine Aufnahme aus der Library: eine eigene Aufnahme, ein hochgeladenes iPhone-Sprachmemo oder eine mp3 (egal in welcher Kategorie, die neuesten stehen oben, mit dem Suchfeld findest du den Rest). Je mehr saubere Stimme, desto besser: am besten eine bis zwei Minuten, es werden höchstens die ersten 80 Sekunden verwendet.</Txt>
+            <Txt style={[s.small, { marginTop: 8 }]}>Oder jetzt direkt aufnehmen: sprich oder sing etwa eine Minute klar ins Mikrofon (ruhiger Raum, nicht zu nah, ohne Musik im Hintergrund). Die Aufnahme wird gleich als Quelle ausgewählt.</Txt>
+            <View style={s.row}>
+              <RecordButton
+                hidePlace
+                onSaved={(x) => {
+                  setCloneFrom(x.id);
+                  if (!cloneName.trim()) setCloneName('Meine Stimme');
+                }}
+              />
+            </View>
             <TextInput style={[s.input, s.textInput, { marginTop: 8 }]} placeholder="Aufnahme suchen (Name)" placeholderTextColor={C.dim} value={search} onChangeText={setSearch} />
             <View style={s.row}>
               {sources.length === 0 && <Txt style={s.small}>Keine passende Aufnahme in der Library.</Txt>}

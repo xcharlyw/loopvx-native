@@ -1,4 +1,4 @@
-import { biquad, clickWindow, onBeat, kickOnsetsMs, makeDrumSplitter, splitBands, transcribeDrums } from './drumSplit';
+import { DEFAULT_KICK, biquad, clickWindow, onBeat, kickOnsetsMs, makeDrumSplitter, splitBands, transcribeDrums } from './drumSplit';
 
 const SR = 22050;
 const BPM = 150;
@@ -183,5 +183,34 @@ describe('onBeat', () => {
     const found = [100, 100 + beat, 100 + beat * 1.5, 100 + beat * 2 + 10, 100 + beat * 2.25];
     expect(onBeat(found, { bpm: BPM, downbeatMs: 100 })).toEqual([100, 100 + beat, 100 + beat * 2 + 10]);
     expect(onBeat(found)).toEqual(found);
+  });
+});
+
+describe('kick designer', () => {
+  const beat = (60 / BPM) * SR;
+  const x = new Float32Array(Math.round(4 * beat + SR));
+  for (let b = 0; b < 4; b++) {
+    const at = Math.round(b * beat);
+    for (let i = 0; i < Math.round(0.2 * SR); i++) x[at + i] += 0.8 * Math.sin((2 * Math.PI * 55 * i) / SR) * Math.exp(-i / (0.05 * SR));
+  }
+  const e = (v: Float32Array) => v.reduce((s, y) => s + y * y, 0);
+  const split = makeDrumSplitter([x], SR, { bpm: BPM, downbeatMs: 0 });
+
+  it('with the default design builds the same kick as the split', () => {
+    const a = split.kick(DEFAULT_KICK)[0];
+    const b = split.part('kick')[0];
+    for (let i = 0; i < a.length; i += 101) expect(a[i]).toBeCloseTo(b[i], 6);
+  });
+
+  it('turning the rumble up by 6 dB doubles its level, turning it down quietens it', () => {
+    const up = e(split.kick({ ...DEFAULT_KICK, rumbleDb: 6 })[0]);
+    const flat = e(split.kick(DEFAULT_KICK)[0]);
+    const down = e(split.kick({ ...DEFAULT_KICK, rumbleDb: -24 })[0]);
+    expect(up / flat).toBeGreaterThan(3);
+    expect(down / flat).toBeLessThan(0.03);
+  });
+
+  it('keeps the length of the drums (stays in sync)', () => {
+    expect(split.kick(DEFAULT_KICK)[0]).toHaveLength(x.length);
   });
 });

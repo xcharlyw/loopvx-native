@@ -1,7 +1,7 @@
 import { engine } from '../audio/engine';
 import { presetById, applyPreset } from '../audio/presets';
 import { encodeWav } from '../audio/wav';
-import { SPLIT_LABEL, makeDrumSplitter, monoForAnalysis, transcribeDrums } from './drumSplit';
+import { SPLIT_LABEL, makeDrumSplitter, type KickDesign, monoForAnalysis, transcribeDrums } from './drumSplit';
 import { createMidiClip, createTrack, uid } from './project';
 import { storeSampleAudio } from './samples';
 import type { Sample } from '../types';
@@ -97,15 +97,12 @@ export async function drumsToMidi(folder: string): Promise<{ track: string; note
   return { track: name, notes: t.notes.length, bars: t.bars, bpm: t.bpm };
 }
 
-/** The drums stem split into Kick (rumble + body + click) and Top Loop (the rest) as WAV samples in the same library folder (band filters, not AI). */
-export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
+/** The drums stem of a tune with its kick splitter (onsets held to the tune's beat grid). */
+async function kickSplitter(folder: string) {
   const drums = drumsStem(folder);
   const buffer = await engine.loadBuffer(drums.id);
   const channels = channelsOf(buffer);
   const base = drums.name.replace(/ - Drums\.[a-z0-9]+$/i, '');
-  // An earlier split of this tune (also one made before the kick click was kept with the kick) is replaced, not doubled.
-  const old = getState().samples.filter((x) => x.folder === folder && x.id.startsWith('split'));
-  if (old.length) await removeSamples(old, deleteSample);
   // The click belongs only to kicks on the beat: the detected onsets are held to the tune's beat grid.
   const tempo = drums.bpm ?? getState().samples.find((x) => x.folder === folder && x.bpm)?.bpm;
   let grid: { bpm: number; downbeatMs: number } | undefined;
@@ -114,21 +111,43 @@ export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
     const t = transcribeDrums(mono.data, mono.sampleRate, tempo);
     if (t.notes.length) grid = { bpm: t.bpm, downbeatMs: t.downbeatMs };
   }
-  const splitter = makeDrumSplitter(channels, buffer.sampleRate, grid);
+  return { drums, base, sampleRate: buffer.sampleRate, splitter: makeDrumSplitter(channels, buffer.sampleRate, grid) };
+}
+
+async function storeKickPart(folder: string, id: string, name: string, category: 'kick' | 'top', drums: Sample, sampleRate: number, channels: Float32Array[]): Promise<Sample> {
+  const wav = encodeWav({ sampleRate, channels });
+  const sample = await storeSampleAudio(
+    { id, name, folder, category, ...(drums.bpm ? { bpm: drums.bpm } : {}), ...(drums.key ? { key: drums.key } : {}), size: wav.byteLength, addedAt: Date.now() },
+    wav,
+    'wav',
+  );
+  setSamples([...getState().samples.filter((x) => x.id !== id), sample]);
+  return sample;
+}
+
+/** The drums stem split into Kick (rumble + body + click) and Top Loop (the rest) as WAV samples in the same library folder (band filters, not AI). */
+export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
+  // An earlier split of this tune (also one made before the kick click was kept with the kick) is replaced, not doubled.
+  const old = getState().samples.filter((x) => x.folder === folder && x.id.startsWith('split'));
+  if (old.length) await removeSamples(old, deleteSample);
+  const { drums, base, sampleRate, splitter } = await kickSplitter(folder);
   const out: Sample[] = [];
   for (const part of ['kick', 'top'] as const) {
-    const wav = encodeWav({ sampleRate: buffer.sampleRate, channels: splitter.part(part) });
-    const id = `${SPLIT_PREFIX}${uid()}`;
-    const sample = await storeSampleAudio(
-      { id, name: `${base} - ${SPLIT_LABEL[part]}.wav`, folder, category: part === 'kick' ? 'kick' : 'top', ...(drums.bpm ? { bpm: drums.bpm } : {}), ...(drums.key ? { key: drums.key } : {}), size: wav.byteLength, addedAt: Date.now() },
-      wav,
-      'wav',
-    );
-    setSamples([...getState().samples.filter((x) => x.id !== id), sample]);
-    out.push(sample);
+    out.push(await storeKickPart(folder, `${SPLIT_PREFIX}${uid()}`, `${base} - ${SPLIT_LABEL[part]}.wav`, part === 'kick' ? 'kick' : 'top', drums, sampleRate, splitter.part(part)));
   }
   return out;
 }
+
+/** BUILD KICK: the three bands of the kick with the designer's levels and lengths combined into a new kick, same length as the drums stem (stays in sync). The split parts stay untouched. */
+export async function buildKick(folder: string, design: KickDesign): Promise<Sample> {
+  const old = getState().samples.filter((x) => x.folder === folder && x.id.startsWith(KICK_EDIT_PREFIX));
+  if (old.length) await removeSamples(old, deleteSample);
+  const { drums, base, sampleRate, splitter } = await kickSplitter(folder);
+  return storeKickPart(folder, `${KICK_EDIT_PREFIX}${uid()}`, `${base} - Kick (Edit).wav`, 'kick', drums, sampleRate, splitter.kick(design));
+}
+
+/** Id prefix of a kick built in the designer (not a drum part for the rebuild). */
+const KICK_EDIT_PREFIX = 'kickedit:';
 
 /** Id prefix of the app's own drum split; `split:` (without 2) was the first version without the kick's click. */
 const SPLIT_PREFIX = 'split3:';
@@ -147,7 +166,7 @@ export async function rebuildWithOriginalStems(folder: string): Promise<{ sectio
   // The drums come as separate parts (kick, clap, hats ...) when the library has them in the tune's folder (own split or files from
   // another tool); without parts the drums stem is split first, so the rebuild always has them apart.
   // Parts of the first split version (`split:`, no kick click) count as missing: they are replaced by a new split.
-  const partsOf = () => getState().samples.filter((s) => s.folder === folder && drumPartLabel(s.name) && !s.id.startsWith('split:') && !s.id.startsWith('split2:'));
+  const partsOf = () => getState().samples.filter((s) => s.folder === folder && drumPartLabel(s.name) && !s.id.startsWith('split:') && !s.id.startsWith('split2:') && !s.id.startsWith(KICK_EDIT_PREFIX));
   let parts = partsOf();
   let split = false;
   if (!parts.length && stems.some((s) => stemKindOf(s.name) === 'drums')) {

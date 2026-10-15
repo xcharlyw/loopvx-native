@@ -5,6 +5,7 @@ import { formatBarPosition } from '../audio/timing';
 import { uid } from '../lib/project';
 import { errorText, setState, toast, useStore } from '../lib/store';
 import { db } from '../storage/db';
+import { ideaText, requestLyrics, type LyricIdea } from '../lib/lyrics';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
 import { voiceSources } from '../lib/voiceClip';
@@ -39,6 +40,9 @@ export function PromptBar() {
   const [speed, setSpeed] = useState(1);
   const [expression, setExpression] = useState(0.3);
   const [stability, setStability] = useState(0.5);
+  const [theme, setTheme] = useState('');
+  const [ideas, setIdeas] = useState<LyricIdea[]>([]);
+  const [ideasBusy, setIdeasBusy] = useState(false);
   const [presets, setPresets] = useState<VocalPreset[]>([]);
   const [presetId, setPresetId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -58,6 +62,38 @@ export function PromptBar() {
       if (chosen && list.some((v) => v.id === chosen)) setVoiceId(chosen);
     });
   }, []);
+  // endless ideas: every round asks for new ones and tells Gemini which titles it already showed
+  const moreIdeas = async (fresh: boolean) => {
+    if (ideasBusy) return;
+    if (!(await getSession())) {
+      toast('Bitte zuerst mit Google anmelden.');
+      setState({ panel: 'projects' });
+      return;
+    }
+    setIdeasBusy(true);
+    try {
+      const list = await requestLyrics({
+        theme,
+        language: language ?? 'de',
+        ...(voiceId === null && gender ? { gender } : {}),
+        ...(style ? { style } : {}),
+        bpm: project.bpm,
+        count: 4,
+        avoid: (fresh ? [] : ideas).map((i) => i.title),
+      });
+      setIdeas((old) => (fresh ? list : [...old, ...list]));
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setIdeasBusy(false);
+    }
+  };
+  const useIdea = (i: LyricIdea) => {
+    setLyrics(ideaText(i));
+    // spoken in a cloned voice, the style prompt is not needed; for the AI vocal it is the music description
+    if (voiceId === null) setPrompt(i.stylePrompt);
+    toast(`„${i.title}“ übernommen`);
+  };
   const storePresets = (list: VocalPreset[]) => {
     setPresets(list);
     void db.setKv('vocalPresets', list);
@@ -225,6 +261,29 @@ export function PromptBar() {
           </Chip>
         </View>
         <View style={s.row}>
+          <TextInput style={[s.input, s.textInput]} placeholder="Thema für Text-Ideen (optional), z. B. Hitze, Nacht, Kontrolle" placeholderTextColor={C.dim} value={theme} onChangeText={setTheme} />
+          <Btn onPress={() => void moreIdeas(true)} disabled={ideasBusy}>
+            {ideasBusy ? 'denkt …' : 'Text-Ideen'}
+          </Btn>
+          {ideas.length > 0 && (
+            <Btn onPress={() => void moreIdeas(false)} disabled={ideasBusy}>
+              Mehr Ideen
+            </Btn>
+          )}
+        </View>
+        {ideas.map((i) => (
+          <View key={i.title + i.lines[0]} style={s.idea}>
+            <Txt style={s.ideaTitle}>{`${i.title}${i.genre ? ` · ${i.genre}` : ''}`}</Txt>
+            <Txt style={s.ideaLines}>{i.lines.join('\n')}</Txt>
+            <View style={s.row}>
+              <Chip variant="solid" onPress={() => useIdea(i)}>
+                Übernehmen
+              </Chip>
+              <Chip onPress={() => setIdeas((old) => old.filter((x) => x !== i))}>Weg</Chip>
+            </View>
+          </View>
+        ))}
+        <View style={s.row}>
           <Txt style={s.small}>Vorlagen:</Txt>
           {FACTORY_PRESETS.map((p) => (
             <Chip key={p.id} variant={presetId === p.id ? 'on' : 'ghost'} onPress={() => loadPreset(p)}>
@@ -389,6 +448,9 @@ const s = StyleSheet.create({
   textInput: { paddingVertical: 1, paddingHorizontal: 2 },
   send: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
   lyrics: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 8, paddingTop: 8 },
+  idea: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 8, paddingTop: 8 },
+  ideaTitle: { color: C.accent, fontSize: 12, ...font(700) },
+  ideaLines: { color: C.text, fontSize: 13, lineHeight: 18, marginTop: 2 },
   small: { color: C.muted, fontSize: 11, lineHeight: 15 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 },
 });

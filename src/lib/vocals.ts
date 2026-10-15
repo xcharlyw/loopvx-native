@@ -59,14 +59,14 @@ export async function generateVocal(req: VocalRequest): Promise<Sample> {
   const buffer = await engine.loadBuffer(id);
   // generated vocals are cut to the chosen bars; spoken ones keep their natural length (rounded up to whole bars)
   const length = req.voiceId ? Math.max(1, Math.ceil(sampleLengthBars(buffer.duration, project.bpm))) : Math.min(req.bars, sampleLengthBars(buffer.duration, project.bpm, sample.bpm));
+  // every generated vocal gets a track of its own, so earlier takes stay untouched and can be compared (an empty vocal track, like the default one, is used first)
   updateProject((p) => {
-    let track = p.tracks.find((t) => t.category === 'vocal');
-    let next = p;
-    if (!track) {
-      track = createTrack('vocal', p.sceneCount);
-      next = { ...p, tracks: [...p.tracks, track] };
-    }
-    return addClip(next, track.id, { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0 });
+    const empty = p.tracks.find((t) => t.category === 'vocal' && t.clips.length === 0);
+    if (empty) return addClip(p, empty.id, { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0 });
+    const taken = p.tracks.filter((t) => t.category === 'vocal').length;
+    const name = taken === 0 ? 'Vocals' : `Vocals ${taken + 1}`;
+    const track = createTrack('vocal', p.sceneCount, name);
+    return addClip({ ...p, tracks: [...p.tracks, track] }, track.id, { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0 });
   });
   return sample;
 }

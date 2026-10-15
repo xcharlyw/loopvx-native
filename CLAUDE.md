@@ -175,6 +175,14 @@ PromptBar → row "Stimme": "AI-Stimme" or one of the cloned voices, "＋ Stimme
 
 **Portuguese and vocals to text** (Karl: "add portugués", "turn sung or rap vocals into text, save as song text, use as inspiration for the AI"): language chips are now Deutsch / Spanisch / Englisch / Portugiesisch (`'de'|'es'|'en'|'pt'` everywhere, `LANGUAGE_NAME` in api/vocals.ts and api/lyrics.ts). PromptBar → "Songtexte: Text aus Vocals": pick a library sample (same `voiceSources` list as the clone panel) or record, `transcribeSample` (`lib/transcribe.ts`) mixes to mono 16 kHz (`monoClip` in voiceClip.ts, max 120 s so one request stays under 4.4 MB) and posts it to `api/transcribe.ts`, which sends the WAV inline to Gemini's audio understanding (same key/models/retry, temperature 0.1, JSON `{language, lines}` checked by `parseTranscript`; 422 when no voice found). The text appears in an editable field (the detected language also selects the language chip) and can be saved as a **Songtext** (kv `songTexts`, `lib/songTexts.ts`, tested: `upsertSongText`, `removeSongText`, `inspirationOf` = at most 3 texts of 1200 chars, `titleFromText`), put into the lyrics field, or switched on as **Inspiration** (kv `inspoIds`): `api/lyrics.ts` then adds a STYLE INSPIRATION block to the request (rhyme scheme, rhythm, line length, vocabulary, imagery, attitude) and forbids copying lines, phrases or titles. Gemini transcribes through the audio, so rap/singing accuracy is unverified (mocks only) and the user is asked to check the text before saving.
 
+## Missing samples (device change)
+
+Library folder bar "Fehlende laden" or Datei → "Fehlende Samples laden" (`runLoadMissing` / `loadMissingSamples` in `sync.ts`): a sync first (this device uploads what
+Drive lacks, e.g. AI vocals whose upload failed), then every sample the open project plays or the library lists **without audio on this device** (`samplesWithAudio` in the
+`samples(.web).ts` pair: IndexedDB keys / file exists) is downloaded from LOOPVX/Samples, else from the original Drive file (`driveId`); pure plan `planMissing`
+(`missingSamples.ts`, tested). What is in neither place is named in the toast: it is still only on the other device, which uploads it when the same button runs there.
+The normal sync also re-fetches audio for metadata that lost its audio (Safari can clear site data; a local entry newer than Drive was never downloaded). Mocks only.
+
 ## Library folders
 
 `Sample.folder` is a path ("Loops/Kicks"), set by the Drive import (the pack name), Splice (the pack name) and the user. Folders that hold samples exist by themselves;

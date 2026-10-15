@@ -82,3 +82,16 @@ export async function deleteSample(sample: Sample): Promise<void> {
     /* already gone */
   }
 }
+
+/** The samples whose audio file is really on this device. */
+export async function samplesWithAudio(samples: Sample[]): Promise<Set<string>> {
+  const ok = new Set<string>();
+  for (const s of samples) {
+    try {
+      if (s.uri && new File(s.uri).exists) ok.add(s.id);
+    } catch {
+      /* unreadable uri: missing */
+    }
+  }
+  return ok;
+}

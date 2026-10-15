@@ -3,7 +3,9 @@ import { db, onDbChange } from '../storage/db';
 import type { Project, Sample, SampleCategory } from '../types';
 import { copyFile, createFile, uploadLarge, childrenOf, download, DriveAuthError, driveLinked, folder, forgetDriveToken, trash, updateFile, type DriveFile } from './drive';
 import { createProject } from './project';
-import { deleteSample, readSampleData, storeSampleAudio } from './samples';
+import { usedSampleIds } from './duplicates';
+import { planMissing } from './missingSamples';
+import { deleteSample, readSampleData, samplesWithAudio, storeSampleAudio } from './samples';
 import { errorText, flushSave, getState, openProject, replaceOpenProject, setSamples, setState, toast } from './store';
 import { planSync, type RemoteEntry, type SyncMemory } from './syncPlan';
 
@@ -187,7 +189,22 @@ async function syncSamples(dir: string, memory: StoredMemory): Promise<{ synced:
     await deleteLocally(() => db.deleteSample(id));
     synced.delete(id);
   }
-  if (plan.download.length || plan.deleteLocal.length) setSamples(await db.getSamples());
+  // Metadata can outlive its audio (another device's entry, site data cleared by the browser): fetch the audio of such samples again.
+  const after = await db.getSamples();
+  const have = await samplesWithAudio(after);
+  let healed = 0;
+  for (const s of after) {
+    const file = files.get(s.id);
+    if (have.has(s.id) || !file || deletedMidSync.has(s.id)) continue;
+    try {
+      await storeSampleAudio({ ...s, uri: undefined }, await download(file.id), extOf(s.name));
+      healed++;
+    } catch (e) {
+      failed.push(s.name);
+      console.warn('sample audio download failed', s.name, e);
+    }
+  }
+  if (plan.download.length || plan.deleteLocal.length || healed) setSamples(await db.getSamples());
   return { synced: [...synced], failed };
 }
 
@@ -224,6 +241,64 @@ async function runSync(manual: boolean) {
     if (manual) toast(errorText(e), 'error');
   } finally {
     applying = false;
+  }
+}
+
+/**
+ * "Fehlende Samples laden": sync first (this device uploads what Drive lacks and fetches what it lacks), then load every sample
+ * of the open project or the library that still has no audio here, from the LOOPVX copy or the original Drive file.
+ */
+export async function loadMissingSamples(): Promise<{ loaded: string[]; missing: string[] }> {
+  if (!(await driveLinked())) throw new Error('Nicht mit Google Drive verbunden. Melde dich mit Google an, dann werden die Samples über Drive geholt.');
+  await syncNow({ manual: true });
+  const root = await folder('root', 'LOOPVX');
+  const dir = await folder('samples', 'Samples', root);
+  const remote = new Map(remoteEntries(await childrenOf(dir), 'sid').map((r) => [r.id, { fileId: r.fileId, name: r.file.name, file: r.file }]));
+  const local = await db.getSamples();
+  const byId = new Map(local.map((s) => [s.id, s]));
+  const plan = planMissing(usedSampleIds([getState().project]), local, await samplesWithAudio(local), remote);
+  const loaded: string[] = [];
+  const missing: string[] = [];
+  for (const m of plan) {
+    if (m.from === 'none' || !m.fileId) {
+      missing.push(m.name);
+      continue;
+    }
+    try {
+      const meta = byId.get(m.id) ?? sampleFromFile(remote.get(m.id)!.file);
+      await storeSampleAudio({ ...meta, uri: undefined }, await download(m.fileId), extOf(meta.name));
+      loaded.push(m.name);
+    } catch (e) {
+      if (e instanceof DriveAuthError) throw e;
+      console.warn('could not load sample', m.name, e);
+      missing.push(m.name);
+    }
+  }
+  if (loaded.length) setSamples(await db.getSamples());
+  return { loaded, missing };
+}
+
+let loadingMissing = false;
+
+/** The button / menu entry: runs `loadMissingSamples` and says what happened. */
+export async function runLoadMissing(): Promise<void> {
+  if (loadingMissing) return;
+  loadingMissing = true;
+  toast('Suche fehlende Samples …');
+  try {
+    const { loaded, missing } = await loadMissingSamples();
+    const list = (names: string[]) => `${names.slice(0, 3).join(', ')}${names.length > 3 ? ` und ${names.length - 3} weitere` : ''}`;
+    if (!loaded.length && !missing.length) toast('Alle Samples sind auf diesem Gerät.');
+    else if (!missing.length) toast(`${loaded.length} Sample(s) aus Google Drive geladen.`);
+    else
+      toast(
+        `${loaded.length ? `${loaded.length} geladen. ` : ''}Noch nicht in Drive: ${list(missing)}. Öffne LOOPVX auf dem Gerät, auf dem sie liegen, und tippe dort auch „Fehlende Samples laden“: dann werden sie hochgeladen.`,
+        'error',
+      );
+  } catch (e) {
+    toast(errorText(e), 'error');
+  } finally {
+    loadingMissing = false;
   }
 }
 

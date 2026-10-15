@@ -6,6 +6,7 @@ import { libraryDuplicates, usedSampleIds } from '../lib/duplicates';
 import { deleteSample } from '../lib/samples';
 import { allFolders, canMoveFolder, samplesUnder, withoutFolder, childFolders, countIn, dissolveFolder, flattenFolders, moveFolder, freeName, hasNesting, join, nameError, nameOf, parentOf, prettyPath, renameFolder } from '../lib/folders';
 import { getState, removeSamples, setFolders, toast, upsertSamples, useStore } from '../lib/store';
+import { runLoadMissing } from '../lib/sync';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Txt } from './kit';
 
@@ -96,6 +97,9 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
         )}
         <Btn small accessibilityLabel="Duplikate suchen" onPress={() => void dedupe()}>
           Duplikate
+        </Btn>
+        <Btn small accessibilityLabel="Fehlende Samples laden" onPress={() => void runLoadMissing()}>
+          Fehlende laden
         </Btn>
         <Btn small accessibilityLabel={selecting ? 'Auswahl beenden' : 'Samples auswählen'} onPress={() => onSelecting(!selecting)}>
           {selecting ? 'Fertig' : 'Auswählen'}

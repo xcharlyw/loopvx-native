@@ -81,3 +81,10 @@ export async function readSampleData(sample: Sample): Promise<ArrayBuffer> {
 export async function deleteSample(sample: Sample): Promise<void> {
   await tx('readwrite', (st) => st.delete(sample.id));
 }
+
+/** The samples whose audio is really stored on this device (metadata can outlive the audio, e.g. when Safari clears site data). */
+export async function samplesWithAudio(samples: Sample[]): Promise<Set<string>> {
+  const keys = await tx<IDBValidKey[]>('readonly', (st) => st.getAllKeys());
+  const stored = new Set(keys.map(String));
+  return new Set(samples.filter((s) => stored.has(s.id)).map((s) => s.id));
+}

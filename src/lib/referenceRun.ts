@@ -1,12 +1,10 @@
 import { engine } from '../audio/engine';
-import { presetById, applyPreset, applyInstrument } from '../audio/presets';
+import { presetById, applyPreset } from '../audio/presets';
 import { encodeWav } from '../audio/wav';
-import { DRUM_PARTS, DRUM_PART_LABEL, DRUM_PITCH, bandOf, cutOneShot, hitTimesMs, makeDrumSplitter, monoForAnalysis, pickCleanHit, splitBands, transcribeDrums } from './drumSplit';
-import { DEFAULT_SYNTH } from './project';
-import { SAMPLER_PRESET } from '../audio/synth';
+import { DRUM_PARTS, DRUM_PART_LABEL, makeDrumSplitter, monoForAnalysis, transcribeDrums } from './drumSplit';
 import { createMidiClip, createTrack, uid } from './project';
 import { storeSampleAudio } from './samples';
-import type { Project, Sample, SynthSettings, Track } from '../types';
+import type { Sample } from '../types';
 import { arrange, type ArrangeResult, type Role } from './arranger';
 import { planSections, type PlanSection } from './arrangePlan';
 import { barLevels, drumPartLabel, stemClipRanges, stemKindOf, structureFromStems, type StemKind } from './referenceArrange';
@@ -127,68 +125,6 @@ export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
 /** Id prefix of the app's own drum split; `split:` (without 2) was the first version without the kick's click. */
 const SPLIT_PREFIX = 'split2:';
 
-/** Id prefix of the one-shot hits cut out of a tune's drums (kept apart from the stems and parts in the rebuild). */
-const ONESHOT_PREFIX = 'oneshot:';
-const ONE_SHOT_NAME: Record<(typeof DRUM_PARTS)[number], string> = { kick: 'Kick Hit', clap: 'Clap Hit', hat: 'HiHat Hit' };
-const SAMPLE_TRACK: Record<(typeof DRUM_PARTS)[number], string> = { kick: 'Kick Sample', clap: 'Clap Sample', hat: 'HiHat Sample' };
-
-/** The tracks of `incoming` replace tracks of the same name in `tracks`; new names are appended. */
-export function mergeTracksByName(tracks: Track[], incoming: Track[]): Track[] {
-  const out = [...tracks];
-  for (const t of incoming) {
-    const at = out.findIndex((x) => x.name === t.name && (x.kind ?? 'audio') === (t.kind ?? 'audio'));
-    if (at >= 0) out[at] = { ...t, id: out[at].id, color: out[at].color, volume: out[at].volume, muted: out[at].muted, solo: out[at].solo };
-    else out.push(t);
-  }
-  return out;
-}
-
-/**
- * The drums as clean one-shots (how it is done by hand in Ableton: cut one short hit, consolidate it, play it where it belongs):
- * per part (kick, clap, hat) the cleanest single hit is cut out of the drums stem (the kick keeps its click), stored as a sample
- * "<tune> - Kick Hit" and played by a sampler track that fires it at every place the part hits in the tune. No bleed, no phasing,
- * small, and every hit is a note to edit. Returns the finished tracks; the caller puts them into the project (one undo step).
- */
-export async function makeDrumSampleTracks(folder: string, grid?: { bpm: number; offsetSec: number }): Promise<{ tracks: Track[]; hits: Record<(typeof DRUM_PARTS)[number], number>; bars: number; bpm: number }> {
-  const drums = drumsStem(folder);
-  const tempo = grid?.bpm ?? drums.bpm ?? getState().samples.find((s) => s.folder === folder && s.bpm)?.bpm;
-  if (!tempo) throw new Error('Das Tempo des Tunes ist unbekannt: trag beim Drums-Stem das BPM ein.');
-  const buffer = await engine.loadBuffer(drums.id);
-  const channels = channelsOf(buffer);
-  const mono = monoForAnalysis(channels, buffer.sampleRate);
-  const transcript = transcribeDrums(mono.data, mono.sampleRate, tempo);
-  if (!transcript.notes.length) throw new Error('Im Drums-Stem wurden keine Schläge gefunden.');
-  const times = hitTimesMs(transcript);
-  const bands = splitBands(mono.data, mono.sampleRate);
-  const base = drums.name.replace(/ - Drums\.[a-z0-9]+$/i, '');
-  const splitter = makeDrumSplitter(channels, buffer.sampleRate);
-  const old = getState().samples.filter((x) => x.folder === folder && x.id.startsWith(ONESHOT_PREFIX));
-  if (old.length) await removeSamples(old, deleteSample);
-  const tracks: Track[] = [];
-  const hits = { kick: 0, clap: 0, hat: 0 };
-  for (const part of DRUM_PARTS) {
-    const at = pickCleanHit(bands, mono.sampleRate, part, times[part]);
-    if (at === undefined) continue;
-    const wav = encodeWav({ sampleRate: buffer.sampleRate, channels: cutOneShot(part, splitter.part(part), buffer.sampleRate, at) });
-    const id = `${ONESHOT_PREFIX}${uid()}`;
-    const sample = await storeSampleAudio({ id, name: `${base} - ${ONE_SHOT_NAME[part]}.wav`, folder, category: part === 'kick' ? 'kick' : 'top', size: wav.byteLength, addedAt: Date.now() }, wav, 'wav');
-    setSamples([...getState().samples.filter((x) => x.id !== id), sample]);
-    const notes = transcript.notes.filter((n) => n.pitch === DRUM_PITCH[part]).map((n) => ({ pitch: 60, start: n.start, length: 1 / 16, velocity: n.velocity }));
-    hits[part] = notes.length;
-    const track = applyInstrument({ ...createTrack(part === 'kick' ? 'kick' : 'top', getState().project.sceneCount, SAMPLE_TRACK[part], 'midi'), volume: 0.9 }, { ...DEFAULT_SYNTH, ...SAMPLER_PRESET, sampleId: id } as SynthSettings);
-    tracks.push({ ...track, clips: [{ ...createMidiClip(0, transcript.bars), notes }] });
-  }
-  if (!tracks.length) throw new Error('Es wurde kein sauberer Schlag zum Ausschneiden gefunden.');
-  return { tracks, hits, bars: transcript.bars, bpm: transcript.bpm };
-}
-
-/** "Drums → Sample-Spuren": the one-shot tracks added to the project (existing ones of the same name are replaced), one undo step. */
-export async function drumsToSampleTracks(folder: string): Promise<{ tracks: string[]; hits: Record<(typeof DRUM_PARTS)[number], number>; bars: number; bpm: number }> {
-  const r = await makeDrumSampleTracks(folder);
-  updateProject((p: Project) => ({ ...p, tracks: mergeTracksByName(p.tracks, r.tracks) }));
-  return { tracks: r.tracks.map((t) => t.name), hits: r.hits, bars: r.bars, bpm: r.bpm };
-}
-
 /**
  * The simple rebuild: the tune's own stems on one audio track each ("Stem Drums", "Stem Bass" …), every stem only in the sections
  * where it plays (clip offset = position, so it is exactly that part of the original), the sections as markers and the project at
@@ -203,12 +139,14 @@ export async function rebuildWithOriginalStems(folder: string): Promise<{ sectio
   // The drums come as separate parts (kick, clap, hats ...) when the library has them in the tune's folder (own split or files from
   // another tool); without parts the drums stem is split first, so the rebuild always has them apart.
   // Parts of the first split version (`split:`, no kick click) count as missing: they are replaced by a new split.
-  const partsOf = () => getState().samples.filter((s) => s.folder === folder && drumPartLabel(s.name) && !s.id.startsWith('split:') && !s.id.startsWith(ONESHOT_PREFIX));
-  const parts = partsOf();
-  // Without drum parts from elsewhere the drums are rebuilt as clean one-shots played by sampler tracks (see makeDrumSampleTracks).
-  const sampleDrums = !parts.length && stems.some((s) => stemKindOf(s.name) === 'drums');
-  const drumTracks = sampleDrums ? await makeDrumSampleTracks(folder, grid) : undefined;
-  const split = !!drumTracks;
+  const partsOf = () => getState().samples.filter((s) => s.folder === folder && drumPartLabel(s.name) && !s.id.startsWith('split:'));
+  let parts = partsOf();
+  let split = false;
+  if (!parts.length && stems.some((s) => stemKindOf(s.name) === 'drums')) {
+    await splitDrumsAudio(folder);
+    parts = partsOf();
+    split = true;
+  }
   const perStem: { sample: Sample; kind: StemKind | 'part'; label: string; levels: number[] }[] = [];
   const merged: Partial<Record<StemKind, number[]>> = {};
   const levelsOf = async (s: Sample) => {
@@ -220,7 +158,7 @@ export async function rebuildWithOriginalStems(folder: string): Promise<{ sectio
     const kind = stemKindOf(s.name)!;
     const lv = await levelsOf(s);
     // The full drums stem still tells where the drums play (structure), but its own track is left out when the parts are there.
-    if (!(kind === 'drums' && (parts.length || sampleDrums))) perStem.push({ sample: s, kind, label: labelOf(s.name), levels: lv });
+    if (!(kind === 'drums' && parts.length)) perStem.push({ sample: s, kind, label: labelOf(s.name), levels: lv });
     merged[kind] = merged[kind] ? merged[kind]!.map((v, i) => Math.max(v, lv[i] ?? 0)) : lv;
   }
   for (const s of parts) perStem.push({ sample: s, kind: 'part', label: drumPartLabel(s.name)!, levels: await levelsOf(s) });
@@ -247,10 +185,6 @@ export async function rebuildWithOriginalStems(folder: string): Promise<{ sectio
       if (at >= 0) tracks[at] = { ...tracks[at], clips };
       else tracks = [...tracks, { ...createTrack(sample.category, p.sceneCount, name, 'audio'), color: CATEGORY_COLORS[sample.category], clips }];
       names.push(name);
-    }
-    if (drumTracks) {
-      tracks = mergeTracksByName(tracks, drumTracks.tracks.map((t) => ({ ...t, id: uid() })));
-      names.unshift(...drumTracks.tracks.map((t) => t.name));
     }
     return withMarkers({ ...p, bpm: grid.bpm, tracks, loop: { enabled: false, start: 0, end } }, marks);
   });

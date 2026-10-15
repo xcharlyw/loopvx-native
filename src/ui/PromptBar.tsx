@@ -23,6 +23,10 @@ const LENGTHS = [4, 8, 16, 32];
 export function PromptBar() {
   const project = useStore((st) => st.project);
   const cursor = useStore((st) => st.cursor);
+  const selectedTrackId = useStore((st) => st.selectedTrackId);
+  const selectedTrack = project.tracks.find((t) => t.id === selectedTrackId);
+  // where the vocal lands: the selected audio track, else a vocal track
+  const targetName = selectedTrack && selectedTrack.kind !== 'midi' && !selectedTrack.synth ? selectedTrack.name : 'neue Vocal-Spur';
   const { width } = useWindowDimensions();
   const small = useSmall();
   const [open, setOpen] = useState(false);
@@ -163,7 +167,7 @@ export function PromptBar() {
     setBusy(true);
     toast('Vocal wird generiert, das kann bis zu einer Minute dauern …');
     try {
-      const s = await generateVocal({
+      const made = await generateVocal({
         prompt,
         lyrics,
         bars,
@@ -173,7 +177,7 @@ export function PromptBar() {
           ? { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name, ...(style && style !== 'sing' ? { style } : {}), speed, expression, stability }
           : { ...(gender ? { gender } : {}), ...(style ? { style } : {}) }),
       });
-      toast(`${voiceId ? `In der Stimme „${voices.find((v) => v.id === voiceId)?.name}“ gesprochen: ` : ''}„${s.name}“ liegt auf der Vocal-Spur bei Takt ${Math.floor(cursor) + 1}`);
+      toast(`${voiceId ? `In der Stimme „${voices.find((v) => v.id === voiceId)?.name}“ gesprochen: ` : ''}„${made.sample.name}“ liegt auf der Spur „${made.trackName}“ bei Takt ${made.bar}`);
     } catch (e) {
       toast(errorText(e), 'error');
     } finally {
@@ -217,7 +221,7 @@ export function PromptBar() {
         <View style={s.top}>
           <Chip variant="solid">
             <Wave size={14} color="#111" />
-            Vocal-Spur
+            {`Spur: ${targetName}`}
           </Chip>
           <Chip textStyle={[mono(), { fontSize: 12 }]}>{`ab ${formatBarPosition(Math.floor(cursor))}`}</Chip>
           <View style={s.badge}>

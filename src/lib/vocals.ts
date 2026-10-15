@@ -2,9 +2,9 @@ import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { VOCALS_ENDPOINT } from '../config';
 import type { Sample } from '../types';
-import { addClip, createTrack, uid } from './project';
+import { addClip, createTrack, trackKind, uid } from './project';
 import { storeSampleAudio } from './samples';
-import { getState, setSamples, updateProject } from './store';
+import { getState, setSamples, setState, updateProject } from './store';
 import { getSession } from './supabase';
 
 export interface VocalRequest {
@@ -27,7 +27,7 @@ export interface VocalRequest {
 }
 
 /** Generate a vocal with the ElevenLabs Music API (via api/vocals) and drop it on the vocal track at the playhead. */
-export async function generateVocal(req: VocalRequest): Promise<Sample> {
+export async function generateVocal(req: VocalRequest): Promise<{ sample: Sample; trackName: string; bar: number }> {
   const { project, cursor } = getState();
   const session = await getSession();
   if (!session) throw new Error('Bitte zuerst anmelden (Projekte → Mit Google anmelden).');
@@ -59,14 +59,23 @@ export async function generateVocal(req: VocalRequest): Promise<Sample> {
   const buffer = await engine.loadBuffer(id);
   // generated vocals are cut to the chosen bars; spoken ones keep their natural length (rounded up to whole bars)
   const length = req.voiceId ? Math.max(1, Math.ceil(sampleLengthBars(buffer.duration, project.bpm))) : Math.min(req.bars, sampleLengthBars(buffer.duration, project.bpm, sample.bpm));
-  // every generated vocal gets a track of its own, so earlier takes stay untouched and can be compared (an empty vocal track, like the default one, is used first)
+  // The vocal goes onto the selected track at the playhead (the lime line). Without an audio track selected (none, or a MIDI track)
+  // it goes onto the first empty vocal track, else onto a new one.
+  let trackName = '';
   updateProject((p) => {
-    const empty = p.tracks.find((t) => t.category === 'vocal' && t.clips.length === 0);
-    if (empty) return addClip(p, empty.id, { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0 });
-    const taken = p.tracks.filter((t) => t.category === 'vocal').length;
-    const name = taken === 0 ? 'Vocals' : `Vocals ${taken + 1}`;
-    const track = createTrack('vocal', p.sceneCount, name);
-    return addClip({ ...p, tracks: [...p.tracks, track] }, track.id, { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0 });
+    const selected = p.tracks.find((t) => t.id === getState().selectedTrackId);
+    const target = selected && trackKind(selected) === 'audio' ? selected : p.tracks.find((t) => t.category === 'vocal' && trackKind(t) === 'audio' && t.clips.length === 0);
+    const clip = { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0 };
+    if (target) {
+      trackName = target.name;
+      return addClip(p, target.id, clip);
+    }
+    const track = createTrack('vocal', p.sceneCount, p.tracks.some((t) => t.category === 'vocal') ? `Vocals ${p.tracks.filter((t) => t.category === 'vocal').length + 1}` : 'Vocals');
+    trackName = track.name;
+    return addClip({ ...p, tracks: [...p.tracks, track] }, track.id, clip);
   });
-  return sample;
+  const placed = getState().project.tracks.find((t) => t.clips.some((c) => c.sampleId === id));
+  if (placed) setState({ selectedTrackId: placed.id });
+  return { sample, trackName, bar: Math.floor(cursor) + 1 };
+
 }

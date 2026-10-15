@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, useWindowDim
 import { C, font, mono } from '../constants/theme';
 import { formatBarPosition } from '../audio/timing';
 import { errorText, setState, toast, useStore } from '../lib/store';
+import { db } from '../storage/db';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
 import { voiceSources } from '../lib/voiceClip';
@@ -35,8 +36,16 @@ export function PromptBar() {
   const [consent, setConsent] = useState(false);
   const [cloneBusy, setCloneBusy] = useState(false);
   useEffect(() => {
-    void loadVoices().then(setVoices);
+    // the chosen voice is remembered, otherwise every restart goes back to the AI voice
+    void Promise.all([loadVoices(), db.getKv<string>('voiceId')]).then(([list, chosen]) => {
+      setVoices(list);
+      if (chosen && list.some((v) => v.id === chosen)) setVoiceId(chosen);
+    });
   }, []);
+  const pickVoice = (id: string | null) => {
+    setVoiceId(id);
+    void db.setKv('voiceId', id);
+  };
   const [search, setSearch] = useState('');
   const sources = voiceSources(samples, search);
 
@@ -65,8 +74,8 @@ export function PromptBar() {
     setBusy(true);
     toast('Vocal wird generiert, das kann bis zu einer Minute dauern …');
     try {
-      const s = await generateVocal({ prompt, lyrics, bars, vocalsOnly, ...(voiceId ? { voiceId } : {}) });
-      toast(`„${s.name}“ liegt auf der Vocal-Spur bei Takt ${Math.floor(cursor) + 1}`);
+      const s = await generateVocal({ prompt, lyrics, bars, vocalsOnly, ...(voiceId ? { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name } : {}) });
+      toast(`${voiceId ? `In der Stimme „${voices.find((v) => v.id === voiceId)?.name}“ gesungen: ` : ''}„${s.name}“ liegt auf der Vocal-Spur bei Takt ${Math.floor(cursor) + 1}`);
     } catch (e) {
       toast(errorText(e), 'error');
     } finally {
@@ -80,7 +89,7 @@ export function PromptBar() {
     try {
       const v = await cloneVoice(cloneFrom, cloneName, consent);
       setVoices((x) => [...x, v]);
-      setVoiceId(v.id);
+      pickVoice(v.id);
       setCloning(false);
       setCloneName('');
       setConsent(false);
@@ -95,7 +104,7 @@ export function PromptBar() {
     try {
       await removeVoice(v.id);
       setVoices((x) => x.filter((y) => y.id !== v.id));
-      if (voiceId === v.id) setVoiceId(null);
+      if (voiceId === v.id) pickVoice(null);
       toast(`Stimme „${v.name}“ gelöscht.`);
     } catch (e) {
       toast(errorText(e), 'error');
@@ -155,11 +164,11 @@ export function PromptBar() {
         </View>
         <View style={s.row}>
           <Txt style={s.small}>Stimme:</Txt>
-          <Chip variant={voiceId === null ? 'on' : 'ghost'} onPress={() => setVoiceId(null)}>
+          <Chip variant={voiceId === null ? 'on' : 'ghost'} onPress={() => pickVoice(null)}>
             AI-Stimme
           </Chip>
           {voices.map((v) => (
-            <Chip key={v.id} variant={voiceId === v.id ? 'on' : 'ghost'} onPress={() => setVoiceId(v.id)}>
+            <Chip key={v.id} variant={voiceId === v.id ? 'on' : 'ghost'} onPress={() => pickVoice(v.id)}>
               {v.name}
             </Chip>
           ))}

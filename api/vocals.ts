@@ -100,6 +100,8 @@ export async function POST(req: Request): Promise<Response> {
       'Content-Type': type,
       'Cache-Control': 'no-store',
       'X-Song-Id': music.headers.get('song-id') ?? '',
+      // Tells the app the vocal really went through the cloned voice.
+      ...(body.voiceId ? { 'X-Voice-Id': body.voiceId } : {}),
     },
   });
 }

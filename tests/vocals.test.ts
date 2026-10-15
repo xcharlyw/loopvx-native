@@ -85,6 +85,7 @@ describe('POST /api/vocals', () => {
     const calls = setup();
     const res = await POST(request({ prompt: 'x', voiceId: 'voice_abc123' }));
     expect(res.status).toBe(200);
+    expect(res.headers.get('x-voice-id')).toBe('voice_abc123');
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([5, 5, 5]));
     expect(calls.some((c) => c.url.endsWith('/v1/music/stem-separation'))).toBe(true);
     const sts = calls.find((c) => c.url.endsWith('/v1/speech-to-speech/voice_abc123'))!;

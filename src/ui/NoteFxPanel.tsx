@@ -5,8 +5,9 @@ import { applyNoteFx, ARP_RATES, DEFAULT_ARP, DEFAULT_SEQ, rateLabel, SEQ_STEPS 
 import { ARP_PRESETS, arpPresetById, SEQ_PRESETS, seqPresetById } from '../audio/notefxPresets';
 import { C, font } from '../constants/theme';
 import { noteName } from '../lib/midi';
-import { mapTrack, trackKind } from '../lib/project';
-import { updateProject, useStore } from '../lib/store';
+import { trackKind } from '../lib/project';
+import { useStore } from '../lib/store';
+import { applyArpPreset, applySeqPreset, setArp as setArpFx, setSeq as setSeqFx, setSeqStep, stepId } from '../lib/notefxActions';
 import type { ArpPattern, ArpSettings, Note, SeqSettings, SeqStep } from '../types';
 import { Btn, Chip, Txt } from './kit';
 import { Sheet } from './Sheet';
@@ -105,21 +106,12 @@ export function NoteFxPanel() {
   const arp: ArpSettings = { ...DEFAULT_ARP, ...track.arp };
   const seq: SeqSettings = { ...DEFAULT_SEQ, ...track.seq };
   const inner = Math.max(200, width - 22);
-  const setArp = (patch: Partial<ArpSettings>, record = false) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, arp: { ...DEFAULT_ARP, ...t.arp, ...patch }, ...(patch.on ? { seq: t.seq ? { ...t.seq, on: false } : t.seq } : {}) })), record ? undefined : { merge: true });
-  const setSeq = (patch: Partial<SeqSettings>, record = false) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, seq: { ...DEFAULT_SEQ, ...t.seq, ...patch }, ...(patch.on ? { arp: t.arp ? { ...t.arp, on: false } : t.arp } : {}) })), record ? undefined : { merge: true });
-  const setStep = (i: number, patch: Partial<SeqStep>) => setSeq({ steps: seq.steps.map((st, j) => (j === i ? { ...st, ...patch } : st)) });
-  const arpPreset = (id: string) => {
-    const p = arpPresetById(id);
-    if (p) setArp({ ...p.arp, preset: p.id }, true);
-  };
-  const seqPreset = (id: string) => {
-    const p = seqPresetById(id);
-    if (p) setSeq({ ...p.seq, steps: p.seq.steps.map((x) => ({ ...x })), preset: p.id }, true);
-  };
-  const stepList = <T extends { id: string }>(list: T[], cur: string | undefined, d: 1 | -1) => {
-    const i = list.findIndex((x) => x.id === cur);
-    return list[(i < 0 ? (d > 0 ? 0 : list.length - 1) : (i + d + list.length) % list.length)].id;
-  };
+  const setArp = (patch: Partial<ArpSettings>, record = false) => setArpFx(trackId, patch, record);
+  const setSeq = (patch: Partial<SeqSettings>, record = false) => setSeqFx(trackId, patch, record);
+  const setStep = (i: number, patch: Partial<SeqStep>) => setSeqStep(trackId, i, patch);
+  const arpPreset = (id: string) => applyArpPreset(trackId, id);
+  const seqPreset = (id: string) => applySeqPreset(trackId, id);
+  const stepList = stepId;
   const curArp = arpPresetById(arp.preset);
   const curSeq = seqPresetById(seq.preset);
   const step = seq.steps[selected] ?? seq.steps[0];

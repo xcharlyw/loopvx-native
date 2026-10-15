@@ -271,12 +271,13 @@ shifted to that note: draw one long root note and the preset makes the line (rol
 a one-bar picture of what the effect plays for a demo chord / root note, pattern and rate chips, knobs, and for the sequencer a step grid (tap a step to select it, then on/off, accent, "Ton" knob). Measured offline in Chromium:
 arp up on a held chord = one note per 1/16 (16 active windows), chord 1/8 = every second window, a 4-step pattern with steps 1 and 3 = alternating windows.
 
-**Plugin windows** (Karl: "as own windows to drag around like Ableton"): on wide screens (web, the menu bar shown) the panels `instrument`, `devices` and `notefx` are not docked sheets but **floating windows**
-(`FloatingWindow.tsx`, list logic in `lib/windows.ts`, tested: cascade, front, close, move/resize clamped so the title bar stays reachable, collapse, refit; actions in `lib/windowActions.ts`; `state.windows`, the last is in
-front, `state.winMemory` reopens a window where it was closed). `Shell` redirects `panel: 'instrument' | 'devices' | 'notefx'` to `openWindow` (like the Library column), so every existing "open the sound / devices" button works
-unchanged; the panels' own title row is the title bar (`Sheet` gets `SheetPlace.floating`: drag handlers, ▾ collapse, ✕), the corner grip resizes, a touch anywhere raises the window (`onStartShouldSetResponderCapture`), several can be open
-at once, and a resized browser refits them. The commands "Geräte der Spur" (⌥⌘L), "Sound der Spur (Synth)" and "MIDI-Effekte" toggle them. Phones keep the sheets. Checked in Chromium with the mouse: drag 270/176 px moved the window by
-exactly that, the corner resized, three windows open at once.
+**Device chain = Live's detail view** (Karl, with a Live screenshot: "windows more like the workflow, and a smaller display for more overview"): on a wide screen the docked `devices` panel (`DevicePanel`, `chain` mode, width > 760)
+is a slim strip like Ableton's device view: a one-line toolbar ("+ Gerät", "Kette kopieren", "Alle einklappen"), then the chain left to right: **ARPEGGIATOR**, **SEQUENCER** and the **instrument** card for MIDI tracks
+(`ChainCards.tsx`, folded by default for the two MIDI effects: LED, preset ◀▶, pattern/rate chips, small knobs; the sequencer card has a 16-step mini grid you tap to switch steps on and off), then the audio effects as
+compact cards (250 px, power LED instead of the AN chip, 36 px knobs, scopes 56 px high; `DeviceCard compact`). The synth card shows preset ◀▶, the oscillator A source ◀▶ with its picture and the 11 knobs that matter
+(`synth/synthFields.tsx`); **⤢** on a card opens the full editor (Sound / MIDI-Effekte) as a **floating window**. Edits of the effects live in `lib/notefxActions.ts` (shared with `NoteFxPanel`). `Sheet compact` gives the docked
+detail panel a slim title row. The panels `instrument` and `notefx` (TrackPanel buttons, Ansicht menu) open those floating windows on a wide screen (`lib/windows.ts` `FLOAT_PANELS`, `FloatingWindow.tsx`, `lib/windowActions.ts`;
+drag the title row, resize at the corner, several at once, a touch raises, ▾ folds, `state.winMemory` reopens where it was closed, a resized browser refits them); phones keep the sheets.
 
 ## Sound panel (Serum-style)
 

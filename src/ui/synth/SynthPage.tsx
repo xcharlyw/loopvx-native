@@ -15,8 +15,8 @@ const ACCENT_B = '#3dd6ff';
 const WAVES: OscWave[] = ['sawtooth', 'square', 'triangle', 'sine'];
 const WAVE_NAMES: Record<OscWave, string> = { sawtooth: 'Saw', square: 'Square', triangle: 'Triangle', sine: 'Sine' };
 /** Everything an oscillator can play, in the order the arrows step through: the four basic waves, then the wavetables. */
-const SOURCES = [...WAVES.map((w) => ({ key: `w:${w}`, label: WAVE_NAMES[w] })), ...TABLES.map((t) => ({ key: `t:${t.id}`, label: t.label }))];
-const sourceKey = (table: string | undefined, wave: OscWave) => (table ? `t:${table}` : `w:${wave}`);
+export const SOURCES = [...WAVES.map((w) => ({ key: `w:${w}`, label: WAVE_NAMES[w] })), ...TABLES.map((t) => ({ key: `t:${t.id}`, label: t.label }))];
+export const sourceKey = (table: string | undefined, wave: OscWave) => (table ? `t:${table}` : `w:${wave}`);
 
 const PCT = (v: number) => `${Math.round(v * 100)} %`;
 const CT = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v)} ct`;

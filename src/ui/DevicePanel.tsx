@@ -15,6 +15,7 @@ import { useSampleDropTarget } from './dnd';
 import { Sheet } from './Sheet';
 import { PluginFrame, SKIN } from './skin';
 import { SpliceSearch } from './SpliceSearch';
+import { ArpCard, CARD_W_FX, InstrumentCard, SeqCard } from './ChainCards';
 import { Card } from './synth/Tabs';
 import { Knob, KnobRow } from './synth/Knob';
 import { CompScope, CycleScope, EchoScope, EqScope, LimiterScope, ReverbScope, SatScope, TransientScope } from './synth/DeviceScopes';
@@ -42,7 +43,7 @@ function visible(type: DeviceType, key: string, p: Record<string, number>): bool
 }
 
 /** Folded cards, kept while the app runs so the panel opens the way you left it (replaced, never mutated: React state). */
-let persistedFolded: ReadonlySet<string> = new Set();
+let persistedFolded: ReadonlySet<string> = new Set(['arp', 'seq']); // the MIDI effects start folded: they are off until you want them
 
 const SCOPE_FILTER: FilterKind[] = ['lowpass', 'highpass', 'bandpass'];
 
@@ -51,7 +52,7 @@ const SCOPE_FILTER: FilterKind[] = ['lowpass', 'highpass', 'bandpass'];
  * clips, then the effects in signal order, each with a live picture and knobs. Effects can be bypassed,
  * moved and removed; everything happens on the running mix without restarting playback.
  */
-const CARD_W = 340;
+const CARD_W = CARD_W_FX;
 
 export function DevicePanel() {
   const forMaster = useStore((st) => st.devicesFor === 'master');
@@ -82,7 +83,7 @@ export function DevicePanel() {
   const kind = trackKind(track);
   // A wide detail view (desktop) lays the chain out left to right like Live's device view.
   const chain = width > 760;
-  const inner = chain ? CARD_W - 26 : Math.max(200, width - 26);
+  const inner = chain ? CARD_W - 18 : Math.max(200, width - 26);
   const toggle = (id: string) => {
     const next = new Set(folded);
     if (!next.delete(id)) next.add(id);
@@ -116,13 +117,31 @@ export function DevicePanel() {
   };
 
   return (
-    <Sheet title="Geräte">
+    <Sheet title={chain ? `Geräte · ${forMaster ? 'Master' : track.name}` : 'Geräte'} compact={chain}>
       <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-        <Txt style={s.sub}>{forMaster ? 'Master · Summe aller Spuren, vor dem Sicherheits-Limiter' : `${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : 'Audio-Spur'}`}</Txt>
+        {!chain && <Txt style={s.sub}>{forMaster ? 'Master · Summe aller Spuren, vor dem Sicherheits-Limiter' : `${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : 'Audio-Spur'}`}</Txt>}
 
         {!forMaster && !chain && <Source track={track} kind={kind} />}
 
-        {devices.length > 0 && (
+        {chain && (
+          <View style={s.toolbar}>
+            <Chip variant={adding ? 'on' : 'ghost'} onPress={() => setAdding(!adding)} textStyle={{ fontSize: 11 }} accessibilityLabel="Gerät hinzufügen">
+              + Gerät
+            </Chip>
+            {devices.length > 0 && (
+              <Chip variant={copying ? 'on' : 'ghost'} onPress={() => setCopying(!copying)} textStyle={{ fontSize: 11 }} accessibilityLabel="Effektkette kopieren">
+                Kette kopieren
+              </Chip>
+            )}
+            {devices.length > 1 && (
+              <Chip onPress={() => foldAll(!allFolded)} textStyle={{ fontSize: 11 }}>
+                {allFolded ? 'Alle ausklappen' : 'Alle einklappen'}
+              </Chip>
+            )}
+          </View>
+        )}
+
+        {!chain && devices.length > 0 && (
           <View style={s.foldRow}>
             <Chip variant={copying ? 'on' : 'ghost'} onPress={() => setCopying(!copying)} textStyle={{ fontSize: 12 }} accessibilityLabel="Effektkette kopieren">
               Kette kopieren auf …
@@ -150,7 +169,7 @@ export function DevicePanel() {
           </View>
         )}
 
-        {devices.length > 1 && (
+        {!chain && devices.length > 1 && (
           <View style={s.foldRow}>
             <Chip onPress={() => foldAll(!allFolded)} textStyle={{ fontSize: 12 }}>
               {allFolded ? 'Alle ausklappen' : 'Alle einklappen'}
@@ -159,48 +178,68 @@ export function DevicePanel() {
         )}
 
         <ScrollView horizontal scrollEnabled={chain} contentContainerStyle={chain ? s.chain : s.stack} style={!chain && { overflow: 'visible' }}>
-          {chain && !forMaster && (
-            <View style={{ width: 220 }}>
+          {chain && !forMaster && kind === 'midi' && (
+            <>
+              <ArpCard track={track} folded={folded.has('arp')} onFold={() => toggle('arp')} />
+              <SeqCard track={track} folded={folded.has('seq')} onFold={() => toggle('seq')} />
+              <InstrumentCard track={track} folded={folded.has('inst')} onFold={() => toggle('inst')} />
+            </>
+          )}
+          {chain && !forMaster && kind === 'audio' && (
+            <View style={{ width: 150 }}>
               <Source track={track} kind={kind} />
             </View>
           )}
           {devices.map((d, i) => (
-            <View key={d.id} style={chain ? { width: CARD_W } : { alignSelf: 'stretch' }}>
-              <DeviceCard track={track} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
+            <View key={d.id} style={chain ? { width: folded.has(d.id) ? 170 : CARD_W_FX } : { alignSelf: 'stretch' }}>
+              <DeviceCard compact={chain} track={track} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
             </View>
           ))}
+          {chain && adding && (
+            <View style={{ width: 260 }}>
+              <PickList forMaster={forMaster} onPick={add} onCancel={() => setAdding(false)} />
+            </View>
+          )}
         </ScrollView>
 
-        {devices.length === 0 && <Txt style={[s.note, { marginBottom: 10 }]}>Noch keine Effekte. Füge Geräte hinzu: EQ, Compressor, Saturator, Echo, Reverb ...</Txt>}
+        {!chain && devices.length === 0 && <Txt style={[s.note, { marginBottom: 10 }]}>Noch keine Effekte. Füge Geräte hinzu: EQ, Compressor, Saturator, Echo, Reverb ...</Txt>}
 
-        {adding ? (
-          <Card title="GERÄT HINZUFÜGEN" right={<Chip onPress={() => setAdding(false)}>Abbrechen</Chip>}>
-            {GROUP_ORDER.map((g) => (
-              <View key={g} style={{ marginTop: 6 }}>
-                <Txt style={s.cap}>{GROUP_LABELS[g].toUpperCase()}</Txt>
-                {Object.values(DEVICE_DEFS)
-                  .filter((d) => d.group === g && !(forMaster && d.type === 'splice'))
-                  .map((d) => (
-                    <Pressable key={d.type} accessibilityLabel={`Gerät ${d.label} hinzufügen`} onPress={() => add(d.type)} style={s.pick}>
-                      <Txt style={s.pickName}>{d.label}</Txt>
-                      <Txt style={s.pickBlurb}>{d.blurb}</Txt>
-                    </Pressable>
-                  ))}
-              </View>
-            ))}
-          </Card>
-        ) : (
-          <Btn kind="primary" accessibilityLabel="Gerät hinzufügen" onPress={() => setAdding(true)}>
-            + Gerät hinzufügen
-          </Btn>
-        )}
-        <Txt style={[s.note, { marginTop: 12 }]}>
+        {!chain &&
+          (adding ? (
+            <PickList forMaster={forMaster} onPick={add} onCancel={() => setAdding(false)} />
+          ) : (
+            <Btn kind="primary" accessibilityLabel="Gerät hinzufügen" onPress={() => setAdding(true)}>
+              + Gerät hinzufügen
+            </Btn>
+          ))}
+        {!chain && <Txt style={[s.note, { marginTop: 12 }]}>
           {forMaster
             ? 'Die Master-Geräte bearbeiten die ganze Summe (auch Hall und Echo), danach kommt nur noch der Sicherheits-Limiter. Sie stecken auch im Export.'
             : 'Die Geräte arbeiten in dieser Reihenfolge, danach folgen DJ-Filter, Drive, Pan und der Fader der Spur. Sends (Reverb, Delay) hängen hinter dem Fader.'}
-        </Txt>
+        </Txt>}
       </View>
     </Sheet>
+  );
+}
+
+/** The list of devices to add. */
+function PickList({ forMaster, onPick, onCancel }: { forMaster: boolean; onPick: (type: DeviceType) => void; onCancel: () => void }) {
+  return (
+    <Card title="GERÄT HINZUFÜGEN" right={<Chip onPress={onCancel}>Abbrechen</Chip>}>
+      {GROUP_ORDER.map((g) => (
+        <View key={g} style={{ marginTop: 6 }}>
+          <Txt style={s.cap}>{GROUP_LABELS[g].toUpperCase()}</Txt>
+          {Object.values(DEVICE_DEFS)
+            .filter((d) => d.group === g && !(forMaster && d.type === 'splice'))
+            .map((d) => (
+              <Pressable key={d.type} accessibilityLabel={`Gerät ${d.label} hinzufügen`} onPress={() => onPick(d.type)} style={s.pick}>
+                <Txt style={s.pickName}>{d.label}</Txt>
+                <Txt style={s.pickBlurb}>{d.blurb}</Txt>
+              </Pressable>
+            ))}
+        </View>
+      ))}
+    </Card>
   );
 }
 
@@ -234,7 +273,7 @@ function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
   );
 }
 
-function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onRemove }: { track: Track; device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
+function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onRemove }: { compact?: boolean; track: Track; device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
   const [listOpen, setListOpen] = useState(false);
   const def = DEVICE_DEFS[device.type];
   if (!def) return null;
@@ -253,11 +292,15 @@ function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, b
 
   const header = (
     <View style={s.controls}>
-      {device.type !== 'splice' && (
+      {device.type !== 'splice' && (compact ? (
+        <Pressable accessibilityLabel={`${def.label} ${device.on ? 'ausschalten' : 'einschalten'}`} onPress={() => onChange({ on: !device.on })} hitSlop={8} style={{ paddingHorizontal: 4 }}>
+          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: device.on ? C.accent : '#2a3238' }} />
+        </Pressable>
+      ) : (
         <Chip variant={device.on ? 'on' : 'ghost'} onPress={() => onChange({ on: !device.on })} textStyle={{ fontSize: 11 }}>
           {device.on ? 'AN' : 'AUS'}
         </Chip>
-      )}
+      ))}
       <Pressable accessibilityLabel={`${def.label} nach vorne`} disabled={index === 0} onPress={() => onMove(-1)} style={[s.small, index === 0 && s.disabled]}>
         <Txt style={s.smallText}>▲</Txt>
       </Pressable>
@@ -286,13 +329,13 @@ function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, b
         </View>
       );
     }
-    return <Knob key={def.key} label={def.label} value={p[def.key]} min={def.min} max={def.max} curve={def.curve} step={def.step} reset={def.def} format={(v) => formatParam(def, v)} onChange={(v) => set(def.key, v)} />;
+    return <Knob key={def.key} {...(compact ? { size: 36, width: 50 } : {})} label={def.label} value={p[def.key]} min={def.min} max={def.max} curve={def.curve} step={def.step} reset={def.def} format={(v) => formatParam(def, v)} onChange={(v) => set(def.key, v)} />;
   };
 
   return (
     <View style={dim && { opacity: 0.55 }}>
-      <PluginFrame style={s.card}>
-        <View style={s.cardHead}>
+      <PluginFrame style={compact ? s.cardC : s.card} radius={compact ? 8 : 12}>
+        <View style={[s.cardHead, compact && { minHeight: 26 }]}>
           <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ${isFolded ? 'ausklappen' : 'einklappen'}`} accessibilityState={{ expanded: !isFolded }} onPress={onToggle} style={s.titleBox}>
             <Txt style={s.chevron}>{isFolded ? '▸' : '▾'}</Txt>
             <View style={{ flex: 1 }}>
@@ -343,7 +386,7 @@ function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, b
                 ))}
               </View>
             )}
-            <Scope device={device} p={p} bpm={bpm} width={width} />
+            <Scope device={device} p={p} bpm={bpm} width={width} compact={compact} />
             {rows.map((row, i) => (
               <View key={i}>
                 {row.title && <Txt style={[s.cap, { marginTop: 8 }]}>{row.title}</Txt>}
@@ -358,26 +401,27 @@ function DeviceCard({ track, device, folded: isFolded, onToggle, index, count, b
 }
 
 /** The live picture of a device (none for the plain ones). */
-function Scope({ device, p, bpm, width }: { device: Device; p: Record<string, number>; bpm: number; width: number }) {
+function Scope({ device, p, bpm, width, compact }: { device: Device; p: Record<string, number>; bpm: number; width: number; compact?: boolean }) {
+  const height = compact ? 56 : undefined;
   switch (device.type) {
     case 'eq':
-      return <EqScope params={p} width={width} />;
+      return <EqScope params={p} width={width} height={height} />;
     case 'comp':
-      return <CompScope threshold={p.threshold} ratio={p.ratio} knee={p.knee} makeup={p.makeup} width={width} />;
+      return <CompScope threshold={p.threshold} ratio={p.ratio} knee={p.knee} makeup={p.makeup} width={width} height={height} />;
     case 'sat':
-      return <SatScope mode={p.mode} drive={p.drive} width={width} />;
+      return <SatScope mode={p.mode} drive={p.drive} width={width} height={height} />;
     case 'echo':
       return <EchoScope seconds={echoSeconds(p as { sync: number; division: number; time: number }, bpm)} feedback={p.feedback} pingpong={p.pingpong >= 0.5} width={width} />;
     case 'reverb':
-      return <ReverbScope size={p.size} width={width} />;
+      return <ReverbScope size={p.size} width={width} height={height} />;
     case 'filter':
-      return <FilterScope type={SCOPE_FILTER[Math.round(p.type)] ?? 'lowpass'} cutoff={p.cutoff} resonance={p.type === 2 ? 0.5 + p.res * 0.6 : p.res} width={width} />;
+      return <FilterScope type={SCOPE_FILTER[Math.round(p.type)] ?? 'lowpass'} cutoff={p.cutoff} resonance={p.type === 2 ? 0.5 + p.res * 0.6 : p.res} width={width} height={height} />;
     case 'limiter':
-      return <LimiterScope gain={p.gain} ceiling={p.ceiling} width={width} />;
+      return <LimiterScope gain={p.gain} ceiling={p.ceiling} width={width} height={height} />;
     case 'transient':
-      return <TransientScope attack={p.attack} sustain={p.sustain} width={width} />;
+      return <TransientScope attack={p.attack} sustain={p.sustain} width={width} height={height} />;
     case 'kickstart':
-      return <CycleScope values={kickstartCurve(p.curve, p.mix, 64)} label={`${KICKSTART_CURVES[Math.round(p.curve)]} · ${RHYTHM_RATES[Math.round(p.rate)]}`} width={width} />;
+      return <CycleScope values={kickstartCurve(p.curve, p.mix, 64)} label={`${KICKSTART_CURVES[Math.round(p.curve)]} · ${RHYTHM_RATES[Math.round(p.rate)]}`} width={width} height={height} />;
     case 'shaper':
       return <CycleScope values={Array.from({ length: 128 }, (_, i) => 1 - p.depth * (1 - shaperShape(p.shape, i / 128)))} label={`${SHAPER_TARGETS[Math.round(p.target)]} · ${SHAPER_SHAPES[Math.round(p.shape)]} · ${RHYTHM_RATES[Math.round(p.rate)]}`} cycles={2} width={width} />;
     default:
@@ -393,7 +437,9 @@ const s = StyleSheet.create({
   presetList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   foldRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
   card: { padding: 12, marginBottom: 10 },
-  chain: { gap: 10, alignItems: 'flex-start' },
+  cardC: { padding: 8 },
+  toolbar: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 6 },
+  chain: { gap: 8, alignItems: 'flex-start', paddingBottom: 6 },
   stack: { flexDirection: 'column', width: '100%' },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 36 },
   titleBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },

@@ -21,7 +21,7 @@ export interface FloatingPlace {
 }
 export const SheetPlace = createContext<{ column: boolean; onClose: () => void; floating?: FloatingPlace }>({ column: false, onClose: () => setState({ panel: 'none' }) });
 
-export function Sheet({ title, children }: { title: string; children: ReactNode }) {
+export function Sheet({ title, children, compact }: { title: string; children: ReactNode; compact?: boolean }) {
   const place = useContext(SheetPlace);
   const stored = useStore((st) => st.sheetSize);
   const scale = useStore((st) => st.sheetScale);
@@ -33,14 +33,14 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
   };
   return (
     <>
-      <View style={[s.head, fl && s.headFloat, fl && web({ touchAction: 'none', cursor: 'grab', userSelect: 'none' })]} {...(fl?.drag ?? {})}>
+      <View style={[s.head, compact && s.headCompact, fl && s.headFloat, fl && web({ touchAction: 'none', cursor: 'grab', userSelect: 'none' })]} {...(fl?.drag ?? {})}>
         {fl ? (
           <Txt style={[s.title, { flex: 1 }]} numberOfLines={1}>
             {title}
           </Txt>
         ) : (
           <Pressable style={{ flex: 1 }} disabled={size !== 'bar'} onPress={() => setState({ sheetSize: 'half', sheetScale: 1 })} accessibilityLabel={size === 'bar' ? `${title} aufklappen` : title}>
-            <Txt style={s.title} numberOfLines={1}>
+            <Txt style={[s.title, compact && { fontSize: 13 }]} numberOfLines={1}>
               {title}
             </Txt>
           </Pressable>
@@ -74,6 +74,7 @@ export function Sheet({ title, children }: { title: string; children: ReactNode 
 const s = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 14, paddingHorizontal: 14, paddingBottom: 10 },
   headFloat: { paddingTop: 6, paddingBottom: 6, paddingHorizontal: 12, backgroundColor: '#16161a', borderBottomWidth: 1, borderBottomColor: '#26262b', minHeight: 44 },
+  headCompact: { paddingTop: 6, paddingBottom: 4, paddingHorizontal: 12 },
   title: { ...font(700), fontSize: 15 },
   body: { paddingHorizontal: 14, paddingBottom: 20 },
 });

@@ -3,7 +3,8 @@
 // Pure list functions, so the rules are tested; the store only holds the list (the last entry is the front window).
 
 export type WinId = 'instrument' | 'devices' | 'notefx';
-export const FLOAT_PANELS: readonly string[] = ['instrument', 'devices', 'notefx'];
+/** The big editors float; the device chain (`devices`) is Live's docked detail view with compact cards that open them. */
+export const FLOAT_PANELS: readonly string[] = ['instrument', 'notefx'];
 export const isFloatPanel = (p: string): p is WinId => FLOAT_PANELS.includes(p);
 
 export interface WinRect {

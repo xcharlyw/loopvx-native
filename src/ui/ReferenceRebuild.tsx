@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { C } from '../constants/theme';
 import { setCursor } from '../lib/actions';
 import { structureText } from '../lib/referenceArrange';
-import { drumsToMidi, rebuildFromStems, splitDrumsAudio, stemTunes } from '../lib/referenceRun';
+import { drumsToMidi, rebuildFromStems, rebuildWithOriginalStems, splitDrumsAudio, stemTunes } from '../lib/referenceRun';
 import { errorText, getState, setState, toast, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -28,6 +28,12 @@ export function ReferenceRebuild() {
       setBusy(null);
     }
   };
+  const original = (folder: string, tune: string) =>
+    void work(`${folder}#orig`, async () => {
+      const r = await rebuildWithOriginalStems(folder);
+      setCursor(0);
+      return `✓ „${tune}“ aus den Original-Stems nachgebaut (${r.bpm} BPM): ${structureText(r.sections)}. Spuren: ${r.tracks.join(', ')}`;
+    });
   const midi = (folder: string, tune: string) =>
     void work(`${folder}#midi`, async () => {
       const r = await drumsToMidi(folder);
@@ -60,7 +66,7 @@ export function ReferenceRebuild() {
   return (
     <Section title="Aufbau von einem Tune nachbauen" style={{ marginTop: 12 }}>
       <Txt style={s.note}>
-        Die App hört in die Stems eines Tunes (Library → Stems trennen). „Aufbau nachbauen“ erkennt Intro, Build-up, Drop, Break und Outro und baut sie mit deinen Spuren nach. „Drums → MIDI“ schreibt Kick, Clap und HiHats als MIDI auf eine neue 909-Spur. „Drums → Kick / Clap / HiHats“ teilt den Drum-Stem per Filter in drei Audio-Spuren (nicht ganz sauber getrennt).
+        Die App hört in die Stems eines Tunes (Library → Stems trennen). „Aufbau nachbauen“ erkennt Intro, Build-up, Drop, Break und Outro und legt die Original-Stems des Tunes auf eigene Spuren, jeweils nur dort, wo sie im Tune spielen. „Aufbau mit eigenen Sounds“ baut denselben Aufbau mit deinen Spuren und Samples. „Drums → MIDI“ schreibt Kick, Clap und HiHats als MIDI auf eine neue 909-Spur. „Drums → Kick / Clap / HiHats“ teilt den Drum-Stem per Filter in drei Audio-Spuren (nicht ganz sauber getrennt).
       </Txt>
       {tunes.length === 0 ? (
         <View style={s.row}>
@@ -74,8 +80,11 @@ export function ReferenceRebuild() {
                 {t.tune}
               </Txt>
               <View style={s.row}>
-                <Chip variant={busy === t.folder ? 'on' : 'ghost'} onPress={() => (busy ? undefined : void go(t.folder, t.tune))} accessibilityLabel={`Aufbau von ${t.tune} übernehmen`}>
-                  {busy === t.folder ? 'hört rein …' : 'Aufbau nachbauen'}
+                <Chip variant={busy === `${t.folder}#orig` ? 'on' : 'ghost'} onPress={() => (busy ? undefined : original(t.folder, t.tune))} accessibilityLabel={`${t.tune} aus den Original-Stems nachbauen`}>
+                  {busy === `${t.folder}#orig` ? 'hört rein …' : 'Aufbau nachbauen'}
+                </Chip>
+                <Chip variant={busy === t.folder ? 'on' : 'ghost'} onPress={() => (busy ? undefined : void go(t.folder, t.tune))} accessibilityLabel={`Aufbau von ${t.tune} mit eigenen Sounds`}>
+                  {busy === t.folder ? 'hört rein …' : 'Aufbau mit eigenen Sounds'}
                 </Chip>
                 <Chip variant={busy === `${t.folder}#midi` ? 'on' : 'ghost'} onPress={() => (busy ? undefined : midi(t.folder, t.tune))} accessibilityLabel={`Drums von ${t.tune} als MIDI`}>
                   {busy === `${t.folder}#midi` ? 'erkennt Drums …' : 'Drums → MIDI'}

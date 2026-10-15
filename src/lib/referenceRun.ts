@@ -7,7 +7,9 @@ import { storeSampleAudio } from './samples';
 import type { Sample } from '../types';
 import { arrange, type ArrangeResult, type Role } from './arranger';
 import { planSections, type PlanSection } from './arrangePlan';
-import { barLevels, stemKindOf, structureFromStems, type StemKind } from './referenceArrange';
+import { barLevels, stemClipRanges, stemKindOf, structureFromStems, type StemKind } from './referenceArrange';
+import { withMarkers } from './markers';
+import { CATEGORY_COLORS } from './project';
 import { STEMS_ROOT } from './stemNames';
 import { getState, setSamples, updateProject } from './store';
 
@@ -97,4 +99,48 @@ export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
     out.push(sample);
   }
   return out;
+}
+
+/**
+ * The simple rebuild: the tune's own stems on one audio track each ("Stem Drums", "Stem Bass" …), every stem only in the sections
+ * where it plays (clip offset = position, so it is exactly that part of the original), the sections as markers and the project at
+ * the tune's tempo. Tracks of an earlier rebuild (same names) get their clips replaced; other tracks stay as they are. One undo step.
+ */
+export async function rebuildWithOriginalStems(folder: string): Promise<{ sections: PlanSection[]; tracks: string[]; bpm: number }> {
+  const stems = getState().samples.filter((s) => s.folder === folder && stemKindOf(s.name));
+  if (!stems.length) throw new Error('Keine Stems in diesem Ordner gefunden.');
+  const bpm = stems.find((s) => s.bpm)?.bpm;
+  if (!bpm) throw new Error('Das Tempo des Tunes ist unbekannt: trag bei einem Stem in der Library das BPM ein und versuch es nochmal.');
+  const perStem: { sample: Sample; kind: StemKind; levels: number[] }[] = [];
+  const merged: Partial<Record<StemKind, number[]>> = {};
+  for (const s of stems) {
+    const kind = stemKindOf(s.name)!;
+    const buffer = await engine.loadBuffer(s.id);
+    const lv = barLevels(buffer.getChannelData(0), buffer.sampleRate, bpm);
+    perStem.push({ sample: s, kind, levels: lv });
+    merged[kind] = merged[kind] ? merged[kind]!.map((v, i) => Math.max(v, lv[i] ?? 0)) : lv;
+  }
+  const sections = structureFromStems(merged);
+  if (!sections.length) throw new Error('Der Tune ist zu kurz für einen Aufbau.');
+  const ORDER = ['Drums', 'Bass', 'Synth + FX', 'Keys', 'Gitarre', 'Vocal'];
+  const label = (name: string) => / - ([^-]+)\.[a-z0-9]+$/i.exec(name)?.[1] ?? 'Stem';
+  perStem.sort((a, b) => ORDER.indexOf(label(a.sample.name)) - ORDER.indexOf(label(b.sample.name)));
+  const names: string[] = [];
+  const marks = planSections({ sections }).map((s) => ({ bar: s.start, name: s.label }));
+  const end = sections.reduce((n, s) => n + s.bars, 0);
+  updateProject((p) => {
+    let tracks = [...p.tracks];
+    for (const { sample, levels } of perStem) {
+      const ranges = stemClipRanges(levels, sections);
+      if (!ranges.length) continue; // a stem that is silent all through (keys, guitar in a techno tune)
+      const name = `Stem ${label(sample.name)}`;
+      const clips = ranges.map((r) => ({ id: uid(), sampleId: sample.id, start: r.start, length: r.length, offset: r.start }));
+      const at = tracks.findIndex((t) => t.name === name && (t.kind ?? 'audio') === 'audio');
+      if (at >= 0) tracks[at] = { ...tracks[at], clips };
+      else tracks = [...tracks, { ...createTrack(sample.category, p.sceneCount, name, 'audio'), color: CATEGORY_COLORS[sample.category], clips }];
+      names.push(name);
+    }
+    return withMarkers({ ...p, bpm, tracks, loop: { enabled: false, start: 0, end } }, marks);
+  });
+  return { sections, tracks: names, bpm };
 }

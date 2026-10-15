@@ -406,6 +406,12 @@ ends), drums without bass = build-up before a drop; silent stems become the sect
 (markers named after the sections), automation on, new tracks only for roles the tune has, and **never the tune's own stems** as library material (only the project's
 tracks and the user's samples). Confirm before replacing clips; one undo step. The tune's tempo is not taken over. Tested on synthetic levels only (no real tune in the sandbox).
 
+**"Aufbau nachbauen" = the original stems** (Karl: "simple first"): `rebuildWithOriginalStems` puts each stem of the tune on its own audio track "Stem Drums / Stem Bass /
+Stem Synth + FX …" (stems silent all through are left out), with clips only in the sections where that stem plays (`stemClipRanges`, tested: a section gets the stem when it
+plays in at least half its bars, neighbours merge, clip offset = its start, so it is exactly that part of the original), the sections as markers and **the project tempo set to
+the tune's**. A second run replaces the clips of the "Stem …" tracks; other tracks are untouched. The earlier rebuild with the user's own sounds is the chip "Aufbau mit eigenen
+Sounds". Checked in Chromium with synthetic WAV stems in IndexedDB: 3 tracks, "Intro 16 · Drop 32 · Outro 16".
+
 **Drums of a stemmed tune** (same section, per tune): `drumSplit.ts` (pure, tested on synthetic drums incl. a late start, a 0.2 BPM wrong tempo and a tune without
 claps). "Drums → MIDI" = `drumsToMidi` (referenceRun.ts): the drums stem mono at ≤ 24 kHz (`monoForAnalysis`), band filters (RBJ biquads, 24 dB/oct: kick < 150 Hz, clap
 500–5000 Hz, hats > 7 kHz), 1 ms peak envelopes, the grid fitted to the kicks (`fitGrid`: tempo ±0.25 BPM and the first beat's phase), then per 16th step and band the jump

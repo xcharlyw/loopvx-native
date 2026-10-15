@@ -65,3 +65,15 @@ describe('rebuilding a project on the found structure', () => {
     expect(bassTrack.clips.every((c) => c.start >= 16 && !(c.start >= 48 && c.start < 64))).toBe(true);
   });
 });
+
+import { stemClipRanges } from './referenceArrange';
+describe('original stems on the structure', () => {
+  it('puts a stem only where it plays, merged over neighbouring sections', () => {
+    const sections = [{ type: 'intro' as const, bars: 16 }, { type: 'drop' as const, bars: 32 }, { type: 'break' as const, bars: 16 }, { type: 'drop' as const, bars: 32 }];
+    const bass = run([[16, 0], [32, 0.5], [16, 0], [32, 0.5]]);
+    expect(stemClipRanges(bass, sections)).toEqual([{ start: 16, length: 32 }, { start: 64, length: 32 }]);
+    const drums = run([[16, 0.5], [32, 0.6], [16, 0], [32, 0.6]]);
+    expect(stemClipRanges(drums, sections)).toEqual([{ start: 0, length: 48 }, { start: 64, length: 32 }]);
+    expect(stemClipRanges(run([[96, 0]]), sections)).toEqual([]);
+  });
+});

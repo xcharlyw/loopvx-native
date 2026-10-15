@@ -103,3 +103,25 @@ export function structureText(sections: PlanSection[]): string {
   const LABEL: Record<PlanSectionType, string> = { intro: 'Intro', build: 'Build-up', drop: 'Drop', break: 'Break', outro: 'Outro' };
   return sections.map((s) => `${LABEL[s.type]} ${s.bars}`).join(' · ');
 }
+
+/**
+ * Where one stem plays in the tune, as clip ranges on the found sections: a section gets the stem when it plays in at least half
+ * of that section's bars; neighbouring sections merge into one range. A clip placed at `start` with offset `start` plays exactly
+ * that part of the original stem.
+ */
+export function stemClipRanges(levels: number[], sections: PlanSection[]): { start: number; length: number }[] {
+  const active = activeBars(levels);
+  const out: { start: number; length: number }[] = [];
+  let at = 0;
+  for (const sec of sections) {
+    const end = Math.min(at + sec.bars, levels.length);
+    const on = end > at && active.slice(at, end).filter(Boolean).length * 2 >= end - at;
+    if (on) {
+      const last = out[out.length - 1];
+      if (last && last.start + last.length === at) last.length += end - at;
+      else out.push({ start: at, length: end - at });
+    }
+    at += sec.bars;
+  }
+  return out;
+}

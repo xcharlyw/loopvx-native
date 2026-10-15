@@ -84,14 +84,14 @@ export function onBeat(onsetsMs: number[], grid?: { bpm: number; downbeatMs: num
 }
 const BEAT_TOL_MS = 25;
 
-/** 1 inside the kick-click windows (smooth edges), 0 elsewhere. */
-export function clickWindow(length: number, sampleRate: number, onsetsMs: number[]): Float32Array {
+/** 1 inside the windows [onset - pre, onset + post] (smooth edges), 0 elsewhere. Default: the kick-click window. */
+export function clickWindow(length: number, sampleRate: number, onsetsMs: number[], postMs = CLICK_MS, fadeMs = CLICK_FADE_MS): Float32Array {
   const w = new Float32Array(length);
   const perMs = sampleRate / 1000;
-  const fade = Math.max(1, Math.round(CLICK_FADE_MS * perMs));
+  const fade = Math.max(1, Math.round(fadeMs * perMs));
   for (const t of onsetsMs) {
     const a = Math.round((t - CLICK_PRE_MS) * perMs);
-    const b = Math.round((t + CLICK_MS) * perMs);
+    const b = Math.round((t + postMs) * perMs);
     for (let i = Math.max(0, a - fade); i < Math.min(length, b + fade); i++) {
       const edge = i < a ? (i - (a - fade)) / fade : i > b ? ((b + fade) - i) / fade : 1;
       w[i] = Math.max(w[i], Math.min(1, Math.max(0, edge)));
@@ -100,27 +100,46 @@ export function clickWindow(length: number, sampleRate: number, onsetsMs: number
   return w;
 }
 
+/** The two audio parts of a drums stem: the kick (rumble + body + click) and the top loop (everything else). */
+export type SplitPart = 'kick' | 'top';
+export const SPLIT_LABEL: Record<SplitPart, string> = { kick: 'Kick', top: 'Top Loop' };
+
+/** A kick is three parts: rumble (below this), body (up to BODY_TOP) and click (everything above, only in the first CLICK_MS). */
+const RUMBLE_TOP = 150;
+const BODY_TOP = 600;
+/** How long after its onset the body of a kick is taken (it decays inside this; later mids belong to the loop). */
+const BODY_MS = 140;
+const BODY_FADE_MS = 15;
+
 /**
- * The drums split into Kick, Clap + Snare and HiHats as **complementary** parts: the kick's click (the highs in the first
- * milliseconds of every kick) belongs to the kick, so it is added to the kick band and taken out of the hats band; otherwise
- * the same click would sit in two stems and the kick would phase when they play together. `part(p)` computes one part at a time (a whole tune is large); parts keep the length of the input.
+ * The drums split like by hand in Ableton: the **kick** is cut out of the drums as its three parts, the rumble (lows, all the
+ * time), the body (150-600 Hz, only for the first 140 ms after each kick on the beat, so claps' mids stay out) and the click (all
+ * highs, only in the first 6 ms), and the **top loop** is the drums minus that kick, so kick + top loop add up to the original
+ * exactly (no phasing, nothing lost or doubled). `part(p)` computes one part at a time (a whole tune is large).
+ * `grid` limits the kick onsets to the beats of the tune (bass notes and rolls between the beats are no kicks).
  */
-export function makeDrumSplitter(channels: Float32Array[], sampleRate: number, grid?: { bpm: number; downbeatMs: number }): { onsetsMs: number[]; part: (p: DrumPart) => Float32Array[] } {
+export function makeDrumSplitter(channels: Float32Array[], sampleRate: number, grid?: { bpm: number; downbeatMs: number }): { onsetsMs: number[]; part: (p: SplitPart) => Float32Array[] } {
   const mono = monoForAnalysis(channels, sampleRate);
   const onsetsMs = onBeat(kickOnsetsMs(mono.data, mono.sampleRate), grid);
-  const w = clickWindow(channels[0].length, sampleRate, onsetsMs);
+  const length = channels[0].length;
+  const click = clickWindow(length, sampleRate, onsetsMs);
+  const body = clickWindow(length, sampleRate, onsetsMs, BODY_MS, BODY_FADE_MS);
+  const kickOf = (x: Float32Array) => {
+    // low + mid + high = x exactly (mid is what the two real filters leave), so kick + top loop = the drums
+    const low = chain(x, sampleRate, [['lowpass', RUMBLE_TOP]]);
+    const high = chain(x, sampleRate, [['highpass', BODY_TOP]]);
+    const out = new Float32Array(length);
+    for (let i = 0; i < length; i++) out[i] = low[i] + body[i] * (x[i] - low[i] - high[i]) + click[i] * high[i];
+    return out;
+  };
   return {
     onsetsMs,
     part: (p) =>
       channels.map((x) => {
-        const band = bandOf(x, sampleRate, p);
-        if (p === 'kick') {
-          // body (< 150 Hz) plus everything else of the original inside the click window
-          for (let i = 0; i < band.length; i++) if (w[i] > 0) band[i] += w[i] * (x[i] - band[i]);
-        } else if (p === 'hat') {
-          for (let i = 0; i < band.length; i++) band[i] *= 1 - w[i];
-        }
-        return band;
+        const k = kickOf(x);
+        if (p === 'kick') return k;
+        for (let i = 0; i < length; i++) k[i] = x[i] - k[i];
+        return k;
       }),
   };
 }

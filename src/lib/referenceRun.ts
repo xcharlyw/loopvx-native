@@ -1,7 +1,7 @@
 import { engine } from '../audio/engine';
 import { presetById, applyPreset } from '../audio/presets';
 import { encodeWav } from '../audio/wav';
-import { DRUM_PARTS, DRUM_PART_LABEL, makeDrumSplitter, monoForAnalysis, transcribeDrums } from './drumSplit';
+import { SPLIT_LABEL, makeDrumSplitter, monoForAnalysis, transcribeDrums } from './drumSplit';
 import { createMidiClip, createTrack, uid } from './project';
 import { storeSampleAudio } from './samples';
 import type { Sample } from '../types';
@@ -97,7 +97,7 @@ export async function drumsToMidi(folder: string): Promise<{ track: string; note
   return { track: name, notes: t.notes.length, bars: t.bars, bpm: t.bpm };
 }
 
-/** The drums stem split into Kick, Clap + Snare and HiHats as WAV samples in the same library folder (band filters, not AI). */
+/** The drums stem split into Kick (rumble + body + click) and Top Loop (the rest) as WAV samples in the same library folder (band filters, not AI). */
 export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
   const drums = drumsStem(folder);
   const buffer = await engine.loadBuffer(drums.id);
@@ -116,11 +116,11 @@ export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
   }
   const splitter = makeDrumSplitter(channels, buffer.sampleRate, grid);
   const out: Sample[] = [];
-  for (const part of DRUM_PARTS) {
+  for (const part of ['kick', 'top'] as const) {
     const wav = encodeWav({ sampleRate: buffer.sampleRate, channels: splitter.part(part) });
     const id = `${SPLIT_PREFIX}${uid()}`;
     const sample = await storeSampleAudio(
-      { id, name: `${base} - ${DRUM_PART_LABEL[part]}.wav`, folder, category: part === 'kick' ? 'kick' : 'top', ...(drums.bpm ? { bpm: drums.bpm } : {}), ...(drums.key ? { key: drums.key } : {}), size: wav.byteLength, addedAt: Date.now() },
+      { id, name: `${base} - ${SPLIT_LABEL[part]}.wav`, folder, category: part === 'kick' ? 'kick' : 'top', ...(drums.bpm ? { bpm: drums.bpm } : {}), ...(drums.key ? { key: drums.key } : {}), size: wav.byteLength, addedAt: Date.now() },
       wav,
       'wav',
     );
@@ -131,7 +131,7 @@ export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
 }
 
 /** Id prefix of the app's own drum split; `split:` (without 2) was the first version without the kick's click. */
-const SPLIT_PREFIX = 'split2:';
+const SPLIT_PREFIX = 'split3:';
 
 /**
  * The simple rebuild: the tune's own stems on one audio track each ("Stem Drums", "Stem Bass" …), every stem only in the sections
@@ -147,7 +147,7 @@ export async function rebuildWithOriginalStems(folder: string): Promise<{ sectio
   // The drums come as separate parts (kick, clap, hats ...) when the library has them in the tune's folder (own split or files from
   // another tool); without parts the drums stem is split first, so the rebuild always has them apart.
   // Parts of the first split version (`split:`, no kick click) count as missing: they are replaced by a new split.
-  const partsOf = () => getState().samples.filter((s) => s.folder === folder && drumPartLabel(s.name) && !s.id.startsWith('split:'));
+  const partsOf = () => getState().samples.filter((s) => s.folder === folder && drumPartLabel(s.name) && !s.id.startsWith('split:') && !s.id.startsWith('split2:'));
   let parts = partsOf();
   let split = false;
   if (!parts.length && stems.some((s) => stemKindOf(s.name) === 'drums')) {
@@ -172,7 +172,7 @@ export async function rebuildWithOriginalStems(folder: string): Promise<{ sectio
   for (const s of parts) perStem.push({ sample: s, kind: 'part', label: drumPartLabel(s.name)!, levels: await levelsOf(s) });
   const sections = structureFromStems(merged);
   if (!sections.length) throw new Error('Der Tune ist zu kurz für einen Aufbau.');
-  const ORDER = ['Drums', 'Kick', 'Clap + Snare', 'Snare', 'Clap', 'HiHats', 'Toms', 'Becken', 'Bass', 'Synth + FX', 'Keys', 'Gitarre', 'Vocal'];
+  const ORDER = ['Drums', 'Kick', 'Top Loop', 'Clap + Snare', 'Snare', 'Clap', 'HiHats', 'Toms', 'Becken', 'Bass', 'Synth + FX', 'Keys', 'Gitarre', 'Vocal'];
   const rank = (l: string) => (ORDER.indexOf(l) < 0 ? ORDER.length : ORDER.indexOf(l));
   perStem.sort((a, b) => rank(a.label) - rank(b.label));
   const names: string[] = [];

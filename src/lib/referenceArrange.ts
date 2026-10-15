@@ -25,6 +25,7 @@ export function drumPartLabel(name: string): string | undefined {
   if (stemKindOf(name)) return undefined;
   const base = name.replace(/\.[a-z0-9]{2,5}$/i, '').toLowerCase();
   if (/clap\s*\+\s*snare/.test(base)) return 'Clap + Snare';
+  if (/top\s*loop/.test(base)) return 'Top Loop';
   if (/hi[\s_-]?hats?|\bhh\b|hats?\b/.test(base)) return 'HiHats';
   if (/\bkick|\bbd\b/.test(base)) return 'Kick';
   if (/snare/.test(base)) return 'Snare';

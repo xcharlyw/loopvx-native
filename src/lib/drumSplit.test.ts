@@ -113,30 +113,55 @@ describe('kick click', () => {
     found.forEach((f, i) => expect(Math.abs(f - onsets[i])).toBeLessThan(4));
   });
 
-  it('keeps the click with the kick and takes it out of the hats', () => {
+  it('keeps the click with the kick and takes it out of the top loop', () => {
     const { x, onsets } = kicksWithClick(2);
-    const plainKick = splitBands(x, SR).kick;
     const split = makeDrumSplitter([x], SR);
     const kick = split.part('kick')[0];
-    const hat = split.part('hat')[0];
+    const top = split.part('top')[0];
     const at = Math.round((onsets[1] / 1000) * SR);
     const win = [at, at + Math.round(0.005 * SR)] as const;
     const click = energy(highs(x), ...win);
-    // the plain low band has lost the click, the new kick part has it back
-    expect(energy(highs(plainKick), ...win)).toBeLessThan(click * 0.05);
+    expect(energy(highs(splitBands(x, SR).kick), ...win)).toBeLessThan(click * 0.05);
     expect(energy(highs(kick), ...win)).toBeGreaterThan(click * 0.6);
-    // the hats band has none of the kick's click (the plain high band had it)
-    expect(energy(splitBands(x, SR).hat, ...win)).toBeGreaterThan(click * 0.05);
-    expect(energy(hat, ...win)).toBeLessThan(energy(splitBands(x, SR).hat, ...win) * 0.1);
+    expect(energy(highs(top), ...win)).toBeLessThan(click * 0.1);
   });
 
-  it('leaves the hats between the kicks alone', () => {
+  it('adds up to the original: kick + top loop = drums', () => {
+    const { x } = kicksWithClick(2);
+    const split = makeDrumSplitter([x], SR);
+    const kick = split.part('kick')[0];
+    const top = split.part('top')[0];
+    for (let i = 0; i < x.length; i += 97) expect(kick[i] + top[i]).toBeCloseTo(x[i], 5);
+  });
+
+  it('takes the body (150-600 Hz) after a kick on the beat, not a mid hit between the beats', () => {
+    const beat = (60 / BPM) * SR;
+    const x = new Float32Array(Math.round(4 * beat + SR));
+    const tone = (at: number, len: number, hz: number, amp: number) => {
+      for (let i = 0; i < len; i++) x[at + i] += amp * Math.sin((2 * Math.PI * hz * i) / SR) * Math.exp(-i / (0.04 * SR));
+    };
+    for (let b = 0; b < 4; b++) {
+      const at = Math.round(b * beat);
+      tone(at, Math.round(0.2 * SR), 55, 0.8); // rumble
+      tone(at, Math.round(0.2 * SR), 300, 0.4); // body
+      tone(Math.round(at + beat / 2), Math.round(0.1 * SR), 300, 0.4); // clap-like mid hit off the beat
+    }
+    const split = makeDrumSplitter([x], SR, { bpm: BPM, downbeatMs: 0 });
+    const kick = split.part('kick')[0];
+    const top = split.part('top')[0];
+    const on = Math.round(beat * 1 + 0.03 * SR);
+    const off = Math.round(beat * 1.5 + 0.03 * SR);
+    expect(energy(kick, on, on + 800)).toBeGreaterThan(energy(top, on, on + 800) * 4);
+    expect(energy(top, off, off + 800)).toBeGreaterThan(energy(kick, off, off + 800) * 4);
+  });
+
+  it('leaves the hats between the kicks in the top loop', () => {
     const { x, onsets } = kicksWithClick(2);
     const split = makeDrumSplitter([x], SR);
-    const hat = split.part('hat')[0];
+    const top = split.part('top')[0];
     const plain = splitBands(x, SR).hat;
     const off = Math.round(((onsets[1] + 60000 / BPM / 2) / 1000) * SR);
-    expect(energy(hat, off, off + 400)).toBeCloseTo(energy(plain, off, off + 400), 5);
+    expect(energy(top, off, off + 400)).toBeGreaterThan(energy(plain, off, off + 400) * 0.9);
   });
 
   it('builds smooth windows', () => {

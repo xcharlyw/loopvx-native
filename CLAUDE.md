@@ -417,6 +417,8 @@ hi-hat / toms / cymbal); with parts present the full drums stem gets **no track 
 "Stem Clap + Snare", "Stem HiHats" … with clips only where that part plays; without parts and with a drums stem it runs `splitDrumsAudio` first (the result says so). Checked in
 Chromium with synthetic kick + hat drums: tracks Stem Kick, Stem Clap + Snare, Stem HiHats, Stem Bass, Stem Synth + FX.
 
+**Kick + Top Loop (current drum split; the older text below about three bands is superseded)**: Karl: a kick is rumble + body + click, split the drums only into kick and top loop. `makeDrumSplitter` returns `kick` = lows < 150 Hz all the time + the 150-600 Hz body for 140 ms (15 ms fade) after each kick on the beat + the highs > 600 Hz for 6 ms (click), and `top` = drums − kick, so kick + top loop add up to the original exactly (`low + body*mid + click*high`, mid = x − low − high). Onsets are held to the beat grid (`onBeat`). Ids `split3:` (`split:`/`split2:` are stale and re-split), names "<tune> - Kick" / "<tune> - Top Loop" (`drumPartLabel` knows 'Top Loop'). The band split `splitBands`/`transcribeDrums` stay for the MIDI transcription only.
+
 **Kick click without phasing** (Karl: "the kick lacks the click, the hihats must lose the short click, because of phasing"): the drums split is **complementary**
 (`makeDrumSplitter` in drumSplit.ts): kick onsets are found on the kick band (`kickOnsetsMs`), and in a window of 0.5 ms before to 6 ms after each onset (`clickWindow`, 1 ms fades)
 the kick part gets everything the original has above its 150 Hz body (`band += w * (x - band)`) while the hats part is multiplied by `1 - w`, so the click lives only in the kick

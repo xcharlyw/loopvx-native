@@ -418,6 +418,14 @@ hi-hat / toms / cymbal); with parts present the full drums stem gets **no track 
 "Stem Clap + Snare", "Stem HiHats" … with clips only where that part plays; without parts and with a drums stem it runs `splitDrumsAudio` first (the result says so). Checked in
 Chromium with synthetic kick + hat drums: tracks Stem Kick, Stem Clap + Snare, Stem HiHats, Stem Bass, Stem Synth + FX.
 
+**Kick click without phasing** (Karl: "the kick lacks the click, the hihats must lose the short click, because of phasing"): the drums split is **complementary**
+(`makeDrumSplitter` in drumSplit.ts): kick onsets are found on the kick band (`kickOnsetsMs`), and in a window of 0.5 ms before to 6 ms after each onset (`clickWindow`, 1 ms fades)
+the kick part gets everything the original has above its 150 Hz body (`band += w * (x - band)`) while the hats part is multiplied by `1 - w`, so the click lives only in the kick
+stem and nothing is doubled when the stems play together. Claps are not ducked (a clap on a kick keeps its attack; its mid band may still hold a little kick click). New splits use
+the id prefix `split2:`; an older split (`split:`, without the click) is replaced on the next split and counts as missing in the rebuild, so it is re-split automatically.
+Tested on synthetic kicks with a 3 kHz click: the plain low band has < 5 % of the click energy, the new kick part > 60 %, the hats part < 10 % of the old hats band in the window, hats
+between the kicks unchanged.
+
 **Bar 1 and exact tempo** (`tuneGrid` in referenceRun.ts, used by all three: original stems, own sounds, drums → MIDI): measured on the drums stem with `transcribeDrums`:
 the grid's tempo (kept as named when within 0.015 BPM) and `downbeatMs` = the first kick on a beat (tunes start on a downbeat), kept on the bar grid, so a pickup or silence
 before it is cut; `barLevels(…, offsetSec)` starts bar 1 there, the stem clips get `offset = start + offsetBars`, the MIDI notes start at that bar, and when the measured tempo

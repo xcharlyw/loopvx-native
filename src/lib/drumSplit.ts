@@ -52,6 +52,68 @@ export function splitBands(x: Float32Array, sampleRate: number): Record<DrumPart
   return { kick: bandOf(x, sampleRate, 'kick'), clap: bandOf(x, sampleRate, 'clap'), hat: bandOf(x, sampleRate, 'hat') };
 }
 
+/** How long the click of a kick lasts (ms after the onset) and how long the fades at the window's edges are. */
+const CLICK_MS = 6;
+const CLICK_PRE_MS = 0.5;
+const CLICK_FADE_MS = 1;
+
+/** Kick onsets (ms) of a mono signal: where the kick band's level jumps, at least 80 ms apart. */
+export function kickOnsetsMs(x: Float32Array, sampleRate: number): number[] {
+  const env = envelope(chain(x, sampleRate, [['lowpass', 150]]), sampleRate);
+  const rise = new Float32Array(env.length);
+  for (let i = 0; i + 10 < env.length; i++) rise[i] = Math.max(0, env[i + 10] - env[i]);
+  const loud = percentile(Array.from(rise), 0.95);
+  if (loud <= 0) return [];
+  const out: number[] = [];
+  for (let i = 1; i < rise.length - 1; i++) {
+    if (rise[i] < loud * 0.35 || rise[i] < rise[i - 1] || rise[i] < rise[i + 1]) continue;
+    if (out.length && i - out[out.length - 1] < 80) continue;
+    out.push(i);
+  }
+  return out;
+}
+
+/** 1 inside the kick-click windows (smooth edges), 0 elsewhere. */
+export function clickWindow(length: number, sampleRate: number, onsetsMs: number[]): Float32Array {
+  const w = new Float32Array(length);
+  const perMs = sampleRate / 1000;
+  const fade = Math.max(1, Math.round(CLICK_FADE_MS * perMs));
+  for (const t of onsetsMs) {
+    const a = Math.round((t - CLICK_PRE_MS) * perMs);
+    const b = Math.round((t + CLICK_MS) * perMs);
+    for (let i = Math.max(0, a - fade); i < Math.min(length, b + fade); i++) {
+      const edge = i < a ? (i - (a - fade)) / fade : i > b ? ((b + fade) - i) / fade : 1;
+      w[i] = Math.max(w[i], Math.min(1, Math.max(0, edge)));
+    }
+  }
+  return w;
+}
+
+/**
+ * The drums split into Kick, Clap + Snare and HiHats as **complementary** parts: the kick's click (the highs in the first
+ * milliseconds of every kick) belongs to the kick, so it is added to the kick band and taken out of the hats band; otherwise
+ * the same click would sit in two stems and the kick would phase when they play together. `part(p)` computes one part at a time (a whole tune is large); parts keep the length of the input.
+ */
+export function makeDrumSplitter(channels: Float32Array[], sampleRate: number): { onsetsMs: number[]; part: (p: DrumPart) => Float32Array[] } {
+  const mono = monoForAnalysis(channels, sampleRate);
+  const onsetsMs = kickOnsetsMs(mono.data, mono.sampleRate);
+  const w = clickWindow(channels[0].length, sampleRate, onsetsMs);
+  return {
+    onsetsMs,
+    part: (p) =>
+      channels.map((x) => {
+        const band = bandOf(x, sampleRate, p);
+        if (p === 'kick') {
+          // body (< 150 Hz) plus everything else of the original inside the click window
+          for (let i = 0; i < band.length; i++) if (w[i] > 0) band[i] += w[i] * (x[i] - band[i]);
+        } else if (p === 'hat') {
+          for (let i = 0; i < band.length; i++) band[i] *= 1 - w[i];
+        }
+        return band;
+      }),
+  };
+}
+
 /** Mono and at most ~24 kHz (plenty for finding hits; a whole tune stays small). */
 export function monoForAnalysis(channels: Float32Array[], sampleRate: number): { data: Float32Array; sampleRate: number } {
   const factor = sampleRate > 30000 ? 2 : 1;

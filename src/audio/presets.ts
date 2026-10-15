@@ -202,6 +202,62 @@ export const PRESETS: SoundPreset[] = [
   { id: 'hat-open', name: 'Hat offen', category: 'Drums', hint: 'Offene Hi-Hat', note: MID, synth: synth({ ...NOISE_PRESET, cutoff: 6500, decay: 0.28, release: 0.1 }) },
   { id: 'kit-909', name: '909 Drum Machine', category: 'Drums', hint: 'Ganzes Kit auf Drum-Rack-Noten ab C1: Kick, Snare, Clap, Hats, Toms', note: 36, synth: synth({ ...KIT909_PRESET }), fx: { drive: 0.15 } },
   { id: 'clap', name: 'Clap / Snare', category: 'Drums', hint: 'Rauschiger Clap', note: MID, synth: synth({ ...NOISE_PRESET, cutoff: 1800, resonance: 1.2, decay: 0.17 }), fx: { reverb: 0.2 } },
+  // ---------------- Wavetable sounds (Serum / Vital style: a table, its position and the mod matrix) ----------------
+  {
+    id: 'wt-screech',
+    name: 'Screech Table',
+    category: 'Lead',
+    hint: 'Gefalteter Sync-Saw, öffnet bei jedem Anschlag: der Hard-Techno-Screech',
+    note: MID,
+    synth: synth({ wave: 'sawtooth', tableA: 'screech', posA: 0.45, unison: 3, spread: 20, cutoff: 9000, resonance: 1.4, attack: 0.003, decay: 0.25, sustain: 0.7, release: 0.2, env2: { attack: 0.002, decay: 0.35, sustain: 0.2, release: 0.2 }, mods: [{ source: 'env2', target: 'posA', amount: 0.4 }, { source: 'lfo2', target: 'pitch', amount: 0.02 }], lfo2Rate: 8 }),
+    fx: { drive: 0.3, delay: 0.15 },
+  },
+  {
+    id: 'wt-vowel',
+    name: 'Vowel Voice',
+    category: 'Lead',
+    hint: 'Ein Synth, der A-E-I-O-U „spricht", langsam wandernd',
+    note: MID,
+    synth: synth({ wave: 'sawtooth', tableA: 'vowel', posA: 0.15, unison: 2, spread: 10, cutoff: 12000, resonance: 0.8, attack: 0.02, decay: 0.3, sustain: 0.85, release: 0.4, lfoRate: 0.25, mods: [{ source: 'lfo1', target: 'posA', amount: 0.7 }] }),
+    fx: { reverb: 0.25 },
+  },
+  {
+    id: 'wt-morph-pad',
+    name: 'Morph Pad',
+    category: 'Pad',
+    hint: 'Breites Pad, dessen Obertöne langsam auf- und zugehen, mit leichtem Panorama-Schweben',
+    note: MID,
+    synth: synth({ wave: 'sawtooth', tableA: 'harm', posA: 0.15, unison: 5, spread: 30, sub: 0.2, cutoff: 7000, resonance: 0.9, attack: 0.7, decay: 0.5, sustain: 0.9, release: 1.4, lfo2Rate: 0.25, lfoRate: 0.5, mods: [{ source: 'lfo2', target: 'posA', amount: 0.6 }, { source: 'lfo1', target: 'pan', amount: 0.3 }] }),
+    fx: { reverb: 0.4 },
+  },
+  {
+    id: 'wt-fold-bass',
+    name: 'Fold Bass',
+    category: 'Bass',
+    hint: 'Sinus, der beim Anschlag gefaltet wird und sich beruhigt: knurrender Bass',
+    note: BASS,
+    synth: synth({ wave: 'sine', tableA: 'fold', posA: 0.1, sub: 0.3, cutoff: 2600, resonance: 1.2, attack: 0.003, decay: 0.2, sustain: 0.85, release: 0.15, env2: { attack: 0.002, decay: 0.18, sustain: 0.1, release: 0.15 }, mods: [{ source: 'env2', target: 'posA', amount: 0.5 }] }),
+    fx: { drive: 0.2 },
+  },
+  {
+    id: 'wt-acid',
+    name: 'Acid Table',
+    category: 'Bass',
+    hint: 'Wavetable mit wanderndem Resonanz-Peak und Filter-Hüllkurve: 303-Verwandter',
+    note: BASS,
+    synth: synth({ wave: 'sawtooth', tableA: 'acid', posA: 0.35, cutoff: 1400, resonance: 7, filter24: true, filterEnv: 2.5, filterDecay: 0.16, attack: 0.002, decay: 0.2, sustain: 0.6, release: 0.08, env2: { attack: 0.002, decay: 0.25, sustain: 0.3, release: 0.1 }, mods: [{ source: 'env2', target: 'posA', amount: 0.4 }] }),
+    fx: { drive: 0.35 },
+  },
+  {
+    id: 'wt-fm-bell',
+    name: 'FM Bell',
+    category: 'Pluck & Stab',
+    hint: 'Glockiger FM-Anschlag, der zu einem weichen Ton ausklingt',
+    note: MID,
+    synth: synth({ wave: 'sine', tableA: 'fm', posA: 0.6, cutoff: 12000, resonance: 0.7, attack: 0.002, decay: 0.7, sustain: 0, release: 0.5, env2: { attack: 0.002, decay: 0.5, sustain: 0, release: 0.3 }, mods: [{ source: 'env2', target: 'posA', amount: -0.55 }] }),
+    fx: { reverb: 0.3, delay: 0.2 },
+  },
+
 ];
 
 export const presetById = (id: string | undefined): SoundPreset | undefined => PRESETS.find((p) => p.id === id);

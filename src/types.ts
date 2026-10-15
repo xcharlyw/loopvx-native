@@ -75,8 +75,22 @@ export interface SynthSettings {
   preset?: string;
 
   // ---- oscillator synth only (wave is an oscillator); every field is optional and defaults to "off" ----
-  /** Second oscillator: wave, octaves (-2..2), fine tune in cents and level 0..1. */
-  oscB?: { wave: OscWave; octave: number; detune: number; level: number };
+  /** Second oscillator: wave, octaves (-2..2), fine tune in cents and level 0..1; with `table` it plays that wavetable at `pos`. */
+  oscB?: { wave: OscWave; octave: number; detune: number; level: number; table?: string; pos?: number };
+  /** Oscillator A as a wavetable (`wavetables.ts` id) at position 0..1 instead of `wave`. */
+  tableA?: string;
+  posA?: number;
+  /** Two filters in a row (24 dB/octave). */
+  filter24?: boolean;
+  /** LFO 1 shape (default sine). LFO 1 runs at `lfoRate` and drives the cutoff by `lfoDepth`, and is a mod source. */
+  lfoShape?: OscWave;
+  /** LFO 2: cycles per bar and shape, only a mod source. */
+  lfo2Rate?: number;
+  lfo2Shape?: OscWave;
+  /** Envelope 2 (0..1), only a mod source. */
+  env2?: { attack: number; decay: number; sustain: number; release: number };
+  /** The mod matrix: up to 8 routings source -> target with an amount -1..1. */
+  mods?: ModSlot[];
   /** Unison: 1..7 detuned copies of each oscillator, spread over `spread` cents in total. */
   unison?: number;
   spread?: number;
@@ -94,6 +108,15 @@ export interface SynthSettings {
 }
 
 export type OscWave = 'sawtooth' | 'square' | 'sine' | 'triangle';
+
+export type ModSource = 'lfo1' | 'lfo2' | 'env2';
+export type ModTarget = 'cutoff' | 'reso' | 'pitch' | 'posA' | 'posB' | 'level' | 'pan';
+export interface ModSlot {
+  source: ModSource;
+  target: ModTarget;
+  /** -1..1 */
+  amount: number;
+}
 
 export interface TrackFx {
   /** DJ filter: -1 lowpass closed … 0 off … 1 highpass closed. */

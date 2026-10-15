@@ -90,3 +90,16 @@ describe('withSamplerSample', () => {
     expect(next.synth?.preset).toBeUndefined();
   });
 });
+
+describe('wavetable presets', () => {
+  const ids = ['wt-screech', 'wt-vowel', 'wt-morph-pad', 'wt-fold-bass', 'wt-acid', 'wt-fm-bell'];
+
+  it('play a real wavetable and keep every modulation they ask for', () => {
+    for (const id of ids) {
+      const s = presetById(id)!.synth;
+      const plan = planVoice(s, 60, 150);
+      expect(plan.oscs[0].table?.id).toBe(s.tableA);
+      expect(plan.mod.slots).toHaveLength((s.mods ?? []).length); // none dropped as silent
+    }
+  });
+});

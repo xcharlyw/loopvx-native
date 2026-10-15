@@ -1,11 +1,30 @@
 import { midiToHz } from '../lib/midi';
-import type { OscWave, SynthSettings } from '../types';
+import type { ModSlot, ModSource, ModTarget, OscWave, SynthSettings } from '../types';
+import { snapPos, tableById } from './wavetables';
 
 /** One oscillator of a voice: wave, frequency in Hz and linear gain. */
 export interface OscPart {
   wave: OscWave;
   freq: number;
   gain: number;
+  /** A wavetable frame instead of `wave`: table id and position 0..1. */
+  table?: { id: string; pos: number };
+  /** Which oscillator it belongs to (for the position modulation). */
+  osc?: 'A' | 'B';
+}
+
+/** One LFO of a voice: shape and speed in Hz. */
+export interface LfoPlan {
+  source: 'lfo1' | 'lfo2';
+  shape: OscWave;
+  hz: number;
+}
+
+/** The modulation of a voice: which sources run and how they are routed (only slots that do something). */
+export interface ModPlan {
+  lfos: LfoPlan[];
+  env2: { attack: number; decay: number; sustain: number; release: number } | null;
+  slots: ModSlot[];
 }
 
 /** How to build the filter of a voice: type, resting cutoff, envelope start and LFO. */
@@ -16,6 +35,8 @@ export interface FilterPlan {
   /** Cutoff at note-on; it falls to `cutoff` within `decay` seconds (equal to cutoff: no envelope). */
   startCutoff: number;
   decay: number;
+  /** Two filters in a row (24 dB/octave). */
+  steep: boolean;
   /** LFO in Hz and its swing in Hz either side of the cutoff (0: no LFO). */
   lfoHz: number;
   lfoDepthHz: number;
@@ -27,6 +48,29 @@ export interface VoicePlan {
   sub: { freq: number; gain: number } | null;
   noise: number;
   filter: FilterPlan;
+  mod: ModPlan;
+}
+
+export const MOD_SOURCES: ModSource[] = ['lfo1', 'lfo2', 'env2'];
+export const MOD_TARGETS: ModTarget[] = ['cutoff', 'reso', 'pitch', 'posA', 'posB', 'level', 'pan'];
+export const MAX_MODS = 8;
+
+/** Sources that swing around zero (the LFOs) and ones that go from 0 to 1 (the envelope). */
+export const isBipolar = (s: ModSource) => s !== 'env2';
+
+/** The valid, audible routings of a sound, at most MAX_MODS (a slot without amount, or to a target that has no sound, is dropped). */
+export function activeMods(s: Pick<SynthSettings, 'mods' | 'tableA' | 'oscB'>): ModSlot[] {
+  const out: ModSlot[] = [];
+  for (const m of s.mods ?? []) {
+    if (out.length >= MAX_MODS) break;
+    if (!MOD_SOURCES.includes(m.source) || !MOD_TARGETS.includes(m.target)) continue;
+    const amount = clamp(Number(m.amount) || 0, -1, 1);
+    if (Math.abs(amount) < 0.005) continue;
+    if (m.target === 'posA' && !s.tableA) continue;
+    if (m.target === 'posB' && !(s.oscB && s.oscB.level > 0 && s.oscB.table)) continue;
+    out.push({ source: m.source, target: m.target, amount });
+  }
+  return out;
 }
 
 const cents = (c: number) => Math.pow(2, c / 1200);
@@ -42,13 +86,21 @@ export function planVoice(s: SynthSettings, pitch: number, bpm: number): VoicePl
   const spread = Math.max(0, s.spread ?? 0);
   const b = s.oscB && s.oscB.level > 0 ? s.oscB : null;
   const bLevel = b ? clamp(b.level, 0, 1) : 0;
+  const tableA = tableById(s.tableA);
+  const tableB = b ? tableById(b.table) : undefined;
   // Sum of squares of all oscillator gains is 1: unison and a second oscillator do not get louder.
   const norm = 1 / Math.sqrt(n * (1 + bLevel * bLevel));
   const oscs: OscPart[] = [];
   for (let i = 0; i < n; i++) {
     const off = n > 1 ? (i / (n - 1) - 0.5) * spread : 0;
-    oscs.push({ wave: s.wave as OscWave, freq: midiToHz(pitch) * cents(off), gain: norm });
-    if (b) oscs.push({ wave: b.wave, freq: midiToHz(pitch + clamp(Math.round(b.octave), -3, 3) * 12) * cents(off + b.detune), gain: norm * bLevel });
+    const a: OscPart = { wave: s.wave as OscWave, freq: midiToHz(pitch) * cents(off), gain: norm, osc: 'A' };
+    if (tableA) a.table = { id: tableA.id, pos: snapPos(s.posA ?? 0) };
+    oscs.push(a);
+    if (b) {
+      const part: OscPart = { wave: b.wave, freq: midiToHz(pitch + clamp(Math.round(b.octave), -3, 3) * 12) * cents(off + b.detune), gain: norm * bLevel, osc: 'B' };
+      if (tableB) part.table = { id: tableB.id, pos: snapPos(b.pos ?? 0) };
+      oscs.push(part);
+    }
   }
   const cutoff = clamp(s.cutoff, 20, 20000);
   const env = Math.max(0, s.filterEnv ?? 0);
@@ -64,10 +116,34 @@ export function planVoice(s: SynthSettings, pitch: number, bpm: number): VoicePl
       q: Math.max(0.0001, s.resonance),
       startCutoff: env > 0 ? Math.min(20000, cutoff * Math.pow(2, env)) : cutoff,
       decay: Math.max(0.01, s.filterDecay ?? 0.25),
+      steep: !!s.filter24,
       lfoHz: depth > 0 && rate > 0 ? (bpm / 60 / 4) * rate : 0,
       lfoDepthHz: depth > 0 && rate > 0 ? cutoff * 0.9 * depth : 0,
     },
+    mod: modPlan(s, bpm),
   };
+}
+
+/** Which LFOs and envelope the mod matrix needs, with their speeds (LFO rates are cycles per bar, so they follow the tempo). */
+export function modPlan(s: SynthSettings, bpm: number): ModPlan {
+  const slots = activeMods(s);
+  const uses = (src: ModSource) => slots.some((m) => m.source === src);
+  const perBar = (rate: number) => (bpm / 60 / 4) * Math.max(0, rate);
+  const lfos: LfoPlan[] = [];
+  if (uses('lfo1')) lfos.push({ source: 'lfo1', shape: s.lfoShape ?? 'sine', hz: perBar(s.lfoRate || 1) });
+  if (uses('lfo2')) lfos.push({ source: 'lfo2', shape: s.lfo2Shape ?? 'sine', hz: perBar(s.lfo2Rate || 0.5) });
+  const e = s.env2;
+  return { lfos, env2: uses('env2') ? { attack: e?.attack ?? 0.01, decay: e?.decay ?? 0.4, sustain: e?.sustain ?? 0, release: e?.release ?? 0.2 } : null, slots };
+}
+
+/**
+ * The two frames a modulated wavetable position morphs between: `pos` and `pos + amount` (clamped to the table).
+ * A morph of two frames is a linear blend of their spectra, which is what moving through the table sounds like.
+ */
+export function morphRange(pos: number, amount: number): { lo: number; hi: number } {
+  const a = clamp(pos, 0, 1);
+  const b = clamp(pos + amount, 0, 1);
+  return { lo: snapPos(Math.min(a, b)), hi: snapPos(Math.max(a, b)) };
 }
 
 /** The note on which a sample instrument plays its sample unchanged (C3 in Ableton's naming). */

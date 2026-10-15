@@ -2,6 +2,7 @@ import { View } from 'react-native';
 import Svg, { Defs, Line, LinearGradient, Path, Stop, Text as SvgText } from 'react-native-svg';
 import { C, mono } from '../../constants/theme';
 import { envelopeCurve, filterEnvelopeCurve, filterResponse, freqToX, lfoShape, lfoWindow, logFreqs, waveShape, type FilterKind } from '../../audio/scopes';
+import { tableFrame } from '../../audio/wavetables';
 import type { OscWave } from '../../types';
 
 // The pictures of the synth: what an oscillator, the filter, the envelope and the LFO do, drawn live from the
@@ -141,5 +142,24 @@ export function WaveGlyph({ wave, color, size = 28 }: { wave: OscWave; color: st
     <Svg width={size} height={size}>
       <Path d={d} stroke={color} strokeWidth={2} fill="none" strokeLinejoin="round" />
     </Svg>
+  );
+}
+
+/** A wavetable as a stack of frames (the position axis goes up the picture), the frame at `pos` bold on top. */
+export function TableScope({ table, pos, width, height = 110, color = C.accent }: { table: string; pos: number; width: number; height?: number; color?: string }) {
+  const n = 96;
+  const steps = 9;
+  const pad = 6;
+  const rise = height - 44;
+  const draw = (p: number, y0: number, amp: number) => line(tableFrame(table, p, n).map((v, i) => [(i / (n - 1)) * width, y0 - v * amp] as [number, number]));
+  return (
+    <Frame width={width} height={height} id="table">
+      {Array.from({ length: steps }, (_, i) => {
+        const p = i / (steps - 1);
+        return <Path key={i} d={draw(p, height - pad - 14 - p * rise, 12)} stroke={color} strokeOpacity={0.18 + 0.1 * p} strokeWidth={1} fill="none" />;
+      })}
+      <Path d={draw(pos, height - pad - 14 - pos * rise, 16)} stroke={color} strokeWidth={2.2} fill="none" strokeLinejoin="round" />
+      <Line x1={0} y1={height - pad - 14 - pos * rise} x2={6} y2={height - pad - 14 - pos * rise} stroke={color} strokeWidth={2} />
+    </Frame>
   );
 }

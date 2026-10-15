@@ -5,11 +5,13 @@ import { loadSampleIntoSampler } from '../lib/actions';
 import { applyInstrument, applyPreset, PRESET_CATEGORIES, PRESETS, presetById, type PresetCategory } from '../audio/presets';
 import { KICK_PRESET, KIT909_PRESET, NOISE_PRESET, SAMPLER_PRESET } from '../audio/synth';
 import { trackFx } from '../audio/fx';
+import { MAX_MODS, MOD_SOURCES, MOD_TARGETS } from '../audio/synth';
+import { TABLES, tableById } from '../audio/wavetables';
 import { C, font, mono } from '../constants/theme';
 import { noteName } from '../lib/midi';
 import { DEFAULT_SYNTH, mapTrack, trackSynth } from '../lib/project';
 import { updateProject, useStore } from '../lib/store';
-import type { OscWave, SynthSettings, TrackFx } from '../types';
+import type { ModSlot, ModSource, ModTarget, OscWave, SynthSettings, TrackFx } from '../types';
 import { Btn, Chip, Txt } from './kit';
 import { Sheet } from './Sheet';
 import { useSampleDropTarget } from './dnd';
@@ -17,7 +19,7 @@ import { Knob, KnobRow } from './synth/Knob';
 import { Keys } from './synth/Keys';
 import { Pads } from './synth/Pads';
 import { SamplePeaks } from './synth/SamplePeaks';
-import { EnvScope, FilterEnvMini, FilterScope, LfoScope, WaveGlyph, WaveScope } from './synth/Scopes';
+import { EnvScope, FilterEnvMini, FilterScope, LfoScope, TableScope, WaveGlyph, WaveScope } from './synth/Scopes';
 import { Card, Tabs } from './synth/Tabs';
 
 type Kind = 'synth' | 'sample' | 'kick' | 'noise' | 'kit';
@@ -29,9 +31,9 @@ const KINDS: { kind: Kind; title: string; sub: string }[] = [
   { kind: 'noise', title: 'Noise', sub: 'Hat · Snare' },
   { kind: 'kit', title: '909', sub: 'Drum-Kit' },
 ];
-type Tab = 'osc' | 'sample' | 'filter' | 'env' | 'lfo' | 'fx' | 'kit';
+type Tab = 'osc' | 'sample' | 'filter' | 'env' | 'lfo' | 'mod' | 'fx' | 'kit';
 const TABS: Record<Kind, { id: Tab; label: string }[]> = {
-  synth: [{ id: 'osc', label: 'OSC' }, { id: 'filter', label: 'FILTER' }, { id: 'env', label: 'ENV' }, { id: 'lfo', label: 'LFO' }, { id: 'fx', label: 'FX' }],
+  synth: [{ id: 'osc', label: 'OSC' }, { id: 'filter', label: 'FILTER' }, { id: 'env', label: 'ENV' }, { id: 'lfo', label: 'LFO' }, { id: 'mod', label: 'MOD' }, { id: 'fx', label: 'FX' }],
   sample: [{ id: 'sample', label: 'SAMPLE' }, { id: 'filter', label: 'FILTER' }, { id: 'env', label: 'ENV' }, { id: 'fx', label: 'FX' }],
   kick: [{ id: 'env', label: 'ENV' }, { id: 'fx', label: 'FX' }],
   noise: [{ id: 'filter', label: 'FILTER' }, { id: 'env', label: 'ENV' }, { id: 'fx', label: 'FX' }],
@@ -47,6 +49,17 @@ const FILTERS: { type: NonNullable<SynthSettings['filterType']>; label: string }
 /** LFO speeds in cycles per bar. */
 const LFO_RATES = [0.25, 0.5, 1, 2, 4, 8, 16];
 const lfoLabel = (r: number) => (r === 0.25 ? '¼' : r === 0.5 ? '½' : `${r}×`);
+const MOD_SOURCE_NAMES: Record<ModSource, string> = { lfo1: 'LFO 1', lfo2: 'LFO 2', env2: 'ENV 2' };
+const MOD_TARGET_NAMES: Record<ModTarget, string> = { cutoff: 'Cutoff', reso: 'Resonanz', pitch: 'Tonhöhe', posA: 'Wavetable A', posB: 'Wavetable B', level: 'Lautstärke', pan: 'Panorama' };
+const MOD_HINT: Record<ModTarget, string> = {
+  cutoff: '±4 Oktaven bei 100 %',
+  reso: '±12 dB bei 100 %',
+  pitch: '±1 Oktave bei 100 %',
+  posA: 'läuft von der Position zu Position + Betrag',
+  posB: 'läuft von der Position zu Position + Betrag',
+  level: 'Tremolo',
+  pan: 'links ↔ rechts',
+};
 const SECOND = (v: number) => (v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2).replace('.', ',')} s`);
 const HZ = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1).replace('.', ',')} k` : `${Math.round(v)} Hz`);
 const PCT = (v: number) => `${Math.round(v * 100)} %`;
@@ -88,6 +101,8 @@ export function InstrumentPanel() {
   /** Knobs: a drag is one undo step. */
   const set = (patch: Partial<SynthSettings>) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), ...patch } })), { merge: true });
   const setB = (patch: Partial<NonNullable<SynthSettings['oscB']>>) => set({ oscB: { ...(synth.oscB ?? { wave: 'sawtooth' as OscWave, octave: 0, detune: 0, level: 0.7 }), ...patch } });
+  const setMods = (mods: ModSlot[]) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), mods: mods.length ? mods : undefined } })));
+  const setMod = (i: number, patch: Partial<ModSlot>) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, synth: { ...trackSynth(t), mods: (trackSynth(t).mods ?? []).map((m, j) => (j === i ? { ...m, ...patch } : m)) } })), { merge: true });
   const setFx = (patch: TrackFx) => updateProject((p) => mapTrack(p, trackId, (t) => ({ ...t, fx: { ...t.fx, ...patch } })), { reschedule: false });
   const hear = (sy: SynthSettings, pitch: number) => void engine.previewNote(sy, pitch);
   const auditionPitch = kind === 'synth' ? current?.note ?? 48 : kind === 'kit' ? 36 : 60;
@@ -183,8 +198,7 @@ export function InstrumentPanel() {
         {kind === 'synth' && tab === 'osc' && (
           <>
             <Card title="OSC A">
-              <WaveScope wave={synth.wave as OscWave} unison={synth.unison} spread={synth.spread} width={inner} />
-              <WavePick value={synth.wave as OscWave} color={C.accent} onPick={(w) => set({ wave: w })} />
+              <OscSource table={synth.tableA} pos={synth.posA ?? 0} wave={synth.wave as OscWave} unison={synth.unison} spread={synth.spread} width={inner} color={C.accent} onWave={(w) => set({ wave: w, tableA: undefined, posA: undefined })} onTable={(id) => set({ tableA: id, posA: synth.posA ?? 0 })} onPos={(v) => set({ posA: v })} />
               <KnobRow>
                 <Knob label="Unison" value={synth.unison ?? 1} min={1} max={7} step={1} reset={1} format={(v) => String(Math.round(v))} onChange={(v) => set({ unison: v, spread: v > 1 && !synth.spread ? 20 : synth.spread })} />
                 <Knob label="Spread" value={synth.spread ?? 0} min={0} max={100} step={1} reset={0} format={CT} onChange={(v) => set({ spread: v })} />
@@ -200,8 +214,7 @@ export function InstrumentPanel() {
             >
               {b ? (
                 <>
-                  <WaveScope wave={b.wave} unison={synth.unison} spread={synth.spread} width={inner} color={ACCENT_B} />
-                  <WavePick value={b.wave} color={ACCENT_B} onPick={(w) => setB({ wave: w })} />
+                  <OscSource table={b.table} pos={b.pos ?? 0} wave={b.wave} unison={synth.unison} spread={synth.spread} width={inner} color={ACCENT_B} onWave={(w) => setB({ wave: w, table: undefined, pos: undefined })} onTable={(id) => setB({ table: id, pos: b.pos ?? 0 })} onPos={(v) => setB({ pos: v })} />
                   <KnobRow>
                     <Knob label="Oktave" color={ACCENT_B} value={b.octave} min={-2} max={2} step={1} reset={0} format={SIGNED} onChange={(v) => setB({ octave: v })} />
                     <Knob label="Fine" color={ACCENT_B} value={b.detune} min={-50} max={50} step={1} reset={0} format={CT} onChange={(v) => setB({ detune: v })} />
@@ -240,7 +253,69 @@ export function InstrumentPanel() {
                 <Knob label="Tiefe" value={synth.lfoDepth ?? 0} min={0} max={1} reset={0.4} format={PCT} onChange={(v) => set({ lfoDepth: Math.round(v * 100) / 100 })} />
               </KnobRow>
             )}
+            <ShapePick value={synth.lfoShape ?? 'sine'} onPick={(w) => set({ lfoShape: w })} />
+            <Txt style={[s.note, { marginTop: 6 }]}>LFO 1 bewegt den Cutoff mit der Tiefe oben und steht im MOD-Reiter als Quelle für alles andere bereit (ohne Tempo: 1× pro Takt).</Txt>
           </Card>
+        )}
+        {kind === 'synth' && tab === 'lfo' && (
+          <Card title="LFO 2 (QUELLE FÜR MOD)">
+            <LfoScope rate={synth.lfo2Rate ?? 0.5} depth={0.6} width={inner} color={ACCENT_B} />
+            <Txt style={[s.note, { marginTop: 8 }]}>Zyklen pro Takt, synchron zum Tempo</Txt>
+            <View style={s.chips}>
+              {LFO_RATES.map((r) => (
+                <Chip key={r} variant={(synth.lfo2Rate ?? 0.5) === r ? 'on' : 'ghost'} onPress={() => set({ lfo2Rate: r })}>
+                  {lfoLabel(r)}
+                </Chip>
+              ))}
+            </View>
+            <ShapePick value={synth.lfo2Shape ?? 'sine'} onPick={(w) => set({ lfo2Shape: w })} />
+          </Card>
+        )}
+
+        {/* ---------------- MOD MATRIX ---------------- */}
+        {kind === 'synth' && tab === 'mod' && (
+          <>
+            <Card title="ENVELOPE 2 (QUELLE FÜR MOD)">
+              <EnvScope attack={synth.env2?.attack ?? 0.01} decay={synth.env2?.decay ?? 0.4} sustain={synth.env2?.sustain ?? 0} release={synth.env2?.release ?? 0.2} width={inner} color={ACCENT_B} />
+              <KnobRow>
+                <Knob label="Attack" color={ACCENT_B} value={synth.env2?.attack ?? 0.01} min={0.001} max={2} curve="log" format={SECOND} onChange={(v) => set({ env2: { ...ENV2, ...synth.env2, attack: v } })} />
+                <Knob label="Decay" color={ACCENT_B} value={synth.env2?.decay ?? 0.4} min={0.01} max={2} curve="log" format={SECOND} onChange={(v) => set({ env2: { ...ENV2, ...synth.env2, decay: v } })} />
+                <Knob label="Sustain" color={ACCENT_B} value={synth.env2?.sustain ?? 0} min={0} max={1} format={PCT} onChange={(v) => set({ env2: { ...ENV2, ...synth.env2, sustain: v } })} />
+                <Knob label="Release" color={ACCENT_B} value={synth.env2?.release ?? 0.2} min={0.005} max={2.5} curve="log" format={SECOND} onChange={(v) => set({ env2: { ...ENV2, ...synth.env2, release: v } })} />
+              </KnobRow>
+            </Card>
+            <Card
+              title="MOD-MATRIX"
+              right={
+                <Chip variant="ghost" onPress={() => ((synth.mods?.length ?? 0) < MAX_MODS ? setMods([...(synth.mods ?? []), { source: 'lfo1', target: 'cutoff', amount: 0.5 }]) : undefined)}>
+                  + Routing
+                </Chip>
+              }
+            >
+              {(synth.mods ?? []).length === 0 && <Txt style={s.note}>Hier verbindest du eine Quelle (LFO 1, LFO 2, Envelope 2) mit einem Ziel, wie in Serum oder Vital. Beispiel: ENV 2 → Wavetable A öffnet den Klang bei jedem Anschlag, LFO 2 → Cutoff lässt ihn wabern. Bis zu {MAX_MODS} Routings.</Txt>}
+              {(synth.mods ?? []).map((m, i) => (
+                <View key={i} style={s.modRow}>
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <View style={s.chips0}>
+                      <Chip variant="on" onPress={() => setMod(i, { source: MOD_SOURCES[(MOD_SOURCES.indexOf(m.source) + 1) % MOD_SOURCES.length] })} accessibilityLabel={`Quelle ${MOD_SOURCE_NAMES[m.source]}`}>
+                        {MOD_SOURCE_NAMES[m.source]}
+                      </Chip>
+                      <Txt style={s.arrow}>→</Txt>
+                      <Chip variant="ghost" onPress={() => setMod(i, { target: nextTarget(m.target, synth) })} accessibilityLabel={`Ziel ${MOD_TARGET_NAMES[m.target]}`}>
+                        {MOD_TARGET_NAMES[m.target]}
+                      </Chip>
+                    </View>
+                    <Txt style={s.modHint}>{MOD_HINT[m.target]}</Txt>
+                    {(m.target === 'posA' && !synth.tableA) || (m.target === 'posB' && !(b && b.table)) ? <Txt style={[s.modHint, { color: C.danger }]}>Wähle dafür im OSC-Reiter eine Wavetable.</Txt> : null}
+                  </View>
+                  <Knob label="Betrag" size={44} width={64} value={m.amount} min={-1} max={1} reset={0.5} format={(v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)} %`} onChange={(v) => setMod(i, { amount: Math.round(v * 100) / 100 })} />
+                  <Chip variant="ghost" onPress={() => setMods((synth.mods ?? []).filter((_, j) => j !== i))} accessibilityLabel="Routing entfernen">
+                    ✕
+                  </Chip>
+                </View>
+              ))}
+            </Card>
+          </>
         )}
 
         {/* ---------------- SAMPLER ---------------- */}
@@ -290,6 +365,12 @@ export function InstrumentPanel() {
             <FilterScope type={filterType} cutoff={synth.cutoff} resonance={synth.resonance} envOctaves={kind === 'synth' ? synth.filterEnv : 0} width={inner} />
             {kind === 'synth' && (
               <View style={s.chips}>
+                <Chip variant={synth.filter24 ? 'ghost' : 'on'} onPress={() => set({ filter24: undefined })}>
+                  12 dB
+                </Chip>
+                <Chip variant={synth.filter24 ? 'on' : 'ghost'} onPress={() => set({ filter24: true })}>
+                  24 dB
+                </Chip>
                 {FILTERS.map((f) => (
                   <Chip key={f.type} variant={filterType === f.type ? 'on' : 'ghost'} onPress={() => set({ filterType: f.type })}>
                     {f.label}
@@ -373,6 +454,71 @@ export function InstrumentPanel() {
   );
 }
 
+const ENV2 = { attack: 0.01, decay: 0.4, sustain: 0, release: 0.2 };
+
+/** The next target in the list that makes sense for this sound (wavetable targets only with a wavetable). */
+function nextTarget(current: ModTarget, synth: SynthSettings): ModTarget {
+  const ok = (t: ModTarget) => (t === 'posA' ? !!synth.tableA : t === 'posB' ? !!(synth.oscB && synth.oscB.table) : true);
+  let i = MOD_TARGETS.indexOf(current);
+  for (let k = 0; k < MOD_TARGETS.length; k++) {
+    i = (i + 1) % MOD_TARGETS.length;
+    if (ok(MOD_TARGETS[i])) return MOD_TARGETS[i];
+  }
+  return current;
+}
+
+/** One oscillator's source: a basic wave or a wavetable (picker, position knob and the stack of frames). */
+function OscSource({ table, pos, wave, unison, spread, width, color, onWave, onTable, onPos }: { table?: string; pos: number; wave: OscWave; unison?: number; spread?: number; width: number; color: string; onWave: (w: OscWave) => void; onTable: (id: string) => void; onPos: (v: number) => void }) {
+  return (
+    <>
+      <View style={s.chips0}>
+        <Chip variant={table ? 'ghost' : 'on'} onPress={() => onWave(wave)}>
+          Grundwelle
+        </Chip>
+        <Chip variant={table ? 'on' : 'ghost'} onPress={() => onTable(table ?? 'basic')}>
+          Wavetable
+        </Chip>
+      </View>
+      {table ? (
+        <>
+          <View style={{ marginTop: 10 }}>
+            <TableScope table={table} pos={pos} width={width} color={color} />
+          </View>
+          <View style={s.chips}>
+            {TABLES.map((x) => (
+              <Chip key={x.id} variant={table === x.id ? 'on' : 'ghost'} onPress={() => onTable(x.id)} accessibilityLabel={`Wavetable ${x.label}`}>
+                {x.label}
+              </Chip>
+            ))}
+          </View>
+          <Txt style={[s.note, { marginTop: 6 }]}>{tableById(table)?.hint}</Txt>
+          <KnobRow>
+            <Knob label="Position" color={color} value={pos} min={0} max={1} reset={0} format={PCT} onChange={(v) => onPos(Math.round(v * 64) / 64)} />
+          </KnobRow>
+        </>
+      ) : (
+        <>
+          <WaveScope wave={wave} unison={unison} spread={spread} width={width} color={color} />
+          <WavePick value={wave} color={color} onPick={onWave} />
+        </>
+      )}
+    </>
+  );
+}
+
+/** LFO shapes as chips. */
+function ShapePick({ value, onPick }: { value: OscWave; onPick: (w: OscWave) => void }) {
+  return (
+    <View style={s.chips}>
+      {WAVES.map((w) => (
+        <Chip key={w} variant={value === w ? 'on' : 'ghost'} onPress={() => onPick(w)} accessibilityLabel={`LFO-Form ${WAVE_NAMES[w]}`}>
+          {WAVE_NAMES[w]}
+        </Chip>
+      ))}
+    </View>
+  );
+}
+
 /** The four oscillator waves as small pictures to tap. */
 function WavePick({ value, color, onPick }: { value: OscWave; color: string; onPick: (w: OscWave) => void }) {
   return (
@@ -402,6 +548,10 @@ const s = StyleSheet.create({
   tileTitle: { ...font(700), fontSize: 13 },
   tileSub: { ...font(400), fontSize: 9.5, color: C.muted, marginTop: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  chips0: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  modRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.line },
+  arrow: { color: C.muted, fontSize: 14 },
+  modHint: { color: C.dim, fontSize: 11 },
   list: { marginTop: 10, borderWidth: 1, borderColor: C.line, borderRadius: 10, overflow: 'hidden' },
   row: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.line },
   rowOn: { backgroundColor: 'rgba(198,255,61,0.08)' },

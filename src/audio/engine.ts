@@ -5,10 +5,12 @@ import {
   AudioContext,
   AudioManager,
   AudioNode,
+  AudioParam,
   BaseAudioContext,
   GainNode,
   OfflineAudioContext,
   OscillatorNode,
+  PeriodicWave,
 } from 'react-native-audio-api';
 import { Platform } from 'react-native';
 import type { Clip, OscWave, Project, Sample, SynthSettings, Track } from '../types';
@@ -17,7 +19,8 @@ import { sampleSource } from '../lib/samples';
 import { DECAY_FLOOR, padAt, planHit } from './drum909';
 import { createLimiter, MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
-import { adsrPoints, kickSweep, noiseSamples, noteHold, pitchRate, planVoice, voicePeak } from './synth';
+import { adsrPoints, isBipolar, kickSweep, morphRange, noiseSamples, noteHold, pitchRate, planVoice, voicePeak, type OscPart } from './synth';
+import { tableSpectrum } from './wavetables';
 import { beatsInWindow, clipEnvelope, clipGainAt, dbToGain, loopEndSeconds, nextBoundary, planClip, planPreview, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
 type AnyContext = BaseAudioContext;
@@ -135,33 +138,95 @@ function noiseBuffer(ctx: AnyContext): AudioBuffer {
 
 const isOscWave = (w: SynthSettings['wave']): w is OscWave => w === 'sawtooth' || w === 'square' || w === 'sine' || w === 'triangle';
 
+const spectra = new Map<string, { real: Float32Array; imag: Float32Array }>();
+const waves = new WeakMap<AnyContext, Map<string, PeriodicWave>>();
+
+/** One frame of a wavetable as a PeriodicWave of this context (the spectrum is computed once, the wave once per context). */
+function tableWave(ctx: AnyContext, id: string, pos: number): PeriodicWave {
+  let perCtx = waves.get(ctx);
+  if (!perCtx) waves.set(ctx, (perCtx = new Map()));
+  const key = `${id}:${pos}`;
+  let w = perCtx.get(key);
+  if (!w) {
+    let sp = spectra.get(key);
+    if (!sp) spectra.set(key, (sp = tableSpectrum(id, pos)));
+    perCtx.set(key, (w = ctx.createPeriodicWave(sp.real, sp.imag)));
+  }
+  return w;
+}
+
 /**
- * The oscillator synth: unison oscillators of A (and B), sub and noise -> filter (envelope, tempo-synced
- * LFO) -> ADSR gain -> destination. The recipe comes from planVoice; this only builds the nodes.
+ * The oscillator synth: unison oscillators of A (and B; each a basic wave or a wavetable frame), sub and noise ->
+ * one or two filters (envelope, tempo-synced LFO) -> level -> ADSR gain -> pan -> destination. The mod matrix feeds
+ * LFOs and envelope 2 into cutoff / resonance (filter), pitch (oscillators), level, pan, and into the wavetable
+ * position (a crossfade between two frames). The recipe comes from planVoice; this only builds the nodes.
  */
 function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, level: number, when: number, hold: number, bpm: number, dest: AudioNode): Voice {
   const plan = planVoice(synth, pitch, bpm);
   const points = adsrPoints(synth, level, hold);
   const end = when + points[points.length - 1].t + 0.01;
-  const filter = ctx.createBiquadFilter();
   const f = plan.filter;
-  filter.type = f.type;
-  filter.Q.value = f.q;
-  filter.frequency.setValueAtTime(f.startCutoff, when);
-  if (f.startCutoff > f.cutoff) filter.frequency.exponentialRampToValueAtTime(f.cutoff, when + f.decay);
+  const filters = Array.from({ length: f.steep ? 2 : 1 }, () => {
+    const fl = ctx.createBiquadFilter();
+    fl.type = f.type;
+    fl.Q.value = f.q;
+    fl.frequency.setValueAtTime(f.startCutoff, when);
+    if (f.startCutoff > f.cutoff) fl.frequency.exponentialRampToValueAtTime(f.cutoff, when + f.decay);
+    return fl;
+  });
   const amp = ctx.createGain();
   amp.gain.setValueAtTime(0, when);
   for (const p of points) amp.gain.linearRampToValueAtTime(p.v, when + p.t);
   const mix = ctx.createGain();
-  mix.connect(filter);
-  filter.connect(amp);
-  amp.connect(dest);
+  const levelGain = ctx.createGain(); // tremolo target of the mod matrix
+  mix.connect(filters[0]);
+  filters.forEach((fl, i) => fl.connect(filters[i + 1] ?? levelGain));
+  levelGain.connect(amp);
+  const slots = plan.mod.slots;
 
   const parts: { stop(when?: number): void }[] = [];
   let lead: OscillatorNode | null = null;
-  const addOsc = (wave: OscWave, freq: number, gain: number) => {
+  // modulation sources: LFOs swing -1..1, envelope 2 goes 0..1
+  const sources = new Map<string, AudioNode>();
+  for (const l of plan.mod.lfos) {
+    const lfo = ctx.createOscillator();
+    lfo.type = l.shape;
+    lfo.frequency.value = l.hz;
+    lfo.start(when);
+    lfo.stop(end);
+    parts.push(lfo);
+    sources.set(l.source, lfo);
+  }
+  if (plan.mod.env2) {
+    const c = ctx.createConstantSource();
+    c.offset.setValueAtTime(0, when);
+    for (const p of adsrPoints(plan.mod.env2, 1, hold)) c.offset.linearRampToValueAtTime(p.v, when + p.t);
+    c.start(when);
+    c.stop(end);
+    parts.push(c);
+    sources.set('env2', c);
+  }
+  /** Send a source into a parameter, scaled; several routings into one parameter simply add up. */
+  function route(source: string, param: AudioParam, scale: number) {
+    const src = sources.get(source);
+    if (!src) return;
+    const g = ctx.createGain();
+    g.gain.value = scale;
+    src.connect(g);
+    g.connect(param);
+  }
+  if (slots.some((m) => m.target === 'pan')) {
+    const pan = ctx.createStereoPanner();
+    amp.connect(pan);
+    pan.connect(dest);
+    pan.pan.value = 0;
+    for (const m of slots.filter((x) => x.target === 'pan')) route(m.source, pan.pan, m.amount);
+  } else amp.connect(dest);
+  const oscNodes: OscillatorNode[] = [];
+  const addOsc = (wave: OscWave, freq: number, gain: number, table?: PeriodicWave): GainNode => {
     const o = ctx.createOscillator();
-    o.type = wave;
+    if (table) o.setPeriodicWave(table);
+    else o.type = wave;
     o.frequency.value = freq;
     const g = ctx.createGain();
     g.gain.value = gain;
@@ -170,9 +235,36 @@ function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
     o.start(when);
     o.stop(end);
     parts.push(o);
+    oscNodes.push(o);
     lead ??= o;
+    return g;
   };
-  for (const o of plan.oscs) addOsc(o.wave, o.freq, o.gain);
+  /** A wavetable oscillator whose position is modulated: two frames, crossfaded by the source. */
+  const addMorph = (part: OscPart, slot: (typeof slots)[number]) => {
+    const { lo, hi } = morphRange(part.table!.pos, slot.amount);
+    const toHigh = slot.amount >= 0; // the source value 1 sits at pos + amount: the high frame for a positive amount, the low one for a negative
+    const fade = (frame: number, towardSource: boolean) => {
+      const g = addOsc(part.wave, part.freq, part.gain, tableWave(ctx, part.table!.id, frame));
+      const fadeGain = ctx.createGain();
+      // gain = source value (towardSource) or 1 - source value, with the bipolar LFO mapped to 0..1 around 0.5
+      const bi = isBipolar(slot.source);
+      fadeGain.gain.value = bi ? 0.5 : towardSource ? 0 : 1;
+      route(slot.source, fadeGain.gain, (bi ? 0.5 : 1) * (towardSource ? 1 : -1));
+      // splice the fade in front of the oscillator's own gain: osc -> g(level) -> mix  becomes  osc -> fade -> g -> mix
+      const o = oscNodes[oscNodes.length - 1];
+      o.disconnect();
+      o.connect(fadeGain);
+      fadeGain.connect(g);
+    };
+    fade(lo, !toHigh);
+    fade(hi, toHigh);
+  };
+  for (const o of plan.oscs) {
+    const target = o.osc === 'B' ? 'posB' : 'posA';
+    const slot = o.table ? slots.find((m) => m.target === target) : undefined;
+    if (o.table && slot) addMorph(o, slot);
+    else addOsc(o.wave, o.freq, o.gain, o.table ? tableWave(ctx, o.table.id, o.table.pos) : undefined);
+  }
   if (plan.sub) addOsc('sine', plan.sub.freq, plan.sub.gain);
   if (plan.noise > 0) {
     const n = ctx.createBufferSource({ pitchCorrection: false });
@@ -188,15 +280,21 @@ function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
   }
   if (f.lfoHz > 0) {
     const lfo = ctx.createOscillator();
-    lfo.type = 'sine';
+    lfo.type = synth.lfoShape ?? 'sine';
     lfo.frequency.value = f.lfoHz;
     const depth = ctx.createGain();
     depth.gain.value = f.lfoDepthHz;
     lfo.connect(depth);
-    depth.connect(filter.frequency);
+    for (const fl of filters) depth.connect(fl.frequency);
     lfo.start(when);
     lfo.stop(end);
     parts.push(lfo);
+  }
+  for (const m of slots) {
+    if (m.target === 'cutoff') for (const fl of filters) route(m.source, fl.detune, m.amount * 4800); // +-4 octaves
+    else if (m.target === 'reso') for (const fl of filters) route(m.source, fl.Q, m.amount * 12);
+    else if (m.target === 'pitch') for (const o of oscNodes) route(m.source, o.detune, m.amount * 1200); // +-1 octave
+    else if (m.target === 'level') route(m.source, levelGain.gain, m.amount * 0.5);
   }
   return new SynthVoice(parts, lead!);
 }

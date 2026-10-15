@@ -242,6 +242,22 @@ arp only its triad, so they cannot clash (tested). Without a progression index a
 WaveShapers that distort (track drive, master limiter, saturator, limiter device) use `oversample` to avoid aliasing
 hash; the track drive only while it is turned up (CPU).
 
+## Wavetables and the mod matrix (Serum / Vital style)
+
+`audio/wavetables.ts` (pure, tested): nine tables (Grundformen, Puls, Obertöne, Vokal, Hard Sync, Wavefold, FM, Screech, Acid Reso), each a time-domain shape
+`shape(pos, t)` along a position 0..1; `tableSpectrum(id, pos)` turns a frame into harmonics (128, normalised, DC-free) for `createPeriodicWave`, so every frame is band-limited
+like the built-in waves; positions snap to 1/64 (`snapPos`), `tableWave` in engine.ts caches spectra globally and waves per context. `SynthSettings.tableA/posA` and
+`oscB.table/pos` replace the basic wave of oscillator A / B (unison, detune, sub, noise work as before; `OscPart.table`). `Filter24` = two biquads in a row (12/24 dB chips).
+**Mod matrix**: `SynthSettings.mods` = up to 8 `{source: lfo1|lfo2|env2, target: cutoff|reso|pitch|posA|posB|level|pan, amount -1..1}`; `activeMods`/`modPlan` (synth.ts, tested)
+drop silent slots (amount 0, a position target without a wavetable) and start only the LFOs/envelope a slot uses (LFO rates are cycles per bar = tempo-synced, default LFO 1 =
+1/bar, LFO 2 = 1/2 bar; `lfoShape`/`lfo2Shape`; envelope 2 = `env2` ADSR, default decay 0.4 s). `startOscVoice` routes each source through a gain (the scale) into the AudioParam:
+cutoff = filter `detune` ±4 octaves, reso = Q ±12 dB, pitch = oscillator `detune` ±1 octave, level = tremolo gain ±50 %, pan = a StereoPanner (only built when used). **Wavetable
+position is modulated by a crossfade of two frames** (pos and pos+amount, `morphRange`: a linear blend of two spectra is what moving through a table sounds like); only the
+first posA / posB slot is used. Measured offline in Chromium: Fold position 0 → 1 raises the zero-crossing rate 230 → 1711 Hz, an LFO on the cutoff moves the level over time (0.087 → 0.059),
+ENV 2 → position opens the sound at the note start (385 vs 230 Hz), pan LFO swings the left channel (0.04 ↔ 0.11). UI: Sound panel, tab OSC (Grundwelle / Wavetable per oscillator:
+`TableScope` stack of frames, table chips, position knob), LFO (shape, LFO 2), MOD (envelope 2 + the matrix: tap the source / target chip to cycle, amount knob, ✕). Six wavetable
+presets (`wt-*`: Screech Table, Vowel Voice, Morph Pad, Fold Bass, Acid Table, FM Bell). Not heard on a phone; native `createPeriodicWave` is untested (web only).
+
 ## Sound panel (Serum-style)
 
 `InstrumentPanel` is built like a plugin: preset switcher (◀ ▶ through `PRESETS`), "Instrument laden" tiles

@@ -1,5 +1,5 @@
 import { midiToHz } from '../lib/midi';
-import { adsrPoints, isDrumWave, kickSweep, noiseSamples, noteHold, pitchRate, planVoice, SAMPLE_ROOT, voicePeak } from './synth';
+import { adsrPoints, isDrumWave, kickSweep, morphRange, noiseSamples, noteHold, pitchRate, planVoice, SAMPLE_ROOT, voicePeak } from './synth';
 
 describe('adsrPoints', () => {
   const env = { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 };
@@ -71,7 +71,7 @@ describe('planVoice', () => {
 
   it('a plain synth is one oscillator at full gain on the note', () => {
     const p = planVoice(base, 69, 150);
-    expect(p.oscs).toEqual([{ wave: 'sawtooth', freq: 440, gain: 1 }]);
+    expect(p.oscs).toEqual([{ wave: 'sawtooth', freq: 440, gain: 1, osc: 'A' }]);
     expect(p.sub).toBeNull();
     expect(p.noise).toBe(0);
     expect(p.filter).toMatchObject({ type: 'lowpass', cutoff: 2000, startCutoff: 2000, lfoHz: 0, lfoDepthHz: 0 });
@@ -138,5 +138,58 @@ describe('sampler root, tune and gain', () => {
     expect(voicePeak({ wave: 'sample', gainDb: -6.0206 }, 1)).toBeCloseTo(0.45, 3);
     expect(voicePeak({ wave: 'sample', gainDb: 6.0206 }, 1)).toBeCloseTo(1.8, 3);
     expect(voicePeak({ wave: 'sawtooth' }, 1)).toBeCloseTo(0.25);
+  });
+});
+
+describe('wavetable voices and the mod matrix', () => {
+  const base = { wave: 'sawtooth' as const, cutoff: 2000, resonance: 1, attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.1 };
+
+  it('plays oscillator A as a wavetable frame, snapped to the position grid', () => {
+    const plan = planVoice({ ...base, tableA: 'vowel', posA: 0.5 }, 60, 150);
+    expect(plan.oscs[0].table).toEqual({ id: 'vowel', pos: 0.5 });
+    expect(planVoice(base, 60, 150).oscs[0].table).toBeUndefined();
+  });
+
+  it('plays oscillator B as a wavetable only when it has one', () => {
+    const plan = planVoice({ ...base, oscB: { wave: 'square', octave: 0, detune: 0, level: 1, table: 'fold', pos: 1 } }, 60, 150);
+    expect(plan.oscs.find((o) => o.osc === 'B')!.table).toEqual({ id: 'fold', pos: 1 });
+    expect(plan.oscs.find((o) => o.osc === 'A')!.table).toBeUndefined();
+  });
+
+  it('keeps the unison level the same for wavetable oscillators', () => {
+    const sum = (o: { gain: number }[]) => o.reduce((a, x) => a + x.gain * x.gain, 0);
+    expect(sum(planVoice({ ...base, tableA: 'basic', unison: 5, spread: 30 }, 60, 150).oscs)).toBeCloseTo(1, 5);
+  });
+
+  it('drops mod slots that do nothing and caps them at eight', () => {
+    const mods = [
+      { source: 'lfo1' as const, target: 'cutoff' as const, amount: 0.5 },
+      { source: 'lfo1' as const, target: 'pitch' as const, amount: 0 },
+      { source: 'lfo2' as const, target: 'posA' as const, amount: 0.5 }, // no wavetable: silent
+      { source: 'env2' as const, target: 'nonsense' as never, amount: 1 },
+      ...Array.from({ length: 12 }, () => ({ source: 'lfo2' as const, target: 'pan' as const, amount: 0.3 })),
+    ];
+    const plan = planVoice({ ...base, mods }, 60, 150);
+    expect(plan.mod.slots[0]).toEqual({ source: 'lfo1', target: 'cutoff', amount: 0.5 });
+    expect(plan.mod.slots).toHaveLength(8);
+    expect(plan.mod.slots.every((m) => m.target !== 'posA' && m.target !== 'pitch')).toBe(true);
+  });
+
+  it('starts an LFO only when a slot uses it, tempo-synced in cycles per bar', () => {
+    const plan = planVoice({ ...base, lfoRate: 2, mods: [{ source: 'lfo1', target: 'cutoff', amount: 1 }] }, 60, 120);
+    expect(plan.mod.lfos).toEqual([{ source: 'lfo1', shape: 'sine', hz: 1 }]); // 120 BPM = 2 s per bar, 2 cycles per bar = 1 Hz
+    expect(plan.mod.env2).toBeNull();
+    expect(planVoice(base, 60, 120).mod.lfos).toEqual([]);
+  });
+
+  it('gives an envelope 2 default shape when a slot uses it', () => {
+    const plan = planVoice({ ...base, mods: [{ source: 'env2', target: 'cutoff', amount: 0.6 }] }, 60, 150);
+    expect(plan.mod.env2).toEqual({ attack: 0.01, decay: 0.4, sustain: 0, release: 0.2 });
+  });
+
+  it('morphRange orders the two frames and stays inside the table', () => {
+    expect(morphRange(0.5, 0.25)).toEqual({ lo: 0.5, hi: 0.75 });
+    expect(morphRange(0.5, -0.25)).toEqual({ lo: 0.25, hi: 0.5 });
+    expect(morphRange(0.9, 0.5)).toEqual({ lo: 0.90625, hi: 1 }); // the grid is 1/64
   });
 });

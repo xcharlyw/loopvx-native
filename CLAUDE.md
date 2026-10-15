@@ -426,6 +426,15 @@ the id prefix `split2:`; an older split (`split:`, without the click) is replace
 Tested on synthetic kicks with a 3 kHz click: the plain low band has < 5 % of the click energy, the new kick part > 60 %, the hats part < 10 % of the old hats band in the window, hats
 between the kicks unchanged.
 
+**Clean one-shot drums** (Karl: "just filter a short kick out, consolidate it, and loop that sample where it belongs", like in Ableton): without drum parts from elsewhere,
+"Aufbau nachbauen" no longer filters the whole drums stem. `makeDrumSampleTracks` (referenceRun.ts) transcribes the drums (`transcribeDrums`), `hitTimesMs` gives every hit
+on the tune clock, `pickCleanHit` takes per part (kick/clap/hat) the hit whose own band holds the most energy against the other two bands and has no same-part hit inside
+its length (`ONE_SHOT_MS` 260/220/90), `cutOneShot` cuts it from the complementary split (`makeDrumSplitter(...).part`, so the kick keeps its click; 0.3 ms fade-in, cosine
+fade-out, peak 0.95) and stores it as WAV "<tune> - Kick Hit / Clap Hit / HiHat Hit" (id `oneshot:`, same library folder). Each part gets a sampler MIDI track "Kick Sample /
+Clap Sample / HiHat Sample" (`SAMPLER_PRESET`, notes at pitch 60, 1/16 long, velocities from the transcript) with one clip from bar 1, merged by name (`mergeTracksByName`:
+a rerun replaces the clip and instrument but keeps the track's fader/colour/mute). Also a chip "Drums → saubere Hits (Sampler)" (`drumsToSampleTracks`). Quality depends on the
+transcription (missed hats/claps stay silent); never run on a real tune.
+
 **Bar 1 and exact tempo** (`tuneGrid` in referenceRun.ts, used by all three: original stems, own sounds, drums → MIDI): measured on the drums stem with `transcribeDrums`:
 the grid's tempo (kept as named when within 0.015 BPM) and `downbeatMs` = the first kick on a beat (tunes start on a downbeat), kept on the bar grid, so a pickup or silence
 before it is cut; `barLevels(…, offsetSec)` starts bar 1 there, the stem clips get `offset = start + offsetBars`, the MIDI notes start at that bar, and when the measured tempo

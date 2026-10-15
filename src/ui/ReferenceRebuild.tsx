@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { C } from '../constants/theme';
 import { setCursor } from '../lib/actions';
 import { structureText } from '../lib/referenceArrange';
-import { drumsToMidi, rebuildFromStems, rebuildWithOriginalStems, splitDrumsAudio, stemTunes } from '../lib/referenceRun';
+import { drumsToMidi, drumsToSampleTracks, rebuildFromStems, rebuildWithOriginalStems, splitDrumsAudio, stemTunes } from '../lib/referenceRun';
 import { errorText, getState, setState, toast, useStore } from '../lib/store';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Section, Txt } from './kit';
@@ -32,12 +32,17 @@ export function ReferenceRebuild() {
     void work(`${folder}#orig`, async () => {
       const r = await rebuildWithOriginalStems(folder);
       setCursor(0);
-      return `✓ „${tune}“ aus den Original-Stems nachgebaut (${r.bpm} BPM${r.offsetSec > 0.02 ? `, Takt 1 beginnt bei ${r.offsetSec.toFixed(2).replace('.', ',')} s` : ''}): ${structureText(r.sections)}. Spuren: ${r.tracks.join(', ')}${r.split ? '. Die Drums wurden dafür zuerst per Filter in Kick / Clap + Snare / HiHats geteilt (Library, Ordner des Tunes).' : ''}`;
+      return `✓ „${tune}“ aus den Original-Stems nachgebaut (${r.bpm} BPM${r.offsetSec > 0.02 ? `, Takt 1 beginnt bei ${r.offsetSec.toFixed(2).replace('.', ',')} s` : ''}): ${structureText(r.sections)}. Spuren: ${r.tracks.join(', ')}${r.split ? '. Die Drums sind saubere Einzel-Hits (Kick, Clap, HiHat), die Sampler-Spuren an den erkannten Stellen abspielen.' : ''}`;
     });
   const midi = (folder: string, tune: string) =>
     void work(`${folder}#midi`, async () => {
       const r = await drumsToMidi(folder);
       return `✓ „${tune}“: Drums als MIDI auf Spur „${r.track}“ (${r.notes} Schläge, ${r.bars} Takte, Raster ${r.bpm} BPM)`;
+    });
+  const oneShots = (folder: string, tune: string) =>
+    void work(`${folder}#samples`, async () => {
+      const r = await drumsToSampleTracks(folder);
+      return `✓ „${tune}“: sauberer Kick-Hit${r.hits.clap ? ', Clap' : ''}${r.hits.hat ? ' und HiHat' : ''} ausgeschnitten, Spuren ${r.tracks.join(', ')} (${r.hits.kick} Kicks, ${r.hits.clap} Claps, ${r.hits.hat} HiHats, ${r.bars} Takte)`;
     });
   const split = (folder: string, tune: string) =>
     void work(`${folder}#split`, async () => {
@@ -66,7 +71,7 @@ export function ReferenceRebuild() {
   return (
     <Section title="Aufbau von einem Tune nachbauen" style={{ marginTop: 12 }}>
       <Txt style={s.note}>
-        Die App hört in die Stems eines Tunes (Library → Stems trennen). „Aufbau nachbauen“ erkennt Intro, Build-up, Drop, Break und Outro und legt die Original-Stems des Tunes auf eigene Spuren, jeweils nur dort, wo sie im Tune spielen. Die Drums kommen einzeln (Kick, Clap, HiHats), wenn sie getrennt in der Library liegen, sonst teilt die App sie vorher. „Aufbau mit eigenen Sounds“ baut denselben Aufbau mit deinen Spuren und Samples. „Drums → MIDI“ schreibt Kick, Clap und HiHats als MIDI auf eine neue 909-Spur. „Drums → Kick / Clap / HiHats“ teilt den Drum-Stem per Filter in drei Audio-Spuren (nicht ganz sauber getrennt).
+        Die App hört in die Stems eines Tunes (Library → Stems trennen). „Aufbau nachbauen“ erkennt Intro, Build-up, Drop, Break und Outro und legt die Original-Stems des Tunes auf eigene Spuren, jeweils nur dort, wo sie im Tune spielen. Die Drums kommen als saubere Einzel-Hits (Sampler-Spuren), oder als Stems, wenn du Kick, Clap und HiHats schon getrennt in den Tune-Ordner gelegt hast. „Aufbau mit eigenen Sounds“ baut denselben Aufbau mit deinen Spuren und Samples. „Drums → saubere Hits“ schneidet einen sauberen Kick-, Clap- und HiHat-Hit aus dem Tune und spielt ihn mit Sampler-Spuren an den erkannten Stellen. „Drums → MIDI“ schreibt Kick, Clap und HiHats als MIDI auf eine neue 909-Spur. „Drums → Kick / Clap / HiHats“ teilt den Drum-Stem per Filter in drei Audio-Spuren (nicht ganz sauber getrennt).
       </Txt>
       {tunes.length === 0 ? (
         <View style={s.row}>
@@ -88,6 +93,9 @@ export function ReferenceRebuild() {
                 </Chip>
                 <Chip variant={busy === `${t.folder}#midi` ? 'on' : 'ghost'} onPress={() => (busy ? undefined : midi(t.folder, t.tune))} accessibilityLabel={`Drums von ${t.tune} als MIDI`}>
                   {busy === `${t.folder}#midi` ? 'erkennt Drums …' : 'Drums → MIDI'}
+                </Chip>
+                <Chip variant={busy === `${t.folder}#samples` ? 'on' : 'ghost'} onPress={() => (busy ? undefined : oneShots(t.folder, t.tune))} accessibilityLabel={`Drums von ${t.tune} als saubere Hits`}>
+                  {busy === `${t.folder}#samples` ? 'schneidet Hits …' : 'Drums → saubere Hits (Sampler)'}
                 </Chip>
                 <Chip variant={busy === `${t.folder}#split` ? 'on' : 'ghost'} onPress={() => (busy ? undefined : split(t.folder, t.tune))} accessibilityLabel={`Drums von ${t.tune} aufteilen`}>
                   {busy === `${t.folder}#split` ? 'teilt auf …' : 'Drums → Kick / Clap / HiHats'}

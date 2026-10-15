@@ -1,4 +1,4 @@
-import { biquad, clickWindow, kickOnsetsMs, makeDrumSplitter, splitBands, transcribeDrums } from './drumSplit';
+import { biquad, clickWindow, cutOneShot, hitTimesMs, kickOnsetsMs, makeDrumSplitter, pickCleanHit, splitBands, transcribeDrums } from './drumSplit';
 
 const SR = 22050;
 const BPM = 150;
@@ -149,5 +149,42 @@ describe('kick click', () => {
     expect(w[490]).toBeLessThan(1);
     expect(w[565]).toBeGreaterThan(0);
     expect(w[565]).toBeLessThan(1);
+  });
+});
+
+describe('clean one-shots', () => {
+  const x = drums(4);
+  const t = transcribeDrums(x, SR, BPM);
+
+  it('hitTimesMs puts every transcribed note on the tune clock', () => {
+    const times = hitTimesMs(t);
+    expect(times.kick.length).toBeGreaterThanOrEqual(14);
+    const beatMs = 60000 / BPM;
+    const rel = (times.kick[1] - times.kick[0]) / beatMs;
+    expect(Math.abs(rel - 1)).toBeLessThan(0.02);
+  });
+
+  it('picks a kick hit that sits on a beat', () => {
+    const times = hitTimesMs(t);
+    const at = pickCleanHit(splitBands(x, SR), SR, 'kick', times.kick);
+    expect(at).toBeDefined();
+    const beatMs = 60000 / BPM;
+    const off = ((at! - times.kick[0]) / beatMs) % 1;
+    expect(Math.min(off, 1 - off)).toBeLessThan(0.03);
+  });
+
+  it('returns nothing when there are no hits', () => {
+    expect(pickCleanHit(splitBands(x, SR), SR, 'hat', [])).toBeUndefined();
+  });
+
+  it('cuts a short faded hit with peak 0.95', () => {
+    const at = hitTimesMs(t).kick[0];
+    const cut = cutOneShot('kick', [x, x], SR, at);
+    expect(cut).toHaveLength(2);
+    const len = cut[0].length;
+    expect(len).toBeLessThanOrEqual(Math.round(0.261 * SR));
+    expect(len).toBeGreaterThan(Math.round(0.2 * SR));
+    expect(Math.max(...Array.from(cut[0]).map(Math.abs))).toBeCloseTo(0.95, 2);
+    expect(Math.abs(cut[0][len - 1])).toBeLessThan(0.01);
   });
 });

@@ -106,7 +106,15 @@ export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
   // An earlier split of this tune (also one made before the kick click was kept with the kick) is replaced, not doubled.
   const old = getState().samples.filter((x) => x.folder === folder && x.id.startsWith('split'));
   if (old.length) await removeSamples(old, deleteSample);
-  const splitter = makeDrumSplitter(channels, buffer.sampleRate);
+  // The click belongs only to kicks on the beat: the detected onsets are held to the tune's beat grid.
+  const tempo = drums.bpm ?? getState().samples.find((x) => x.folder === folder && x.bpm)?.bpm;
+  let grid: { bpm: number; downbeatMs: number } | undefined;
+  if (tempo) {
+    const mono = monoForAnalysis(channels, buffer.sampleRate);
+    const t = transcribeDrums(mono.data, mono.sampleRate, tempo);
+    if (t.notes.length) grid = { bpm: t.bpm, downbeatMs: t.downbeatMs };
+  }
+  const splitter = makeDrumSplitter(channels, buffer.sampleRate, grid);
   const out: Sample[] = [];
   for (const part of DRUM_PARTS) {
     const wav = encodeWav({ sampleRate: buffer.sampleRate, channels: splitter.part(part) });

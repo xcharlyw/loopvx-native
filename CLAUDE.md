@@ -420,7 +420,7 @@ Chromium with synthetic kick + hat drums: tracks Stem Kick, Stem Clap + Snare, S
 **Kick click without phasing** (Karl: "the kick lacks the click, the hihats must lose the short click, because of phasing"): the drums split is **complementary**
 (`makeDrumSplitter` in drumSplit.ts): kick onsets are found on the kick band (`kickOnsetsMs`), and in a window of 0.5 ms before to 6 ms after each onset (`clickWindow`, 1 ms fades)
 the kick part gets everything the original has above its 150 Hz body (`band += w * (x - band)`) while the hats part is multiplied by `1 - w`, so the click lives only in the kick
-stem and nothing is doubled when the stems play together. Claps are not ducked (a clap on a kick keeps its attack; its mid band may still hold a little kick click). New splits use
+stem and nothing is doubled when the stems play together. The onsets are held to the tune's beat grid (`onBeat`, ±25 ms, grid from `transcribeDrums` in `splitDrumsAudio`), otherwise bass notes or rolls between the beats got a click window too ("flickers like 16ths"). Claps are not ducked (a clap on a kick keeps its attack; its mid band may still hold a little kick click). New splits use
 the id prefix `split2:`; an older split (`split:`, without the click) is replaced on the next split and counts as missing in the rebuild, so it is re-split automatically.
 Tested on synthetic kicks with a 3 kHz click: the plain low band has < 5 % of the click energy, the new kick part > 60 %, the hats part < 10 % of the old hats band in the window, hats
 between the kicks unchanged.

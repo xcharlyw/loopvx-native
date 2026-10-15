@@ -1,4 +1,4 @@
-import { biquad, clickWindow, kickOnsetsMs, makeDrumSplitter, splitBands, transcribeDrums } from './drumSplit';
+import { biquad, clickWindow, onBeat, kickOnsetsMs, makeDrumSplitter, splitBands, transcribeDrums } from './drumSplit';
 
 const SR = 22050;
 const BPM = 150;
@@ -149,5 +149,14 @@ describe('kick click', () => {
     expect(w[490]).toBeLessThan(1);
     expect(w[565]).toBeGreaterThan(0);
     expect(w[565]).toBeLessThan(1);
+  });
+});
+
+describe('onBeat', () => {
+  it('drops onsets between the beats', () => {
+    const beat = 60000 / BPM;
+    const found = [100, 100 + beat, 100 + beat * 1.5, 100 + beat * 2 + 10, 100 + beat * 2.25];
+    expect(onBeat(found, { bpm: BPM, downbeatMs: 100 })).toEqual([100, 100 + beat, 100 + beat * 2 + 10]);
+    expect(onBeat(found)).toEqual(found);
   });
 });

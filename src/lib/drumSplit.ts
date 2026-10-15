@@ -73,6 +73,17 @@ export function kickOnsetsMs(x: Float32Array, sampleRate: number): number[] {
   return out;
 }
 
+/** Keeps only the onsets within BEAT_TOL_MS of a beat of the grid (bass notes and rolls between the beats are no kicks). Without a grid all stay. */
+export function onBeat(onsetsMs: number[], grid?: { bpm: number; downbeatMs: number }): number[] {
+  if (!grid) return onsetsMs;
+  const beat = 60000 / grid.bpm;
+  return onsetsMs.filter((t) => {
+    const off = (((t - grid.downbeatMs) % beat) + beat) % beat;
+    return Math.min(off, beat - off) <= BEAT_TOL_MS;
+  });
+}
+const BEAT_TOL_MS = 25;
+
 /** 1 inside the kick-click windows (smooth edges), 0 elsewhere. */
 export function clickWindow(length: number, sampleRate: number, onsetsMs: number[]): Float32Array {
   const w = new Float32Array(length);
@@ -94,9 +105,9 @@ export function clickWindow(length: number, sampleRate: number, onsetsMs: number
  * milliseconds of every kick) belongs to the kick, so it is added to the kick band and taken out of the hats band; otherwise
  * the same click would sit in two stems and the kick would phase when they play together. `part(p)` computes one part at a time (a whole tune is large); parts keep the length of the input.
  */
-export function makeDrumSplitter(channels: Float32Array[], sampleRate: number): { onsetsMs: number[]; part: (p: DrumPart) => Float32Array[] } {
+export function makeDrumSplitter(channels: Float32Array[], sampleRate: number, grid?: { bpm: number; downbeatMs: number }): { onsetsMs: number[]; part: (p: DrumPart) => Float32Array[] } {
   const mono = monoForAnalysis(channels, sampleRate);
-  const onsetsMs = kickOnsetsMs(mono.data, mono.sampleRate);
+  const onsetsMs = onBeat(kickOnsetsMs(mono.data, mono.sampleRate), grid);
   const w = clickWindow(channels[0].length, sampleRate, onsetsMs);
   return {
     onsetsMs,

@@ -1,4 +1,4 @@
-import { presetVoice, removePreset, upsertPreset, type VocalPreset } from './vocalPresets';
+import { FACTORY_PRESETS, presetVoice, removePreset, upsertPreset, type VocalPreset } from './vocalPresets';
 
 const make = (id: string, name: string, prompt = 'x'): VocalPreset => ({ id, name, prompt, lyrics: '', bars: 8, vocalsOnly: true, gender: null, style: null, language: null, speed: 1, expression: 0.3, stability: 0.5, voiceId: null });
 
@@ -22,5 +22,18 @@ describe('vocal presets', () => {
     expect(presetVoice(p, ['voice_a'])).toBe('voice_a');
     expect(presetVoice(p, ['voice_b'])).toBeNull();
     expect(presetVoice(make('2', 'B'), ['voice_a'])).toBeNull();
+  });
+});
+
+describe('factory presets', () => {
+  it('has the ten named styles with unique ids, in range', () => {
+    expect(FACTORY_PRESETS).toHaveLength(10);
+    expect(new Set(FACTORY_PRESETS.map((p) => p.id)).size).toBe(10);
+    expect(FACTORY_PRESETS[0].name).toBe('Alexa (Dark Seductive Rap)');
+    for (const p of FACTORY_PRESETS) {
+      expect(p.prompt).toContain('no singing');
+      expect(p.speed).toBeGreaterThanOrEqual(0.7);
+      expect(p.speed).toBeLessThanOrEqual(1.2);
+    }
   });
 });

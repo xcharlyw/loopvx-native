@@ -8,7 +8,7 @@ import { db } from '../storage/db';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
 import { voiceSources } from '../lib/voiceClip';
-import { presetVoice, removePreset, upsertPreset, type VocalPreset } from '../lib/vocalPresets';
+import { FACTORY_PRESETS, presetVoice, removePreset, upsertPreset, type VocalPreset } from '../lib/vocalPresets';
 import { cloneVoice, loadVoices, removeVoice, type Voice } from '../lib/voices';
 import { useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
@@ -225,7 +225,15 @@ export function PromptBar() {
           </Chip>
         </View>
         <View style={s.row}>
-          <Txt style={s.small}>Presets:</Txt>
+          <Txt style={s.small}>Vorlagen:</Txt>
+          {FACTORY_PRESETS.map((p) => (
+            <Chip key={p.id} variant={presetId === p.id ? 'on' : 'ghost'} onPress={() => loadPreset(p)}>
+              {p.name}
+            </Chip>
+          ))}
+        </View>
+        <View style={s.row}>
+          <Txt style={s.small}>Meine Presets:</Txt>
           {presets.length === 0 && <Txt style={s.small}>noch keine gespeichert</Txt>}
           {presets.map((p) => (
             <Chip key={p.id} variant={presetId === p.id ? 'on' : 'ghost'} onPress={() => loadPreset(p)}>
@@ -235,7 +243,7 @@ export function PromptBar() {
           <Chip variant={saving ? 'on' : 'ghost'} onPress={() => setSaving(!saving)}>
             ＋ Speichern
           </Chip>
-          {presetId !== null && (
+          {presetId !== null && presets.some((p) => p.id === presetId) && (
             <Chip
               onPress={() => {
                 storePresets(removePreset(presets, presetId));

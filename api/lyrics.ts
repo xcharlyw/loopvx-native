@@ -10,7 +10,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 interface Body {
   /** A theme or a few words ("Hitze, Nacht, Kontrolle"), optional: without it the model picks its own. */
   theme?: string;
-  language?: 'de' | 'es' | 'en';
+  language?: 'de' | 'es' | 'en' | 'pt';
   gender?: 'male' | 'female';
   style?: 'rap' | 'spoken' | 'sing';
   genre?: 'techno' | 'hard-techno' | 'melodic-techno' | 'tech-house' | 'house' | 'trance';
@@ -19,6 +19,8 @@ interface Body {
   /** How many ideas (1..8) and how many lines each (2..16). */
   count?: number;
   lines?: number;
+  /** Song texts (own vocals transcribed or written) as a style reference: rhyme, rhythm, imagery. */
+  inspiration?: string[];
   /** Titles already shown, so "more ideas" are new ones. */
   avoid?: string[];
 }
@@ -30,7 +32,7 @@ export interface LyricIdea {
   stylePrompt: string;
 }
 
-const LANGUAGE = { de: 'German', es: 'Spanish', en: 'English' } as const;
+const LANGUAGE = { de: 'German', es: 'Spanish', en: 'English', pt: 'Portuguese' } as const;
 
 const GENRE = { techno: 'techno', 'hard-techno': 'hard techno', 'melodic-techno': 'melodic techno', 'tech-house': 'tech house', house: 'house', trance: 'trance' } as const;
 
@@ -67,6 +69,11 @@ export function buildUserText(b: Body): string {
   if (b.gender) parts.push(`The vocalist is ${b.gender}.`);
   if (b.style) parts.push(`Delivery: ${b.style === 'rap' ? 'rhythmic rap' : b.style === 'spoken' ? 'spoken word' : 'melodic singing'}.`);
   if (b.genre && GENRE[b.genre]) parts.push(`Genre: ${GENRE[b.genre]}. Every idea and its style prompt fits this genre.`);
+  const refs = (b.inspiration ?? []).filter((t) => typeof t === 'string' && t.trim()).slice(0, 3).map((t) => t.replace(/[\u0000-\u0008]/g, '').slice(0, 1200));
+  if (refs.length) {
+    parts.push('STYLE INSPIRATION (study only how these texts are written: rhyme scheme, rhythm and line length, vocabulary, imagery, attitude. Write completely NEW and original lyrics in that style. Never copy lines, phrases or titles from them):');
+    refs.forEach((r, i) => parts.push(`--- inspiration ${i + 1} ---\n${r}`));
+  }
   const avoid = (b.avoid ?? []).filter((t) => typeof t === 'string').slice(0, 40).map((t) => t.replace(/["\n]/g, ' ').slice(0, 60));
   if (avoid.length) parts.push(`Do NOT repeat these titles or their ideas: ${avoid.join(', ')}.`);
   return parts.join('\n');

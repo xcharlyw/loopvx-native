@@ -34,3 +34,5 @@ export const DRIVE_READ_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
 export const DRIVE_SCOPE = `${DRIVE_FILE_SCOPE} ${DRIVE_READ_SCOPE}`;
 /** Lyric / hook ideas for AI vocals (Gemini). */
 export const LYRICS_ENDPOINT = `${API_BASE}/lyrics`;
+/** Vocals to text (Gemini). */
+export const TRANSCRIBE_ENDPOINT = `${API_BASE}/transcribe`;

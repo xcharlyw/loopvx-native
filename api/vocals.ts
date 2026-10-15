@@ -19,7 +19,7 @@ interface Body {
   speak?: boolean;
   gender?: 'male' | 'female';
   style?: 'rap' | 'spoken' | 'sing';
-  language?: 'de' | 'es' | 'en';
+  language?: 'de' | 'es' | 'en' | 'pt';
   genre?: keyof typeof GENRE_TEXT;
   /** Spoken-voice settings, 0..1 (speed 0.7..1.2). */
   stability?: number;
@@ -27,7 +27,7 @@ interface Body {
   speed?: number;
 }
 
-const LANGUAGE_NAME = { de: 'German', es: 'Spanish', en: 'English' } as const;
+const LANGUAGE_NAME = { de: 'German', es: 'Spanish', en: 'English', pt: 'Portuguese' } as const;
 export const GENRE_TEXT = { techno: 'techno', 'hard-techno': 'hard techno', 'melodic-techno': 'melodic techno', 'tech-house': 'tech house', house: 'house', trance: 'trance' } as const;
 const STYLE_TEXT = { rap: 'rapped, rhythmic rap delivery', spoken: 'spoken word, talking, not sung', sing: 'sung melodic' } as const;
 

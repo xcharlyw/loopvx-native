@@ -19,7 +19,7 @@ export interface VocalRequest {
   /** With a voice the text is spoken in it (a cloned voice does not sing); without, these steer the AI vocal. */
   gender?: 'male' | 'female';
   style?: 'rap' | 'spoken' | 'sing';
-  language?: 'de' | 'es' | 'en';
+  language?: 'de' | 'es' | 'en' | 'pt';
   genre?: string;
   /** Knobs for the spoken voice: stability and expression 0..1, speed 0.7..1.2. */
   stability?: number;

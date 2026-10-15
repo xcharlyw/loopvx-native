@@ -6,6 +6,8 @@ import { uid } from '../lib/project';
 import { errorText, setState, toast, useStore } from '../lib/store';
 import { db } from '../storage/db';
 import { GENRES, ideaText, requestLyrics, type Genre, type LyricIdea } from '../lib/lyrics';
+import { inspirationOf, removeSongText, titleFromText, upsertSongText, type SongText } from '../lib/songTexts';
+import { transcribeSample } from '../lib/transcribe';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
 import { voiceSources } from '../lib/voiceClip';
@@ -40,7 +42,15 @@ export function PromptBar() {
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [gender, setGender] = useState<'male' | 'female' | null>(null);
   const [style, setStyle] = useState<'rap' | 'spoken' | 'sing' | null>(null);
-  const [language, setLanguage] = useState<'de' | 'es' | 'en' | null>(null);
+  const [language, setLanguage] = useState<'de' | 'es' | 'en' | 'pt' | null>(null);
+  const [songTexts, setSongTexts] = useState<SongText[]>([]);
+  const [inspo, setInspo] = useState<string[]>([]);
+  const [tOpen, setTOpen] = useState(false);
+  const [tSource, setTSource] = useState<string | null>(null);
+  const [tSearch, setTSearch] = useState('');
+  const [tText, setTText] = useState('');
+  const [tTitle, setTTitle] = useState('');
+  const [tBusy, setTBusy] = useState(false);
   const [lineCount, setLineCount] = useState<4 | 8 | 16>(4);
   const [genre, setGenre] = useState<Genre | null>(null);
   const [menu, setMenu] = useState(false);
@@ -61,6 +71,12 @@ export function PromptBar() {
   const [cloneBusy, setCloneBusy] = useState(false);
   useEffect(() => {
     void db.getKv<VocalPreset[]>('vocalPresets').then((p) => setPresets(p ?? []));
+  }, []);
+  useEffect(() => {
+    void Promise.all([db.getKv<SongText[]>('songTexts'), db.getKv<string[]>('inspoIds')]).then(([list, ids]) => {
+      setSongTexts(list ?? []);
+      setInspo((ids ?? []).filter((id) => (list ?? []).some((t) => t.id === id)));
+    });
   }, []);
   useEffect(() => {
     // the chosen voice is remembered, otherwise every restart goes back to the AI voice
@@ -85,6 +101,7 @@ export function PromptBar() {
         ...(voiceId === null && gender ? { gender } : {}),
         ...(style ? { style } : {}),
         ...(genre ? { genre } : {}),
+        ...(inspo.length ? { inspiration: inspirationOf(songTexts, inspo) } : {}),
         vocalsOnly,
         lines: lineCount,
         // longer texts, fewer ideas per round
@@ -97,6 +114,36 @@ export function PromptBar() {
     } finally {
       setIdeasBusy(false);
     }
+  };
+  const storeTexts = (list: SongText[], ids: string[]) => {
+    setSongTexts(list);
+    setInspo(ids);
+    void db.setKv('songTexts', list);
+    void db.setKv('inspoIds', ids);
+  };
+  const toggleInspo = (id: string) => storeTexts(songTexts, inspo.includes(id) ? inspo.filter((x) => x !== id) : [...inspo, id]);
+  const toText = async () => {
+    if (!tSource || tBusy) return;
+    setTBusy(true);
+    try {
+      const r = await transcribeSample(tSource);
+      setTText(r.lines.join('\n'));
+      setTTitle(titleFromText(r.lines.join('\n')));
+      if (r.language === 'de' || r.language === 'en' || r.language === 'es' || r.language === 'pt') setLanguage(r.language);
+      toast(`${r.lines.length} Zeilen erkannt: prüf den Text kurz, bevor du ihn speicherst.`);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setTBusy(false);
+    }
+  };
+  const saveText = () => {
+    if (!tText.trim()) return;
+    const item: SongText = { id: uid(), title: tTitle.trim() || titleFromText(tText), text: tText.trim(), ...(language ? { language } : {}), addedAt: Date.now() };
+    const list = upsertSongText(songTexts, item);
+    const saved = list.find((t) => t.title.toLowerCase() === item.title.toLowerCase());
+    storeTexts(list, saved && !inspo.includes(saved.id) ? [...inspo, saved.id] : inspo);
+    toast(`Songtext „${item.title}“ gespeichert und als Inspiration eingeschaltet.`);
   };
   const useIdea = (i: LyricIdea) => {
     setLyrics(ideaText(i));
@@ -291,6 +338,61 @@ export function PromptBar() {
             </Chip>
           ))}
         </View>
+        <View style={s.row}>
+          <Txt style={s.small}>Songtexte:</Txt>
+          <Chip variant={tOpen ? 'on' : 'ghost'} onPress={() => setTOpen(!tOpen)}>
+            Text aus Vocals
+          </Chip>
+          {songTexts.length > 0 && <Txt style={s.small}>{`${songTexts.length} gespeichert, ${inspo.length} als Inspiration an`}</Txt>}
+        </View>
+        {tOpen && (
+          <View style={s.lyrics}>
+            <Txt style={s.small}>Wandelt Gesang oder Rap in Text um. Wähle ein Sample oder nimm direkt auf. Den Text kannst du prüfen, als Songtext speichern und als Inspiration für die Text-Ideen verwenden (die KI übernimmt nur den Stil, keine Zeilen).</Txt>
+            <View style={s.row}>
+              <RecordButton hidePlace onSaved={(x) => setTSource(x.id)} />
+            </View>
+            <TextInput style={[s.input, s.textInput]} placeholder="Aufnahme suchen (Name)" placeholderTextColor={C.dim} value={tSearch} onChangeText={setTSearch} />
+            <View style={s.row}>
+              {voiceSources(samples, tSearch).map((x) => (
+                <Chip key={x.id} variant={tSource === x.id ? 'on' : 'ghost'} onPress={() => setTSource(x.id)}>
+                  {x.name.slice(0, 28)}
+                </Chip>
+              ))}
+            </View>
+            <View style={s.row}>
+              <Btn kind="primary" onPress={() => void toText()} disabled={!tSource || tBusy}>
+                {tBusy ? 'hört zu …' : 'In Text umwandeln'}
+              </Btn>
+            </View>
+            {tText !== '' && (
+              <View>
+                <TextInput style={[s.input, s.textInput, { minHeight: 90, textAlignVertical: 'top' }]} multiline placeholder="Erkannter Text" placeholderTextColor={C.dim} value={tText} onChangeText={setTText} />
+                <TextInput style={[s.input, s.textInput, { marginTop: 6 }]} placeholder="Titel" placeholderTextColor={C.dim} value={tTitle} onChangeText={setTTitle} />
+                <View style={s.row}>
+                  <Chip variant="solid" onPress={saveText}>
+                    Als Songtext speichern
+                  </Chip>
+                  <Chip onPress={() => setLyrics(tText)}>Ins Textfeld</Chip>
+                </View>
+              </View>
+            )}
+            {songTexts.map((t) => (
+              <View key={t.id} style={s.idea}>
+                <Txt style={s.ideaTitle}>{t.title}</Txt>
+                <Txt style={s.ideaLines} numberOfLines={3}>
+                  {t.text}
+                </Txt>
+                <View style={s.row}>
+                  <Chip variant={inspo.includes(t.id) ? 'on' : 'ghost'} onPress={() => toggleInspo(t.id)}>
+                    {inspo.includes(t.id) ? '✓ Inspiration' : 'Als Inspiration'}
+                  </Chip>
+                  <Chip onPress={() => setLyrics(t.text)}>Ins Textfeld</Chip>
+                  <Chip onPress={() => storeTexts(removeSongText(songTexts, t.id), inspo.filter((x) => x !== t.id))}>Löschen</Chip>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
         {ideas.map((i) => (
           <View key={i.title + i.lines[0]} style={s.idea}>
             <Txt style={s.ideaTitle}>{`${i.title}${i.genre ? ` · ${i.genre}` : ''}`}</Txt>
@@ -405,6 +507,9 @@ export function PromptBar() {
           </Chip>
           <Chip variant={language === 'en' ? 'on' : 'ghost'} onPress={() => setLanguage(language === 'en' ? null : 'en')}>
             Englisch
+          </Chip>
+          <Chip variant={language === 'pt' ? 'on' : 'ghost'} onPress={() => setLanguage(language === 'pt' ? null : 'pt')}>
+            Portugiesisch
           </Chip>
         </View>
         <View style={s.row}>

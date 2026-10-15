@@ -7,7 +7,12 @@ const VOICE_RATE = 22050;
  * (Box averaging of whole frames; ElevenLabs resamples anyway.)
  */
 export function voiceClip(channels: Float32Array[], sampleRate: number, maxSeconds = MAX_VOICE_SECONDS): { data: Float32Array; sampleRate: number } {
-  const factor = Math.max(1, Math.round(sampleRate / VOICE_RATE));
+  return monoClip(channels, sampleRate, VOICE_RATE, maxSeconds);
+}
+
+/** Mono, down to about `targetRate` (whole-frame box averaging), cut at `maxSeconds`. */
+export function monoClip(channels: Float32Array[], sampleRate: number, targetRate: number, maxSeconds: number): { data: Float32Array; sampleRate: number } {
+  const factor = Math.max(1, Math.round(sampleRate / targetRate));
   const frames = Math.min(Math.floor(channels[0].length / factor), Math.floor(((maxSeconds * sampleRate) / factor)));
   const out = new Float32Array(frames);
   for (let i = 0; i < frames; i++) {

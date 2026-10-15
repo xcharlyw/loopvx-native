@@ -21,6 +21,15 @@ describe('lyrics prompt', () => {
     expect(buildUserText({ lines: 8 })).toContain('exactly 8 lines');
   });
 
+  it('adds song texts as style inspiration but forbids copying them', () => {
+    const t = buildUserText({ inspiration: ['Kein Entkommen, keine Wahl', '  ', 'zwei'] });
+    expect(t).toContain('STYLE INSPIRATION');
+    expect(t).toContain('Kein Entkommen, keine Wahl');
+    expect(t).toContain('Never copy lines');
+    expect(t).toContain('inspiration 2');
+    expect(buildUserText({})).not.toContain('INSPIRATION');
+  });
+
   it('works without any input', () => {
     expect(buildUserText({})).toContain('surprise');
     expect(buildUserText({ count: 99 })).toContain('8 new hook ideas');

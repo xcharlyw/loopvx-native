@@ -20,11 +20,12 @@ export interface LyricIdea {
 
 export interface LyricRequest {
   theme?: string;
-  language?: 'de' | 'es' | 'en';
+  language?: 'de' | 'es' | 'en' | 'pt';
   gender?: 'male' | 'female';
   style?: 'rap' | 'spoken' | 'sing';
   genre?: Genre | null;
   vocalsOnly?: boolean;
+  inspiration?: string[];
   count?: number;
   lines?: number;
   /** Titles shown so far: new ideas must differ. */

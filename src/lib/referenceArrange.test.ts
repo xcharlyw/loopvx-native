@@ -77,3 +77,20 @@ describe('original stems on the structure', () => {
     expect(stemClipRanges(run([[96, 0]]), sections)).toEqual([]);
   });
 });
+
+import { drumPartLabel } from './referenceArrange';
+describe('drum part files', () => {
+  it('knows the parts of the own split and of files from other tools', () => {
+    expect(drumPartLabel('Tune - Kick.wav')).toBe('Kick');
+    expect(drumPartLabel('Tune - Clap + Snare.wav')).toBe('Clap + Snare');
+    expect(drumPartLabel('Tune - HiHats.wav')).toBe('HiHats');
+    expect(drumPartLabel('Tune (Hi-Hat).wav')).toBe('HiHats');
+    expect(drumPartLabel('Tune_snare.wav')).toBe('Snare');
+    expect(drumPartLabel('Tune - Toms.wav')).toBe('Toms');
+  });
+  it('is not fooled by normal stems', () => {
+    expect(drumPartLabel('Tune - Drums.mp3')).toBeUndefined();
+    expect(drumPartLabel('Tune - Bass.mp3')).toBeUndefined();
+    expect(drumPartLabel('Tune - Vocal.mp3')).toBeUndefined();
+  });
+});

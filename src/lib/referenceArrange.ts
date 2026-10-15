@@ -16,6 +16,24 @@ export function stemKindOf(name: string): StemKind | undefined {
   return s === 'drums' ? 'drums' : s === 'bass' ? 'bass' : s === 'vocal' ? 'vocal' : 'synth';
 }
 
+/**
+ * The part of the drums a file holds, when the drums were taken apart ("<tune> - Kick.wav", "- Clap + Snare", "- HiHats" from the
+ * app's own split, or files from another tool such as Moises: Kick, Snare, Clap, Hi-Hat, Toms, Cymbals ...). undefined for a
+ * normal stem or anything else.
+ */
+export function drumPartLabel(name: string): string | undefined {
+  if (stemKindOf(name)) return undefined;
+  const base = name.replace(/\.[a-z0-9]{2,5}$/i, '').toLowerCase();
+  if (/clap\s*\+\s*snare/.test(base)) return 'Clap + Snare';
+  if (/hi[\s_-]?hats?|\bhh\b|hats?\b/.test(base)) return 'HiHats';
+  if (/\bkick|\bbd\b/.test(base)) return 'Kick';
+  if (/snare/.test(base)) return 'Snare';
+  if (/clap/.test(base)) return 'Clap';
+  if (/\btoms?\b/.test(base)) return 'Toms';
+  if (/cymbal|\bride\b|crash/.test(base)) return 'Becken';
+  return undefined;
+}
+
 /** RMS level of every bar (4/4 at `bpm`), bar 1 starting `offsetSec` into the audio. */
 export function barLevels(data: Float32Array, sampleRate: number, bpm: number, offsetSec = 0): number[] {
   const perBar = (sampleRate * 240) / bpm;

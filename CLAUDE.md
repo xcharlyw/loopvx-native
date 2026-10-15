@@ -412,6 +412,12 @@ plays in at least half its bars, neighbours merge, clip offset = its start, so i
 the tune's**. A second run replaces the clips of the "Stem …" tracks; other tracks are untouched. The earlier rebuild with the user's own sounds is the chip "Aufbau mit eigenen
 Sounds". Checked in Chromium with synthetic WAV stems in IndexedDB: 3 tracks, "Intro 16 · Drop 32 · Outro 16".
 
+**Separate drums in the rebuild** (Karl: "use the separated drums for the rebuild, not only the full drums"): `rebuildWithOriginalStems` looks for drum part files in the
+tune's library folder (`drumPartLabel`: the app's own split "<tune> - Kick / Clap + Snare / HiHats", or files from another tool such as Moises named kick / snare / clap /
+hi-hat / toms / cymbal); with parts present the full drums stem gets **no track of its own** (it still tells where the drums play, for the sections) and each part gets "Stem Kick",
+"Stem Clap + Snare", "Stem HiHats" … with clips only where that part plays; without parts and with a drums stem it runs `splitDrumsAudio` first (the result says so). Checked in
+Chromium with synthetic kick + hat drums: tracks Stem Kick, Stem Clap + Snare, Stem HiHats, Stem Bass, Stem Synth + FX.
+
 **Bar 1 and exact tempo** (`tuneGrid` in referenceRun.ts, used by all three: original stems, own sounds, drums → MIDI): measured on the drums stem with `transcribeDrums`:
 the grid's tempo (kept as named when within 0.015 BPM) and `downbeatMs` = the first kick on a beat (tunes start on a downbeat), kept on the bar grid, so a pickup or silence
 before it is cut; `barLevels(…, offsetSec)` starts bar 1 there, the stem clips get `offset = start + offsetBars`, the MIDI notes start at that bar, and when the measured tempo

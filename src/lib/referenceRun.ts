@@ -7,7 +7,7 @@ import { storeSampleAudio } from './samples';
 import type { Sample } from '../types';
 import { arrange, type ArrangeResult, type Role } from './arranger';
 import { planSections, type PlanSection } from './arrangePlan';
-import { barLevels, stemClipRanges, stemKindOf, structureFromStems, type StemKind } from './referenceArrange';
+import { barLevels, drumPartLabel, stemClipRanges, stemKindOf, structureFromStems, type StemKind } from './referenceArrange';
 import { withMarkers } from './markers';
 import { CATEGORY_COLORS } from './project';
 import { STEMS_ROOT } from './stemNames';
@@ -122,38 +122,54 @@ export async function splitDrumsAudio(folder: string): Promise<Sample[]> {
  * where it plays (clip offset = position, so it is exactly that part of the original), the sections as markers and the project at
  * the tune's tempo. Tracks of an earlier rebuild (same names) get their clips replaced; other tracks stay as they are. One undo step.
  */
-export async function rebuildWithOriginalStems(folder: string): Promise<{ sections: PlanSection[]; tracks: string[]; bpm: number; offsetSec: number }> {
+export async function rebuildWithOriginalStems(folder: string): Promise<{ sections: PlanSection[]; tracks: string[]; bpm: number; offsetSec: number; split: boolean }> {
   const stems = getState().samples.filter((s) => s.folder === folder && stemKindOf(s.name));
   if (!stems.length) throw new Error('Keine Stems in diesem Ordner gefunden.');
   const bpm = stems.find((s) => s.bpm)?.bpm;
   if (!bpm) throw new Error('Das Tempo des Tunes ist unbekannt: trag bei einem Stem in der Library das BPM ein und versuch es nochmal.');
   const grid = await tuneGrid(folder, bpm);
-  const perStem: { sample: Sample; kind: StemKind; levels: number[] }[] = [];
+  // The drums come as separate parts (kick, clap, hats ...) when the library has them in the tune's folder (own split or files from
+  // another tool); without parts the drums stem is split first, so the rebuild always has them apart.
+  const partsOf = () => getState().samples.filter((s) => s.folder === folder && drumPartLabel(s.name));
+  let parts = partsOf();
+  let split = false;
+  if (!parts.length && stems.some((s) => stemKindOf(s.name) === 'drums')) {
+    await splitDrumsAudio(folder);
+    parts = partsOf();
+    split = true;
+  }
+  const perStem: { sample: Sample; kind: StemKind | 'part'; label: string; levels: number[] }[] = [];
   const merged: Partial<Record<StemKind, number[]>> = {};
+  const levelsOf = async (s: Sample) => {
+    const buffer = await engine.loadBuffer(s.id);
+    return barLevels(buffer.getChannelData(0), buffer.sampleRate, grid.bpm, grid.offsetSec);
+  };
+  const labelOf = (name: string) => / - ([^-]+)\.[a-z0-9]+$/i.exec(name)?.[1] ?? 'Stem';
   for (const s of stems) {
     const kind = stemKindOf(s.name)!;
-    const buffer = await engine.loadBuffer(s.id);
-    const lv = barLevels(buffer.getChannelData(0), buffer.sampleRate, grid.bpm, grid.offsetSec);
-    perStem.push({ sample: s, kind, levels: lv });
+    const lv = await levelsOf(s);
+    // The full drums stem still tells where the drums play (structure), but its own track is left out when the parts are there.
+    if (!(kind === 'drums' && parts.length)) perStem.push({ sample: s, kind, label: labelOf(s.name), levels: lv });
     merged[kind] = merged[kind] ? merged[kind]!.map((v, i) => Math.max(v, lv[i] ?? 0)) : lv;
   }
+  for (const s of parts) perStem.push({ sample: s, kind: 'part', label: drumPartLabel(s.name)!, levels: await levelsOf(s) });
   const sections = structureFromStems(merged);
   if (!sections.length) throw new Error('Der Tune ist zu kurz für einen Aufbau.');
-  const ORDER = ['Drums', 'Bass', 'Synth + FX', 'Keys', 'Gitarre', 'Vocal'];
-  const label = (name: string) => / - ([^-]+)\.[a-z0-9]+$/i.exec(name)?.[1] ?? 'Stem';
-  perStem.sort((a, b) => ORDER.indexOf(label(a.sample.name)) - ORDER.indexOf(label(b.sample.name)));
+  const ORDER = ['Drums', 'Kick', 'Clap + Snare', 'Snare', 'Clap', 'HiHats', 'Toms', 'Becken', 'Bass', 'Synth + FX', 'Keys', 'Gitarre', 'Vocal'];
+  const rank = (l: string) => (ORDER.indexOf(l) < 0 ? ORDER.length : ORDER.indexOf(l));
+  perStem.sort((a, b) => rank(a.label) - rank(b.label));
   const names: string[] = [];
   const marks = planSections({ sections }).map((s) => ({ bar: s.start, name: s.label }));
   const end = sections.reduce((n, s) => n + s.bars, 0);
   const offsetBars = (grid.offsetSec * grid.bpm) / 240;
   // The stems play at their own speed when their tempo and the project's are the measured one.
-  if (grid.bpm !== bpm) await upsertSamples(stems.map((x) => ({ ...x, bpm: grid.bpm })));
+  if (grid.bpm !== bpm) await upsertSamples([...stems, ...parts].map((x) => ({ ...x, bpm: grid.bpm })));
   updateProject((p) => {
     let tracks = [...p.tracks];
-    for (const { sample, levels } of perStem) {
+    for (const { sample, levels, label } of perStem) {
       const ranges = stemClipRanges(levels, sections);
       if (!ranges.length) continue; // a stem that is silent all through (keys, guitar in a techno tune)
-      const name = `Stem ${label(sample.name)}`;
+      const name = `Stem ${label}`;
       // The clip plays the stem from bar 1 of the tune on (the pickup before it is cut): offset in bars of the stem.
       const clips = ranges.map((r) => ({ id: uid(), sampleId: sample.id, start: r.start, length: r.length, offset: r.start + offsetBars }));
       const at = tracks.findIndex((t) => t.name === name && (t.kind ?? 'audio') === 'audio');
@@ -163,5 +179,5 @@ export async function rebuildWithOriginalStems(folder: string): Promise<{ sectio
     }
     return withMarkers({ ...p, bpm: grid.bpm, tracks, loop: { enabled: false, start: 0, end } }, marks);
   });
-  return { sections, tracks: names, bpm: grid.bpm, offsetSec: grid.offsetSec };
+  return { sections, tracks: names, bpm: grid.bpm, offsetSec: grid.offsetSec, split };
 }

@@ -32,7 +32,7 @@ export function ReferenceRebuild() {
     void work(`${folder}#orig`, async () => {
       const r = await rebuildWithOriginalStems(folder);
       setCursor(0);
-      return `✓ „${tune}“ aus den Original-Stems nachgebaut (${r.bpm} BPM${r.offsetSec > 0.02 ? `, Takt 1 beginnt bei ${r.offsetSec.toFixed(2).replace('.', ',')} s` : ''}): ${structureText(r.sections)}. Spuren: ${r.tracks.join(', ')}`;
+      return `✓ „${tune}“ aus den Original-Stems nachgebaut (${r.bpm} BPM${r.offsetSec > 0.02 ? `, Takt 1 beginnt bei ${r.offsetSec.toFixed(2).replace('.', ',')} s` : ''}): ${structureText(r.sections)}. Spuren: ${r.tracks.join(', ')}${r.split ? '. Die Drums wurden dafür zuerst per Filter in Kick / Clap + Snare / HiHats geteilt (Library, Ordner des Tunes).' : ''}`;
     });
   const midi = (folder: string, tune: string) =>
     void work(`${folder}#midi`, async () => {
@@ -66,7 +66,7 @@ export function ReferenceRebuild() {
   return (
     <Section title="Aufbau von einem Tune nachbauen" style={{ marginTop: 12 }}>
       <Txt style={s.note}>
-        Die App hört in die Stems eines Tunes (Library → Stems trennen). „Aufbau nachbauen“ erkennt Intro, Build-up, Drop, Break und Outro und legt die Original-Stems des Tunes auf eigene Spuren, jeweils nur dort, wo sie im Tune spielen. „Aufbau mit eigenen Sounds“ baut denselben Aufbau mit deinen Spuren und Samples. „Drums → MIDI“ schreibt Kick, Clap und HiHats als MIDI auf eine neue 909-Spur. „Drums → Kick / Clap / HiHats“ teilt den Drum-Stem per Filter in drei Audio-Spuren (nicht ganz sauber getrennt).
+        Die App hört in die Stems eines Tunes (Library → Stems trennen). „Aufbau nachbauen“ erkennt Intro, Build-up, Drop, Break und Outro und legt die Original-Stems des Tunes auf eigene Spuren, jeweils nur dort, wo sie im Tune spielen. Die Drums kommen einzeln (Kick, Clap, HiHats), wenn sie getrennt in der Library liegen, sonst teilt die App sie vorher. „Aufbau mit eigenen Sounds“ baut denselben Aufbau mit deinen Spuren und Samples. „Drums → MIDI“ schreibt Kick, Clap und HiHats als MIDI auf eine neue 909-Spur. „Drums → Kick / Clap / HiHats“ teilt den Drum-Stem per Filter in drei Audio-Spuren (nicht ganz sauber getrennt).
       </Txt>
       {tunes.length === 0 ? (
         <View style={s.row}>

@@ -42,7 +42,13 @@ export async function POST(req: Request): Promise<Response> {
   out.append('remove_background_noise', 'true');
   out.append('files', file, 'voice.wav');
   const res = await fetch(`${ELEVEN}/voices/add`, { method: 'POST', headers: { 'xi-api-key': apiKey }, body: out });
-  if (!res.ok) return text(res.status, `ElevenLabs: ${await res.text()}`);
+  if (!res.ok) {
+    const detail = await res.text();
+    if (/missing_permissions|voices_write/.test(detail)) {
+      return text(res.status, 'Der ElevenLabs-API-Key darf keine Stimmen anlegen: aktiviere beim Key in ElevenLabs (Developers → API Keys) die Berechtigung „Voices: Write“ (voices_write) oder nimm einen Key ohne Einschränkung, und trag ihn bei Vercel als ELEVENLABS_API_KEY neu ein.');
+    }
+    return text(res.status, `ElevenLabs: ${detail}`);
+  }
   const data = (await res.json()) as { voice_id?: string };
   if (!data.voice_id) return text(502, 'ElevenLabs lieferte keine Stimmen-ID');
   return json(200, { voiceId: data.voice_id, name });

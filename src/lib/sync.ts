@@ -1,7 +1,7 @@
 import { AppState, Platform } from 'react-native';
 import { db, onDbChange } from '../storage/db';
 import type { Project, Sample, SampleCategory } from '../types';
-import { copyFile, createFile, childrenOf, download, DriveAuthError, driveLinked, folder, forgetDriveToken, trash, updateFile, type DriveFile } from './drive';
+import { copyFile, createFile, uploadLarge, childrenOf, download, DriveAuthError, driveLinked, folder, forgetDriveToken, trash, updateFile, type DriveFile } from './drive';
 import { createProject } from './project';
 import { deleteSample, readSampleData, storeSampleAudio } from './samples';
 import { errorText, flushSave, getState, openProject, replaceOpenProject, setSamples, setState, toast } from './store';
@@ -133,6 +133,8 @@ async function syncProjects(dir: string, memory: StoredMemory): Promise<string[]
   return [...synced];
 }
 
+const MULTIPART_LIMIT = 4_500_000;
+
 async function syncSamples(dir: string, memory: StoredMemory): Promise<{ synced: string[]; failed: string[] }> {
   const local = await db.getSamples();
   const remote = remoteEntries(await childrenOf(dir), 'sid');
@@ -152,7 +154,9 @@ async function syncSamples(dir: string, memory: StoredMemory): Promise<{ synced:
         if (!copied) {
           const data = new Uint8Array(await readSampleData(sample));
           const mime = AUDIO_MIME[extOf(sample.name)] ?? 'application/octet-stream';
-          await createFile({ ...meta, mimeType: mime }, data, mime);
+          // Multipart uploads stop at 5 MB; a split drum part of a whole tune is far bigger, so those go up as a resumable upload.
+          if (data.byteLength > MULTIPART_LIMIT) await uploadLarge({ ...meta, mimeType: mime }, data, mime);
+          else await createFile({ ...meta, mimeType: mime }, data, mime);
         }
       }
       synced.add(id);

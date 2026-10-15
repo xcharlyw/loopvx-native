@@ -60,4 +60,15 @@ describe('POST /api/voice', () => {
     expect(res.status).toBe(200);
     expect(calls.find((c) => c.url.endsWith('/v1/voices/voice_new123'))!.init!.method).toBe('DELETE');
   });
+
+  it('explains a missing voices_write permission', async () => {
+    setup();
+    (globalThis.fetch as jest.Mock).mockImplementation(async (url: string) => {
+      if (url.endsWith('/auth/v1/user')) return new Response(JSON.stringify({ email: 'k@x.com' }));
+      return new Response('{"detail":{"status":"missing_permissions","message":"missing the permission voices_write"}}', { status: 401 });
+    });
+    const res = await POST(upload({ name: 'X', consent: '1' }));
+    expect(res.status).toBe(401);
+    expect(await res.text()).toContain('Voices: Write');
+  });
 });

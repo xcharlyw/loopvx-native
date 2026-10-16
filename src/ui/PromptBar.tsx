@@ -375,7 +375,8 @@ export function PromptBar() {
         </View>
         <View style={s.lyrics}>
           <TextInput
-            style={[s.input, s.textInput]}
+            style={[s.input, s.textInput, { minHeight: textHeight(lyrics), maxHeight: 280, textAlignVertical: 'top' }]}
+            multiline
             placeholder={voiceId ? 'Text, den deine Stimme sprechen soll' : 'Text, der gesungen werden soll (optional)'}
             placeholderTextColor={C.dim}
             value={lyrics}
@@ -461,7 +462,7 @@ export function PromptBar() {
             )}
             {(tText !== '' || tMode === 'load') && (
               <View>
-                <TextInput style={[s.input, s.textInput, { minHeight: 90, textAlignVertical: 'top' }]} multiline placeholder={tMode === 'load' ? 'Songtext hier einfügen' : 'Erkannter Text'} placeholderTextColor={C.dim} value={tText} onChangeText={setTText} />
+                <TextInput style={[s.input, s.textInput, { minHeight: Math.max(90, textHeight(tText)), maxHeight: 320, textAlignVertical: 'top' }]} multiline placeholder={tMode === 'load' ? 'Songtext hier einfügen' : 'Erkannter Text'} placeholderTextColor={C.dim} value={tText} onChangeText={setTText} />
                 <TextInput style={[s.input, s.textInput, { marginTop: 6 }]} placeholder="Titel" placeholderTextColor={C.dim} value={tTitle} onChangeText={setTTitle} />
                 <View style={s.row}>
                   <Chip variant="solid" onPress={saveText}>
@@ -672,6 +673,9 @@ export function PromptBar() {
     </View>
   );
 }
+
+/** A multiline field shows every line of its text: about 20 px per line (min 3 lines), grown with the text. */
+const textHeight = (text: string) => Math.max(3, text.split('\n').length) * 20 + 8;
 
 const s = StyleSheet.create({
   fab: { position: 'absolute', right: 14, bottom: 14, zIndex: 6 },

@@ -179,6 +179,8 @@ PromptBar → row "Stimme": "AI-Stimme" or one of the cloned voices, "＋ Stimme
 UTF-8) through `lyricsFromFile` (songTexts.ts, tested: BOM/CRLF, LRC time stamps and `[ar:]` tags dropped, blank runs collapsed, title = file name) or paste into the text
 field; then the same "Als Songtext speichern" (on as Inspiration) / "Ins Textfeld" as a transcript.
 
+**Multiline text fields** (Karl: "the line breaks must load and show in the text field"): the lyrics field and the transcript editor are multiline and grow with their text (`textHeight` in PromptBar.tsx, 20 px per line, min 3 lines, lyrics max 280 px, then they scroll), so "Ins Textfeld" shows every line. It used to be a single-line input, which glued the lines together ("…flowPull me…"). Checked in Chromium: 6 lines, field 128 px, no scrolling.
+
 **Song texts in Drive** (Karl: "Text aus Vocals should save the text as a text file, under Google Drive, and Lyrics laden picks it"): `lib/songFiles.ts` (`songFileName`, `songTextFiles` tested): a transcript is written
 as "<title>.txt" to Drive **LOOPVX/Songtexte** (folder role `songtexts`, same name = overwritten; automatic right after "In Text umwandeln", and the chip "Als Textdatei in Drive speichern" saves
 the edited text again). "Lyrics laden" has "Aus Google Drive" next to "Textdatei wählen": lists the .txt/.lrc/.md files of that folder, a tap loads one through `lyricsFromFile`. Uses the app's own `drive.file`

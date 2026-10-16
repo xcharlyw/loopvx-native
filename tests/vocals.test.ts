@@ -1,5 +1,5 @@
 import { zipSync } from 'fflate';
-import { POST, buildPrompt, lengthMs, speechSettings, traitsText } from '../api/vocals';
+import { POST, buildPrompt, lengthMs, speakableText, speechSettings, traitsText } from '../api/vocals';
 
 describe('vocal request building', () => {
   it('puts tempo, key and lyrics into the prompt', () => {
@@ -135,5 +135,18 @@ describe('vocal traits', () => {
     // plain speech keeps the cloned voice close: no style exaggeration, high similarity unless the knob says otherwise
     expect(speechSettings({})).toMatchObject({ style: 0, similarity_boost: 0.9 });
     expect(speechSettings({ similarity: 0.5 }).similarity_boost).toBe(0.5);
+  });
+});
+
+describe('speakableText', () => {
+  it('spells the English music word "bass" so a German-sounding clone says it right', () => {
+    expect(speakableText('Bassline makes me lose control', 'en')).toBe('Baseline makes me lose control');
+    expect(speakableText('feel the bass, sub bass and the basslines', 'en')).toBe('feel the base, sub base and the baselines');
+    expect(speakableText('Bassy and bass-heavy', 'en')).toBe('Basey and base-heavy');
+  });
+  it('leaves other languages and other words alone', () => {
+    expect(speakableText('Bassline', 'de')).toBe('Bassline');
+    expect(speakableText('Bassline')).toBe('Bassline');
+    expect(speakableText('The embassy is a classic', 'en')).toBe('The embassy is a classic');
   });
 });

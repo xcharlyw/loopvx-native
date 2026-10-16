@@ -43,6 +43,16 @@ export function traitsText(b: Body): string {
   return parts.length ? `${parts.join(', ')}.` : '';
 }
 
+/**
+ * The text as the voice should say it. The multilingual model has no language switch, and a voice cloned from a German speaker
+ * reads the music word "bass" the German way (like the fish: "Bassline" came out wrong). In English the instrument is spelled
+ * "base" for the voice: "baseline" sounds exactly like "bassline".
+ */
+export function speakableText(text: string, language?: Body['language']): string {
+  if (language !== 'en') return text;
+  return text.replace(/\b(sub[\s-]?)?bass(?=line|lines|y|\b)/gi, (m, sub) => `${sub ?? ''}${/^[A-Z]/.test(m.trim()) && !sub ? 'Base' : 'base'}`);
+}
+
 const clamp = (n: unknown, lo: number, hi: number, fallback: number) => (typeof n === 'number' && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback);
 
 /** ElevenLabs Text-to-Speech settings from the knobs; rap runs a bit faster than plain speech unless the knob says otherwise. */
@@ -103,7 +113,7 @@ export async function POST(req: Request): Promise<Response> {
       method: 'POST',
       headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: words,
+        text: speakableText(words, body.language),
         model_id: model,
         voice_settings: speechSettings(body),
         // the multilingual model finds the language in the text; the faster models take it explicitly

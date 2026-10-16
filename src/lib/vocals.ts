@@ -25,6 +25,8 @@ export interface VocalRequest {
   stability?: number;
   expression?: number;
   speed?: number;
+  /** Closeness to the cloned original, 0..1. */
+  similarity?: number;
 }
 
 /** Generate a vocal with the ElevenLabs Music API (via api/vocals) and drop it on the vocal track at the playhead. */
@@ -36,7 +38,7 @@ export async function generateVocal(req: VocalRequest): Promise<{ sample: Sample
   const res = await fetch(VOCALS_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ prompt: req.prompt, lyrics: req.lyrics, bars: req.bars, vocalsOnly: req.vocalsOnly, voiceId: req.voiceId, speak: !!req.voiceId, gender: req.gender, style: req.style, language: req.language, genre: req.genre, stability: req.stability, expression: req.expression, speed: req.speed, bpm: project.bpm, key: project.key }),
+    body: JSON.stringify({ prompt: req.prompt, lyrics: req.lyrics, bars: req.bars, vocalsOnly: req.vocalsOnly, voiceId: req.voiceId, speak: !!req.voiceId, gender: req.gender, style: req.style, language: req.language, genre: req.genre, stability: req.stability, expression: req.expression, speed: req.speed, similarity: req.similarity, bpm: project.bpm, key: project.key }),
   });
   if (!res.ok) {
     const msg = await res.text().catch(() => '');

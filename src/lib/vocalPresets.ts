@@ -14,6 +14,8 @@ export interface VocalPreset {
   speed: number;
   expression: number;
   stability: number;
+  /** Closeness to the cloned voice (older presets have none: 0.9). */
+  similarity?: number;
   voiceId: string | null;
 }
 

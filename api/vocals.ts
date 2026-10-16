@@ -25,6 +25,8 @@ interface Body {
   stability?: number;
   expression?: number;
   speed?: number;
+  /** How close the voice stays to the cloned original, 0..1 (ElevenLabs similarity_boost). */
+  similarity?: number;
 }
 
 const LANGUAGE_NAME = { de: 'German', es: 'Spanish', en: 'English', pt: 'Portuguese' } as const;
@@ -48,8 +50,9 @@ export function speechSettings(b: Body) {
   const rap = b.style === 'rap';
   return {
     stability: clamp(b.stability, 0, 1, rap ? 0.35 : 0.5),
-    similarity_boost: 0.85,
-    style: clamp(b.expression, 0, 1, rap ? 0.6 : 0.3),
+    similarity_boost: clamp(b.similarity, 0, 1, 0.9),
+    // style exaggeration moves the voice away from the original: plain speech keeps it at 0
+    style: clamp(b.expression, 0, 1, rap ? 0.6 : 0),
     speed: clamp(b.speed, 0.7, 1.2, rap ? 1.1 : 1),
     use_speaker_boost: true,
   };

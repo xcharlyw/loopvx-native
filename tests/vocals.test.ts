@@ -132,5 +132,8 @@ describe('vocal traits', () => {
     expect(speechSettings({ speed: 5, stability: -1 })).toMatchObject({ speed: 1.2, stability: 0 });
     expect(speechSettings({ style: 'rap' }).speed).toBeGreaterThan(1);
     expect(speechSettings({}).speed).toBe(1);
+    // plain speech keeps the cloned voice close: no style exaggeration, high similarity unless the knob says otherwise
+    expect(speechSettings({})).toMatchObject({ style: 0, similarity_boost: 0.9 });
+    expect(speechSettings({ similarity: 0.5 }).similarity_boost).toBe(0.5);
   });
 });

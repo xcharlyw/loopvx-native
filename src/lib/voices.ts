@@ -16,7 +16,7 @@ export const loadVoices = async (): Promise<Voice[]> => (await db.getKv<Voice[]>
 const saveVoices = (v: Voice[]) => db.setKv('voices', v);
 
 /** Clone a voice from a library sample (an own recording, an uploaded mp3 or a vocal sample). `consent` must be confirmed by the user. */
-export async function cloneVoice(sampleId: string, name: string, consent: boolean): Promise<Voice> {
+export async function cloneVoice(sampleId: string, name: string, consent: boolean, denoise = false): Promise<Voice> {
   if (!consent) throw new Error('Bitte bestätige, dass du die Stimme verwenden darfst (eigene Stimme oder Erlaubnis der Person).');
   if (!name.trim()) throw new Error('Bitte gib der Stimme einen Namen.');
   const session = await getSession();
@@ -31,6 +31,7 @@ export async function cloneVoice(sampleId: string, name: string, consent: boolea
   const form = new FormData();
   form.append('name', name.trim());
   form.append('consent', '1');
+  if (denoise) form.append('denoise', '1');
   form.append('file', new Blob([wav], { type: 'audio/wav' }), 'voice.wav');
   const res = await fetch(VOICE_ENDPOINT, { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` }, body: form });
   if (!res.ok) throw new Error((await res.text().catch(() => '')) || `Klonen fehlgeschlagen (${res.status})`);

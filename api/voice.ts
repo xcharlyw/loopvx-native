@@ -39,7 +39,8 @@ export async function POST(req: Request): Promise<Response> {
   const out = new FormData();
   out.append('name', name);
   out.append('description', 'LOOPVX');
-  out.append('remove_background_noise', 'true');
+  // noise removal can change the timbre of a clean recording, so it is only on when asked for
+  out.append('remove_background_noise', form.get('denoise') === '1' ? 'true' : 'false');
   out.append('files', file, 'voice.wav');
   const res = await fetch(`${ELEVEN}/voices/add`, { method: 'POST', headers: { 'xi-api-key': apiKey }, body: out });
   if (!res.ok) {

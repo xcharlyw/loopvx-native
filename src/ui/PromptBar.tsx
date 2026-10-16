@@ -58,8 +58,10 @@ export function PromptBar() {
   const [genre, setGenre] = useState<Genre | null>(null);
   const [menu, setMenu] = useState(false);
   const [speed, setSpeed] = useState(1);
-  const [expression, setExpression] = useState(0.3);
+  const [expression, setExpression] = useState(0);
   const [stability, setStability] = useState(0.5);
+  const [similarity, setSimilarity] = useState(0.9);
+  const [denoise, setDenoise] = useState(false);
   const [theme, setTheme] = useState('');
   const [ideas, setIdeas] = useState<LyricIdea[]>([]);
   const [ideasBusy, setIdeasBusy] = useState(false);
@@ -230,7 +232,7 @@ export function PromptBar() {
   const savePreset = () => {
     const name = presetName.trim();
     if (!name) return;
-    const preset: VocalPreset = { id: uid(), name, prompt, lyrics, bars, vocalsOnly, gender, style, language, genre, speed, expression, stability, voiceId };
+    const preset: VocalPreset = { id: uid(), name, prompt, lyrics, bars, vocalsOnly, gender, style, language, genre, speed, expression, stability, similarity, voiceId };
     const list = upsertPreset(presets, preset);
     storePresets(list);
     setPresetId(list.find((p) => p.name.toLowerCase() === name.toLowerCase())?.id ?? null);
@@ -251,6 +253,7 @@ export function PromptBar() {
     setSpeed(p.speed);
     setExpression(p.expression);
     setStability(p.stability);
+    setSimilarity(p.similarity ?? 0.9);
     pickVoice(presetVoice(p, voices.map((v) => v.id)));
   };
   // the style chips are a quick pick for the voice knobs: rap = faster, livelier, less calm; speaking = natural
@@ -258,7 +261,7 @@ export function PromptBar() {
     if (style === st) return setStyle(null);
     setStyle(st);
     setSpeed(st === 'rap' ? 1.1 : 1);
-    setExpression(st === 'rap' ? 0.6 : 0.3);
+    setExpression(st === 'rap' ? 0.6 : 0);
     setStability(st === 'rap' ? 0.35 : 0.5);
   };
   const pickVoice = (id: string | null) => {
@@ -299,7 +302,7 @@ export function PromptBar() {
         ...(language ? { language } : {}),
         ...(genre ? { genre } : {}),
         ...(voiceId
-          ? { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name, ...(style && style !== 'sing' ? { style } : {}), speed, expression, stability }
+          ? { voiceId, voiceName: voices.find((v) => v.id === voiceId)?.name, ...(style && style !== 'sing' ? { style } : {}), speed, expression, stability, similarity }
           : { ...(gender ? { gender } : {}), ...(style ? { style } : {}) }),
       });
       toast(`${voiceId ? `In der Stimme „${voices.find((v) => v.id === voiceId)?.name}“ gesprochen: ` : ''}„${made.sample.name}“ liegt auf der Spur „${made.trackName}“ bei Takt ${made.bar}`);
@@ -314,7 +317,7 @@ export function PromptBar() {
     if (!cloneFrom || cloneBusy) return;
     setCloneBusy(true);
     try {
-      const v = await cloneVoice(cloneFrom, cloneName, consent);
+      const v = await cloneVoice(cloneFrom, cloneName, consent, denoise);
       setVoices((x) => [...x, v]);
       pickVoice(v.id);
       setCloning(false);
@@ -628,7 +631,8 @@ export function PromptBar() {
         {voiceId !== null && (
           <KnobRow>
             <Knob label="Tempo" value={speed} min={0.7} max={1.2} step={0.05} reset={1} format={(v) => `${v.toFixed(2)}x`} onChange={setSpeed} />
-            <Knob label="Ausdruck" value={expression} min={0} max={1} step={0.05} reset={0.3} format={(v) => `${Math.round(v * 100)} %`} onChange={setExpression} />
+            <Knob label="Ausdruck" value={expression} min={0} max={1} step={0.05} reset={0} format={(v) => `${Math.round(v * 100)} %`} onChange={setExpression} />
+            <Knob label="Ähnlichkeit" value={similarity} min={0} max={1} step={0.05} reset={0.9} format={(v) => `${Math.round(v * 100)} %`} onChange={setSimilarity} />
             <Knob label="Ruhe" value={stability} min={0} max={1} step={0.05} reset={0.5} format={(v) => `${Math.round(v * 100)} %`} onChange={setStability} />
           </KnobRow>
         )}
@@ -650,6 +654,11 @@ export function PromptBar() {
             <View style={s.row}>
               <Chip variant={consent ? 'on' : 'ghost'} onPress={() => setConsent(!consent)}>
                 {consent ? '✓ ' : ''}Ich darf diese Stimme verwenden (meine eigene oder mit Erlaubnis)
+              </Chip>
+            </View>
+            <View style={s.row}>
+              <Chip variant={denoise ? 'on' : 'ghost'} onPress={() => setDenoise(!denoise)}>
+                {denoise ? '✓ ' : ''}Hintergrundrauschen entfernen (nur bei verrauschter Aufnahme)
               </Chip>
             </View>
             <View style={s.row}>

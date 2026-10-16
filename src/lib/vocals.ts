@@ -1,3 +1,4 @@
+import { vocalGainDb } from './loudness';
 import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { VOCALS_ENDPOINT } from '../config';
@@ -60,6 +61,8 @@ export async function generateVocal(req: VocalRequest): Promise<{ sample: Sample
   setSamples([...getState().samples.filter((x) => x.id !== id), sample]);
 
   const buffer = await engine.loadBuffer(id);
+  // every new vocal is brought to one level (the answers of ElevenLabs differ a lot), through the clip gain
+  const matchDb = vocalGainDb(Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)));
   // generated vocals are cut to the chosen bars; spoken ones keep their natural length (rounded up to whole bars)
   const length = req.voiceId ? Math.max(1, Math.ceil(sampleLengthBars(buffer.duration, project.bpm))) : Math.min(req.bars, sampleLengthBars(buffer.duration, project.bpm, sample.bpm));
   // The vocal goes onto the selected track at the playhead (the lime line). Without an audio track selected (none, or a MIDI track)
@@ -68,7 +71,7 @@ export async function generateVocal(req: VocalRequest): Promise<{ sample: Sample
   updateProject((p) => {
     const selected = p.tracks.find((t) => t.id === getState().selectedTrackId);
     const target = selected && trackKind(selected) === 'audio' ? selected : p.tracks.find((t) => t.category === 'vocal' && trackKind(t) === 'audio' && t.clips.length === 0);
-    const clip = { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0 };
+    const clip = { id: uid(), sampleId: id, start: Math.floor(cursor), length, offset: 0, ...(matchDb ? { gainDb: matchDb } : {}) };
     if (target) {
       trackName = target.name;
       return addClip(p, target.id, clip);

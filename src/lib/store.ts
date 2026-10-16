@@ -4,6 +4,7 @@ import { db } from '../storage/db';
 import type { Project, Sample } from '../types';
 import { History } from './history';
 import { createProject, isProject, repairProject } from './project';
+import { clampUiScale } from './uiScale';
 import type { WinRect } from './windows';
 
 export type View = 'arrange' | 'session';
@@ -75,6 +76,8 @@ export interface AppState {
   metronome: boolean;
   /** Audition level in dB (Library / Drive browser), a per-device preference like the metronome. */
   previewDb: number;
+  /** Size of the whole interface, 1 / 0.9 / 0.8 / 0.7 (web zoom), a per-device preference. */
+  uiScale: number;
 }
 
 let state: AppState = {
@@ -108,6 +111,7 @@ let state: AppState = {
   sync: { state: 'off' },
   metronome: false,
   previewDb: 0,
+  uiScale: 1,
 };
 
 const listeners = new Set<() => void>();
@@ -319,6 +323,12 @@ export function setMetronome(on: boolean) {
   void db.setKv('metronome', on);
 }
 
+export function setUiScale(v: number) {
+  const scale = clampUiScale(v);
+  setState({ uiScale: scale });
+  void db.setKv('uiScale', scale);
+}
+
 export function setPreviewDb(level: number) {
   const v = Math.max(-24, Math.min(6, Math.round(level * 2) / 2));
   engine.setPreviewDb(v);
@@ -345,15 +355,17 @@ export function errorText(e: unknown): string {
 export const START_BLANK = '__start-blank__';
 
 export async function boot() {
-  const [samples, projects, lastId, metronome, previewDb, folders] = await Promise.all([
+  const [samples, projects, lastId, metronome, previewDb, folders, uiScale] = await Promise.all([
     db.getSamples(),
     db.getProjects(),
     db.getKv<string>('lastProjectId'),
     db.getKv<boolean>('metronome'),
     db.getKv<number>('previewDb'),
     db.getKv<string[]>('folders'),
+    db.getKv<number>('uiScale'),
   ]);
   if (Array.isArray(folders)) setState({ folders });
+  setState({ uiScale: clampUiScale(uiScale) });
   if (metronome) setMetronome(true);
   if (typeof previewDb === 'number' && Number.isFinite(previewDb)) setPreviewDb(previewDb);
   setSamples(samples);

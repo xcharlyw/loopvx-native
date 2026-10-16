@@ -1,10 +1,11 @@
-import { Dimensions } from 'react-native';
+import { Dimensions, Platform } from 'react-native';
+import { scaledSize } from './uiScale';
 import { getState, setState } from './store';
 import { closeWin, focusWin, moveWin, openWin, refitWins, resizeWin, toggleWin, type Screen, type WinId } from './windows';
 
 /** The room plugin windows have: the whole window below the desktop menu bar. */
 export function screenArea(): Screen {
-  const { width, height } = Dimensions.get('window');
+  const { width, height } = scaledSize(Dimensions.get('window'), Platform.OS === 'web' ? getState().uiScale : 1);
   return { width, height, top: MENU_BAR_TOP };
 }
 const MENU_BAR_TOP = 30; // = MENU_BAR_H

@@ -2,7 +2,7 @@ import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } f
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { useFonts } from 'expo-font';
 import { useEffect, useRef, useState } from 'react';
-import { BackHandler, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { BackHandler, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { engine } from '../audio/engine';
 import { preparePageAudio } from '../audio/pageAudio';
@@ -32,7 +32,7 @@ import { TopBar } from './TopBar';
 import { COMMANDS } from './commands';
 import { SampleDragGhost } from './dnd';
 import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
-import { useSmall } from './hooks';
+import { useAppDims, useSmall } from './hooks';
 import { browserWidth, clampScale, fullHeight, placementFor } from './sheetLayout';
 import { useDrag, web } from './drag';
 import { SheetPlace } from './Sheet';
@@ -53,7 +53,7 @@ function Shell() {
   const sheetScale = useStore((st) => st.sheetScale);
   const toasts = useStore((st) => st.toasts);
   const insets = useSafeAreaInsets();
-  const { width, height } = useWindowDimensions();
+  const { width, height } = useAppDims();
   const small = useSmall();
   const menuBar = Platform.OS === 'web' && !small;
   const [bottomH, setBottomH] = useState(0);
@@ -213,6 +213,14 @@ function useShortcuts() {
   }, []);
 }
 
+/** Zooms the whole interface (web): CSS zoom scales the content, the box keeps filling the window. */
+function ZoomBox({ children }: { children: ReactNode }) {
+  const scale = useStore((st) => st.uiScale);
+  if (Platform.OS !== 'web' || scale === 1) return <>{children}</>;
+  const zoomed = { zoom: scale, width: '100%', height: '100%' } as unknown as object;
+  return <View style={zoomed}>{children}</View>;
+}
+
 export function App() {
   const ready = useStore((st) => st.ready);
   const [fontsLoaded] = useFonts({
@@ -235,7 +243,13 @@ export function App() {
 
   return (
     <SafeAreaProvider style={{ backgroundColor: C.bg }}>
-      {ready && fontsLoaded ? <Shell /> : <View style={s.app} />}
+      {ready && fontsLoaded ? (
+        <ZoomBox>
+          <Shell />
+        </ZoomBox>
+      ) : (
+        <View style={s.app} />
+      )}
     </SafeAreaProvider>
   );
 }

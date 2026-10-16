@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { C, font, mono } from '../constants/theme';
 import { formatBarPosition } from '../audio/timing';
 import { uid } from '../lib/project';
@@ -14,7 +14,7 @@ import { generateVocal } from '../lib/vocals';
 import { SamplePicker } from './SamplePicker';
 import { FACTORY_PRESETS, presetVoice, removePreset, upsertPreset, type VocalPreset } from '../lib/vocalPresets';
 import { cloneVoice, loadVoices, removeVoice, type Voice } from '../lib/voices';
-import { useSmall } from './hooks';
+import { useAppDims, useSmall } from './hooks';
 import { ArrowUp, Close, Sparkle, Wave } from './icons';
 import { Btn, Chip, IconBtn, Spacer, Txt } from './kit';
 import { RecordButton } from './RecordButton';
@@ -30,7 +30,7 @@ export function PromptBar() {
   const selectedTrack = project.tracks.find((t) => t.id === selectedTrackId);
   // where the vocal lands: the selected audio track, else a vocal track
   const targetName = selectedTrack && selectedTrack.kind !== 'midi' && !selectedTrack.synth ? selectedTrack.name : 'neue Vocal-Spur';
-  const { width } = useWindowDimensions();
+  const { width } = useAppDims();
   const small = useSmall();
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState('');

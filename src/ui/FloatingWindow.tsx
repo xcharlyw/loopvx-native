@@ -39,7 +39,7 @@ export function FloatingWindow({ win, z, children }: { win: WinRect; z: number; 
         focusWindow(win.id); // a touch anywhere in the window raises it, and still reaches what was touched
         return false;
       }}
-      style={[s.win, { left: win.x, top: win.y, width: win.w, height: win.collapsed ? TITLE_H : win.h, zIndex: 25 + z }]}
+      style={[s.win, { left: win.x, top: win.y, width: win.w, height: win.collapsed ? TITLE_H : win.h, zIndex: 31 + z }]}
     >
       <SheetPlace.Provider value={place}>{children}</SheetPlace.Provider>
       {!win.collapsed && <View {...grip} accessibilityLabel="Fenstergröße ziehen" style={[s.grip, web({ touchAction: 'none', cursor: 'nwse-resize' })]} />}

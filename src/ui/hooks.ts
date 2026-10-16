@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
+import { scaledSize } from '../lib/uiScale';
 import { engine } from '../audio/engine';
 import { useStore } from '../lib/store';
 
@@ -28,5 +29,12 @@ export function usePlayhead(): number {
 
 /** The original's `@media (max-width: 720px)` breakpoint. */
 export function useSmall(): boolean {
-  return useWindowDimensions().width <= 720;
+  return useAppDims().width <= 720;
+}
+
+/** The window size in the interface's own pixels: a zoomed-out interface (`uiScale` < 1) has more room than the window says. */
+export function useAppDims(): { width: number; height: number } {
+  const win = useWindowDimensions();
+  const scale = useStore((st) => (Platform.OS === 'web' ? st.uiScale : 1));
+  return scaledSize(win, scale);
 }

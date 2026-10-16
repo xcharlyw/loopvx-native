@@ -20,10 +20,11 @@ import type { KeySpec } from '../lib/keymap';
 import { addMarker } from '../lib/markers';
 import { startStemSeparation } from '../lib/stems';
 import { runLoadMissing } from '../lib/sync';
+import { UI_SCALES, UI_SCALE_LABEL } from '../lib/uiScale';
 import { closeWindow } from '../lib/windowActions';
 import type { WinId } from '../lib/windows';
 import { createMidiTrack, createProject, createTrack, findClip, quantizeNotes, updateClip } from '../lib/project';
-import { flushSave, getState, openProject, redo, setMetronome, setState, toast, undo, updateProject, type AppState, type Panel } from '../lib/store';
+import { flushSave, getState, openProject, redo, setMetronome, setState, setUiScale, toast, undo, updateProject, type AppState, type Panel } from '../lib/store';
 import { db } from '../storage/db';
 import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
 
@@ -158,6 +159,7 @@ export const COMMANDS: Command[] = [
   { id: 'home', label: 'Zum Anfang', group: 'Optionen', keys: [{ keys: ['Home'] }], run: () => setCursor(0) },
   { id: 'loop', label: 'Loop an / aus', group: 'Optionen', keys: [{ letter: 'l', mod: true, shift: true }], run: () => updateProject((p) => ({ ...p, loop: { ...p.loop, enabled: !p.loop.enabled } })) },
   { id: 'drawMode', label: 'Zeichenmodus (Automation)', group: 'Optionen', keys: [{ letter: 'b' }, { letter: 'b', mod: true }], run: () => setState((st) => ({ drawMode: !st.drawMode })) },
+  ...UI_SCALES.map((sc): Command => ({ id: `ui-${sc}`, label: `Anzeige: ${UI_SCALE_LABEL[sc]}`, group: 'Optionen', run: () => setUiScale(sc) })),
   { id: 'metronome', label: 'Metronom', group: 'Optionen', keys: [{ letter: 'k', mod: true, shift: true }], run: () => setMetronome(!getState().metronome) },
   { id: 'nudgeL', label: 'Clip 1/16 nach links', group: null, keys: [{ keys: ['ArrowLeft'], shift: false }], run: () => nudgeSelectedClip(-0.25), enabled: hasClip },
   { id: 'nudgeR', label: 'Clip 1/16 nach rechts', group: null, keys: [{ keys: ['ArrowRight'], shift: false }], run: () => nudgeSelectedClip(0.25), enabled: hasClip },

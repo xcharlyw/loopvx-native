@@ -279,6 +279,12 @@ compact cards (250 px, power LED instead of the AN chip, 36 px knobs, scopes 56 
 detail panel a slim title row. The panels `instrument` and `notefx` (TrackPanel buttons, Ansicht menu) open those floating windows on a wide screen (`lib/windows.ts` `FLOAT_PANELS`, `FloatingWindow.tsx`, `lib/windowActions.ts`;
 drag the title row, resize at the corner, several at once, a touch raises, ▾ folds, `state.winMemory` reopens where it was closed, a resized browser refits them); phones keep the sheets.
 
+**Interface size** (Karl: "make the whole work window with its text smaller"): Optionen → "Anzeige: Normal / Klein (90 %) / Kleiner (80 %) / Winzig (70 %)" (also in the phone menu; `lib/uiScale.ts`, tested,
+`state.uiScale`, kv `uiScale`, a per-device preference). Web only: `ZoomBox` in `App.tsx` puts CSS `zoom` on the whole app (100 % width and height, the content is laid out 1/scale larger, so more fits);
+everything that measures the window uses `useAppDims()` / `scaledSize` (Shell, PromptBar, `useSmall` breakpoint, `windowActions.screenArea`), and `useDrag` divides drags by the scale, so windows and knobs
+follow the pointer exactly (checked in Chromium at 80 %: a 200/80 px drag moved a plugin window 200/80 px; header, tracks, docked chain and bottom bar all fit). Do not give the zoom box a 100/scale size:
+Chrome's zoom already keeps percentage boxes at the parent's size (that made the app overflow the window).
+
 ## Sound panel (Serum-style)
 
 `InstrumentPanel` is built like a plugin: preset switcher (◀ ▶ through `PRESETS`), "Instrument laden" tiles

@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { PanResponder, Platform, type ViewStyle } from 'react-native';
+import { getState } from '../lib/store';
 
 /** Web-only style keys RN's types don't know. */
 export const web = (style: Record<string, string>) => (Platform.OS === 'web' ? (style as ViewStyle) : undefined);
@@ -24,6 +25,8 @@ export function useDrag(claim: 'start' | 'move', enabled: boolean, onDrag: (dx: 
   latest.current = { enabled, onDrag };
   // The gesture's dx/dy restart at 0 when it takes over mid-move; add back the distance travelled before that.
   const lead = useRef({ dx: 0, dy: 0 });
+  // Under the interface zoom a screen pixel is 1/scale pixels of the layout.
+  const k = () => (Platform.OS === 'web' ? 1 / getState().uiScale : 1);
   return useMemo(
     () =>
       PanResponder.create({
@@ -37,8 +40,8 @@ export function useDrag(claim: 'start' | 'move', enabled: boolean, onDrag: (dx: 
         onMoveShouldSetPanResponderCapture: (_, g) =>
           claim === 'move' && latest.current.enabled && (Math.abs(g.dx) > 4 || Math.abs(g.dy) > 6),
         onPanResponderTerminationRequest: () => false,
-        onPanResponderMove: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'move', { x: g.moveX, y: g.moveY }),
-        onPanResponderRelease: (_, g) => latest.current.onDrag(lead.current.dx + g.dx, lead.current.dy + g.dy, 'end', { x: g.moveX, y: g.moveY }),
+        onPanResponderMove: (_, g) => latest.current.onDrag(k() * (lead.current.dx + g.dx), k() * (lead.current.dy + g.dy), 'move', { x: g.moveX, y: g.moveY }),
+        onPanResponderRelease: (_, g) => latest.current.onDrag(k() * (lead.current.dx + g.dx), k() * (lead.current.dy + g.dy), 'end', { x: g.moveX, y: g.moveY }),
         onPanResponderTerminate: () => latest.current.onDrag(0, 0, 'cancel'),
       }).panHandlers,
     [claim],

@@ -179,6 +179,11 @@ PromptBar → row "Stimme": "AI-Stimme" or one of the cloned voices, "＋ Stimme
 UTF-8) through `lyricsFromFile` (songTexts.ts, tested: BOM/CRLF, LRC time stamps and `[ar:]` tags dropped, blank runs collapsed, title = file name) or paste into the text
 field; then the same "Als Songtext speichern" (on as Inspiration) / "Ins Textfeld" as a transcript.
 
+**Song texts in Drive** (Karl: "Text aus Vocals should save the text as a text file, under Google Drive, and Lyrics laden picks it"): `lib/songFiles.ts` (`songFileName`, `songTextFiles` tested): a transcript is written
+as "<title>.txt" to Drive **LOOPVX/Songtexte** (folder role `songtexts`, same name = overwritten; automatic right after "In Text umwandeln", and the chip "Als Textdatei in Drive speichern" saves
+the edited text again). "Lyrics laden" has "Aus Google Drive" next to "Textdatei wählen": lists the .txt/.lrc/.md files of that folder, a tap loads one through `lyricsFromFile`. Uses the app's own `drive.file`
+scope only. Mocks/offline only (never run against the real Drive).
+
 ## Missing samples (device change)
 
 Library folder bar "Fehlende laden" or Datei → "Fehlende Samples laden" (`runLoadMissing` / `loadMissingSamples` in `sync.ts`): a sync first (this device uploads what

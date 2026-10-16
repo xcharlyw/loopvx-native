@@ -8,6 +8,8 @@ import { db } from '../storage/db';
 import { GENRES, ideaText, requestLyrics, type Genre, type LyricIdea } from '../lib/lyrics';
 import { inspirationOf, lyricsFromFile, removeSongText, titleFromText, upsertSongText, type SongText } from '../lib/songTexts';
 import { pickFile } from '../lib/samples';
+import { listSongTextFiles, readSongTextFile, saveSongTextToDrive } from '../lib/songFiles';
+import type { DriveFile } from '../lib/drive';
 import { transcribeSample } from '../lib/transcribe';
 import { getSession } from '../lib/supabase';
 import { generateVocal } from '../lib/vocals';
@@ -132,6 +134,12 @@ export function PromptBar() {
       setTTitle(titleFromText(r.lines.join('\n')));
       if (r.language === 'de' || r.language === 'en' || r.language === 'es' || r.language === 'pt') setLanguage(r.language);
       toast(`${r.lines.length} Zeilen erkannt: prüf den Text kurz, bevor du ihn speicherst.`);
+      // the transcript is also kept as a text file in Drive (LOOPVX / Songtexte); "Lyrics laden" lists it
+      const title = titleFromText(r.lines.join('\n'));
+      void saveSongTextToDrive(title, r.lines.join('\n')).then(
+        (name) => toast(`„${name}“ liegt in Google Drive unter LOOPVX / Songtexte.`),
+        () => undefined,
+      );
     } catch (e) {
       toast(errorText(e), 'error');
     } finally {
@@ -150,6 +158,48 @@ export function PromptBar() {
       toast(`„${title}“ geladen: ${text.split('\n').filter((l) => l.trim()).length} Zeilen.`);
     } catch (e) {
       toast(errorText(e), 'error');
+    }
+  };
+  const [driveTexts, setDriveTexts] = useState<DriveFile[] | null>(null);
+  const [driveBusy, setDriveBusy] = useState(false);
+  const saveToDrive = async () => {
+    if (!tText.trim() || driveBusy) return;
+    setDriveBusy(true);
+    try {
+      const name = await saveSongTextToDrive(tTitle.trim() || titleFromText(tText), tText);
+      setDriveTexts(null);
+      toast(`„${name}“ liegt in Google Drive unter LOOPVX / Songtexte. Unter „Lyrics laden“ kannst du sie wieder wählen.`);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+  const showDriveTexts = async () => {
+    if (driveBusy) return;
+    setDriveBusy(true);
+    try {
+      setDriveTexts(await listSongTextFiles());
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+  const loadDriveText = async (f: DriveFile) => {
+    if (driveBusy) return;
+    setDriveBusy(true);
+    try {
+      const { title, text } = lyricsFromFile(f.name, await readSongTextFile(f.id));
+      if (!text) throw new Error('In der Datei steht kein Text.');
+      setTText(text);
+      setTTitle(title);
+      setDriveTexts(null);
+      toast(`„${title}“ geladen: ${text.split('\n').filter((l) => l.trim()).length} Zeilen.`);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    } finally {
+      setDriveBusy(false);
     }
   };
   const openTexts = (mode: 'vocals' | 'load') => {
@@ -390,7 +440,20 @@ export function PromptBar() {
                   <Btn kind="primary" onPress={() => void loadLyrics()}>
                     Textdatei wählen
                   </Btn>
+                  <Btn onPress={() => void showDriveTexts()} disabled={driveBusy}>
+                    Aus Google Drive
+                  </Btn>
                 </View>
+                {driveTexts && (
+                  <View>
+                    <Txt style={s.small}>{driveTexts.length ? 'Google Drive › LOOPVX › Songtexte:' : 'In LOOPVX / Songtexte liegt noch keine Datei. Wandle Vocals in Text um und speichere sie in Drive.'}</Txt>
+                    {driveTexts.map((f) => (
+                      <Chip key={f.id} onPress={() => void loadDriveText(f)}>
+                        {f.name}
+                      </Chip>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
             {(tText !== '' || tMode === 'load') && (
@@ -402,6 +465,7 @@ export function PromptBar() {
                     Als Songtext speichern
                   </Chip>
                   <Chip onPress={() => setLyrics(tText)}>Ins Textfeld</Chip>
+                  <Chip onPress={() => void saveToDrive()}>{driveBusy ? 'speichert …' : 'Als Textdatei in Drive speichern'}</Chip>
                 </View>
               </View>
             )}

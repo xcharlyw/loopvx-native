@@ -7,7 +7,7 @@ import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, duplicateSelectedTrack, importMidiToTrack } from '../lib/actions';
-import { MAX_TRACK_NAME, TRACK_COLORS, mapTrack, moveTrack, renameTrack, setTrackKind, trackKind, trackSynth } from '../lib/project';
+import { MAX_TRACK_NAME, TRACK_COLORS, groupMembers, groupOf, groupTracks, mapTrack, moveTrack, renameTrack, setTrackGroup, setTrackKind, trackKind, trackSynth, ungroup } from '../lib/project';
 import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import type { TrackFx } from '../types';
 import { confirmDestructive } from './confirm';
@@ -113,6 +113,9 @@ export function TrackPanel() {
         </View>
       </Section>
 
+      <GroupSection trackId={trackId} />
+
+      {kind !== 'group' && (
       <Section title="Spurtyp">
         <View style={s.buttons}>
           <Chip variant={kind === 'audio' ? 'on' : 'ghost'} onPress={() => pickKind('audio')}>
@@ -128,6 +131,7 @@ export function TrackPanel() {
             : 'Audio-Spur: Loops und Samples aus der Bibliothek. Für Noten und Synth lege eine MIDI-Spur an (der Spurtyp lässt sich nur bei leeren Spuren ändern).'}
         </Txt>
       </Section>
+      )}
 
       <Section title="Geräte">
         <Txt style={s.note}>
@@ -245,6 +249,64 @@ export function TrackPanel() {
 
 const panText = (v: number) => (!v ? 'Mitte' : `${Math.round(Math.abs(v) * 100)} ${v < 0 ? 'L' : 'R'}`);
 const filterText = (v: number) => (!v ? 'Aus' : v < 0 ? `LP ${hz(djFilter(v).lowpass)}` : `HP ${hz(djFilter(v).highpass)}`);
+/** Which group a track plays through, or (for a group) which tracks it holds. */
+function GroupSection({ trackId }: { trackId: string }) {
+  const project = useStore((st) => st.project);
+  const track = project.tracks.find((t) => t.id === trackId);
+  if (!track) return null;
+  const set = (fn: (p: typeof project) => typeof project) => updateProject(fn, { reschedule: false });
+  if (trackKind(track) === 'group') {
+    const members = groupMembers(project, trackId);
+    const free = project.tracks.filter((t) => trackKind(t) !== 'group' && t.groupId !== trackId);
+    return (
+      <Section title="Gruppe">
+        <Txt style={s.note}>
+          {members.length
+            ? `Spuren in dieser Gruppe: ${members.map((m) => m.name).join(', ')}. Sie laufen durch die Geräte, Effekte und den Fader dieser Spur.`
+            : 'Noch leer. Füge Spuren hinzu: sie laufen dann durch die Geräte, Effekte und den Fader der Gruppe (zum Beispiel alle Drums in einen Bus).'}
+        </Txt>
+        <View style={s.buttons}>
+          {free.map((t) => (
+            <Chip key={t.id} variant="ghost" textStyle={{ fontSize: 12 }} accessibilityLabel={`${t.name} zur Gruppe hinzufügen`} onPress={() => set((p) => setTrackGroup(p, t.id, trackId))}>
+              {`+ ${t.name}`}
+            </Chip>
+          ))}
+          {members.map((m) => (
+            <Chip key={m.id} variant="on" textStyle={{ fontSize: 12 }} accessibilityLabel={`${m.name} aus der Gruppe nehmen`} onPress={() => set((p) => setTrackGroup(p, m.id, null))}>
+              {`${m.name} ✕`}
+            </Chip>
+          ))}
+        </View>
+        <View style={[s.buttons, { marginTop: 8 }]}>
+          <Btn small accessibilityLabel="Gruppe auflösen" onPress={() => { set((p) => ungroup(p, trackId)); setState({ panel: 'none', selectedTrackId: null }); }}>
+            Gruppe auflösen
+          </Btn>
+        </View>
+      </Section>
+    );
+  }
+  const groups = project.tracks.filter((t) => trackKind(t) === 'group');
+  const current = groupOf(project, track);
+  return (
+    <Section title="Gruppe">
+      <View style={s.buttons}>
+        <Chip variant={!current ? 'on' : 'ghost'} onPress={() => set((p) => setTrackGroup(p, trackId, null))}>
+          Keine (Master)
+        </Chip>
+        {groups.map((g) => (
+          <Chip key={g.id} variant={current?.id === g.id ? 'on' : 'ghost'} accessibilityLabel={`In Gruppe ${g.name}`} onPress={() => set((p) => setTrackGroup(p, trackId, g.id))}>
+            {g.name}
+          </Chip>
+        ))}
+        <Chip variant="ghost" accessibilityLabel="Neue Gruppe aus dieser Spur" onPress={() => set((p) => groupTracks(p, [trackId]).project)}>
+          ＋ Neue Gruppe
+        </Chip>
+      </View>
+      <Txt style={s.note}>Eine Gruppe ist ein Bus mit eigenen Geräten, Effekten und Fader (Cmd/Strg+G).</Txt>
+    </Section>
+  );
+}
+
 const s = StyleSheet.create({
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },

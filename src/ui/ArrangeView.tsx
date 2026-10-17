@@ -8,7 +8,7 @@ import { loadSampleIntoSampler, loopSelection, placeSample, setCursor } from '..
 import { applyGroupEdit, clipsInRange, groupEdit } from '../lib/clipgroup';
 import { addMarker } from '../lib/markers';
 import { insertionY, reorderTarget } from '../lib/trackReorder';
-import { createMidiTrack, createTrack, mapTrack, moveTrackTo, trackKind, type ClipEdit } from '../lib/project';
+import { createMidiTrack, createTrack, groupOf, mapTrack, moveTrackTo, trackKind, type ClipEdit } from '../lib/project';
 import { getState, selectedClipIds, setClipSelection, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
 import { AUTO_ORDER, deviceAutoParams, laneOf, paramDef } from '../lib/automation';
@@ -401,13 +401,13 @@ export function ArrangeView() {
                 <View style={reorder?.id === track.id ? { zIndex: 5, opacity: 0.85, transform: [{ translateY: reorder.dy }] } : undefined}>
                 <HeaderDrop track={track}>
                 <Pressable
-                  style={[s.trackHeader, { height: rowH }, small && s.trackHeaderSm, selected && s.trackHeaderSelected]}
+                  style={[s.trackHeader, { height: rowH }, small && s.trackHeaderSm, selected && s.trackHeaderSelected, groupOf(project, track) && { borderLeftWidth: 4, borderLeftColor: groupOf(project, track)!.color }]}
                   onPress={() => setState({ selectedTrackId: track.id })}
                   onLongPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'track' })}
                 >
                   <View style={s.trackTitle}>
                     <TrackGrip name={track.name} onDrag={(dy, phase) => dragTrack(track.id, dy, phase)} />
-                    <View style={[s.dot, trackKind(track) === 'midi' && s.dotMidi, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
+                    <View style={[s.dot, trackKind(track) === 'midi' && s.dotMidi, trackKind(track) === 'group' && s.dotGroup, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
                     <Txt numberOfLines={1} style={s.trackName}>
                       {track.name}
                     </Txt>
@@ -752,6 +752,7 @@ const s = StyleSheet.create({
   trackCurve: { position: 'absolute', left: 0, top: 0, zIndex: 5 },
   /** MIDI tracks get a square dot, audio tracks a round one. */
   dotMidi: { borderRadius: 2 },
+  dotGroup: { borderRadius: 2, transform: [{ rotate: '45deg' }] },
   trackControls: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   addTrack: { flexDirection: 'row', alignItems: 'center', gap: 2, height: ADD_ROW_H },
   addTrackText: { color: C.dim, fontSize: 11 },

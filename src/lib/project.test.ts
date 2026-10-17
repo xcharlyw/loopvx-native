@@ -1,4 +1,4 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, moveTrackTo, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject, copyDevices, MASTER_ID } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, moveTrackTo, createTrack, groupTracks, setTrackGroup, ungroup, groupMembers, groupOf, audibleGains, createGroupTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject, copyDevices, MASTER_ID } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -479,5 +479,95 @@ describe('copyDevices with automation', () => {
     const q = copyDevices(p, a, b, 'append');
     const tb = q.tracks.find((t) => t.id === b)!;
     expect(tb.automation).toEqual([{ param: `dev:${tb.devices![0].id}:hp`, points: [{ bar: 0, value: 0.3 }] }]);
+  });
+});
+
+describe('group tracks', () => {
+  const base = () => {
+    const p = createProject('T', 150, 'F minor');
+    return { ...p, tracks: ['a', 'b', 'c'].map((id) => ({ ...createTrack('synth', 8, id, 'audio'), id })) };
+  };
+  const order = (p: ReturnType<typeof base>) => p.tracks.map((t) => (t.kind === 'group' ? 'G' : t.id)).join('');
+
+  it('groupTracks puts a group where the first member is and routes the members into it', () => {
+    const { project, groupId } = groupTracks(base(), ['b', 'c']);
+    expect(order(project)).toBe('aGbc');
+    expect(groupMembers(project, groupId!).map((t) => t.id)).toEqual(['b', 'c']);
+    expect(project.tracks.find((t) => t.id === groupId)).toMatchObject({ kind: 'group', clips: [] });
+  });
+  it('does nothing for no tracks, unknown ids or groups', () => {
+    const p = base();
+    expect(groupTracks(p, []).project).toBe(p);
+    expect(groupTracks(p, ['zzz']).groupId).toBeNull();
+    const { project, groupId } = groupTracks(p, ['a']);
+    expect(groupTracks(project, [groupId!]).project).toBe(project);
+  });
+  it('a group takes no clips', () => {
+    const g = createGroupTrack(8);
+    expect(canHoldClip(g, { id: 'x', sampleId: 's', start: 0, length: 1, offset: 0 })).toBe(false);
+    expect(canHoldClip(g, { id: 'x', sampleId: '', notes: [], start: 0, length: 1, offset: 0 })).toBe(false);
+  });
+  it('setTrackGroup moves a track between groups and back, refusing bad targets', () => {
+    const { project, groupId } = groupTracks(base(), ['a']);
+    const two = setTrackGroup(project, 'b', groupId);
+    expect(groupOf(two, two.tracks.find((t) => t.id === 'b')!)?.id).toBe(groupId);
+    expect(setTrackGroup(two, 'b', null).tracks.find((t) => t.id === 'b')?.groupId).toBeUndefined();
+    expect(setTrackGroup(project, 'b', 'c')).toBe(project); // c is no group
+    expect(setTrackGroup(project, groupId!, groupId)).toBe(project); // groups do not nest
+    expect(setTrackGroup(project, 'b', 'zzz')).toBe(project);
+  });
+  it('ungroup and removing the group route the members into the master again', () => {
+    const { project, groupId } = groupTracks(base(), ['a', 'b']);
+    for (const next of [ungroup(project, groupId!), removeTrack(project, groupId!)]) {
+      expect(order(next)).toBe('abc');
+      expect(next.tracks.every((t) => t.groupId === undefined)).toBe(true);
+    }
+    expect(ungroup(project, 'a')).toBe(project); // a is no group
+  });
+  it('a track and an audio track never turn into a group by setTrackKind', () => {
+    const p = base();
+    expect(setTrackKind(p, 'a', 'group')).toBe(p);
+    const { project, groupId } = groupTracks(p, ['a']);
+    expect(setTrackKind(project, groupId!, 'audio')).toBe(project);
+  });
+  it('repairProject drops a groupId that points nowhere', () => {
+    const p = base();
+    const broken = { ...p, tracks: p.tracks.map((t) => (t.id === 'a' ? { ...t, groupId: 'gone' } : t)) };
+    expect(repairProject(broken).tracks[0].groupId).toBeUndefined();
+    expect(repairProject(p)).toBe(p);
+  });
+
+  describe('audibleGains', () => {
+    const grouped = () => {
+      const { project, groupId } = groupTracks(base(), ['a', 'b']);
+      return { project, groupId: groupId! };
+    };
+    const gain = (p: ReturnType<typeof base>, id: string) => audibleGains(p).get(id);
+    it('is the volume of every track without mute or solo', () => {
+      const { project, groupId } = grouped();
+      expect(gain(project, 'a')).toBe(0.8);
+      expect(gain(project, groupId)).toBe(1);
+    });
+    it('keeps a group audible while one of its tracks is soloed, and silences the others', () => {
+      const { project, groupId } = grouped();
+      const solo = mapTrack(project, 'a', (t) => ({ ...t, solo: true }));
+      expect(gain(solo, 'a')).toBe(0.8);
+      expect(gain(solo, groupId)).toBe(1);
+      expect(gain(solo, 'b')).toBe(0);
+      expect(gain(solo, 'c')).toBe(0);
+    });
+    it('soloing a group lets all its tracks through', () => {
+      const { project, groupId } = grouped();
+      const solo = mapTrack(project, groupId, (t) => ({ ...t, solo: true }));
+      expect(gain(solo, 'a')).toBe(0.8);
+      expect(gain(solo, 'b')).toBe(0.8);
+      expect(gain(solo, 'c')).toBe(0);
+    });
+    it('muting the group mutes only the group strip, the tracks stay as they are', () => {
+      const { project, groupId } = grouped();
+      const muted = mapTrack(project, groupId, (t) => ({ ...t, muted: true }));
+      expect(gain(muted, groupId)).toBe(0);
+      expect(gain(muted, 'a')).toBe(0.8);
+    });
   });
 });

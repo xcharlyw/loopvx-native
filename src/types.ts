@@ -227,8 +227,11 @@ export interface SessionSlot {
   sampleId: string;
 }
 
-/** An audio track holds audio clips; a MIDI track holds MIDI clips and has an instrument. */
-export type TrackKind = 'audio' | 'midi';
+/**
+ * An audio track holds audio clips; a MIDI track holds MIDI clips and has an instrument; a group track holds
+ * nothing itself: the tracks that name it in `groupId` play through its devices, fader and sends (Live's group / a bus).
+ */
+export type TrackKind = 'audio' | 'midi' | 'group';
 
 export interface Track {
   id: string;
@@ -242,6 +245,8 @@ export interface Track {
   clips: Clip[];
   /** Missing in older projects: see `trackKind` (inferred from what the track holds). */
   kind?: TrackKind;
+  /** The group track this track plays through (instead of straight into the master); one level, groups do not nest. */
+  groupId?: string;
   /** Instrument for the track's MIDI clips (defaults apply when missing). */
   synth?: SynthSettings;
   /** Track effects; absent means none. */

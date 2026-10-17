@@ -1,7 +1,7 @@
 import { applyNoteFx } from '../audio/notefx';
 import { deviceDef } from '../audio/devices';
 import type { Clip, DeviceType, Note, Project, Sample, Track } from '../types';
-import { trackKind } from './project';
+import { groupMembers, groupOf, trackKind } from './project';
 
 // Export for Ableton Live: the project's audio without LOOPVX effects (so Live's own plugins take over), the MIDI of every
 // MIDI track as one .mid from bar 1, a reference mixdown and a text file with everything that does not travel (tempo, key,
@@ -157,6 +157,17 @@ export function projectInfoText(project: Project, samples: Pick<Sample, 'id' | '
     if (hasEffects(track)) lines.push(`  Wet-Version (mit den LOOPVX-Effekten, in Live stummgeschaltet): ${file.replace(/\.(wav|mid)$/, midi ? ' Audio wet.wav' : ' wet.wav')}`);
     if (midi && (track.seq?.on || track.arp?.on)) lines.push(`  ${track.seq?.on ? 'Sequencer' : 'Arpeggiator'} ist schon in die Noten eingerechnet: in Live keinen eigenen Arpeggiator davorsetzen.`);
     for (const hint of trackEffectHints(track)) lines.push(`  - ${hint}`);
+    const group = groupOf(project, track);
+    if (group) lines.push(`  Gehört zur Gruppe „${group.name}“ (siehe unten).`);
+  }
+  const groups = project.tracks.filter((t) => trackKind(t) === 'group');
+  if (groups.length) {
+    lines.push('', 'Gruppen (in Live selbst gruppieren: Spuren markieren, Cmd+G):');
+    for (const g of groups) {
+      lines.push(`  - „${g.name}“: ${groupMembers(project, g.id).map((m) => m.name).join(', ') || 'leer'}; Lautstärke ${dbText(g.volume)}`);
+      for (const hint of trackEffectHints(g)) lines.push(`      ${hint}`);
+    }
+    lines.push('  Die Effekte und der Fader einer Gruppe stecken nur im „Referenz Mixdown.wav“, nicht in den einzelnen Spurdateien.');
   }
   if (problems.length) {
     lines.push('', 'NICHT EXPORTIERT / PROBLEME:');

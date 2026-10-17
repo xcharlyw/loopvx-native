@@ -17,7 +17,7 @@ import { startProgress } from './exportProgressRun';
 import { buildLiveSet, type AlsTrack } from './als/liveSet';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
-import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, copyProject, trackForSample, uid, updateClip } from './project';
+import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, groupTracks, ungroup, copyProject, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
@@ -52,6 +52,7 @@ export async function placeSample(sample: Sample, target?: { trackId: string; ba
   const { project, selectedTrackId, cursor, view } = getState();
   const track = target ? project.tracks.find((t) => t.id === target.trackId) : trackForSample(project, sample, selectedTrackId);
   if (!track) return;
+  if (trackKind(track) !== 'audio') return toast(trackKind(track) === 'group' ? 'Eine Gruppe hat keine Clips: leg das Sample auf eine Audio-Spur.' : 'Samples gehören auf Audio-Spuren (MIDI-Spuren nehmen Sampler und Noten).');
   try {
     const buffer = await engine.loadBuffer(sample.id);
     if (view === 'session' || target?.scene !== undefined) {
@@ -101,6 +102,31 @@ export function duplicateSelectedTrack() {
     return r.project;
   });
   if (copyId && copyId !== selectedTrackId) setState({ selectedTrackId: copyId, selectedClipId: null });
+}
+
+/** Cmd/Ctrl+G: put the selected track into a new group track (Live's Group Tracks); on a group it adds nothing. */
+export function groupSelectedTrack() {
+  const { selectedTrackId } = getState();
+  const track = getState().project.tracks.find((t) => t.id === selectedTrackId);
+  if (!track) return toast('Wähle zuerst eine Spur aus.');
+  if (trackKind(track) === 'group') return toast('Das ist schon eine Gruppe. Füge Spuren im Spur-Fenster hinzu.');
+  let groupId: string | null = null;
+  updateProject((p) => {
+    const r = groupTracks(p, [track.id], 'Gruppe');
+    groupId = r.groupId;
+    return r.project;
+  }, { reschedule: false });
+  if (groupId) toast(`„${track.name}“ sitzt jetzt in einer Gruppe. Weitere Spuren fügst du im Spur-Fenster der Gruppe hinzu.`);
+}
+
+/** Cmd/Ctrl+Shift+G: dissolve the selected group (or the group of the selected track). The tracks stay, the group's devices go. */
+export function ungroupSelectedTrack() {
+  const { selectedTrackId, project } = getState();
+  const track = project.tracks.find((t) => t.id === selectedTrackId);
+  const groupId = track && (trackKind(track) === 'group' ? track.id : track.groupId);
+  if (!groupId || !project.tracks.some((t) => t.id === groupId)) return toast('Wähle eine Gruppe oder eine Spur in einer Gruppe aus.');
+  updateProject((p) => ungroup(p, groupId), { reschedule: false });
+  setState({ selectedTrackId: track.id === groupId ? null : track.id });
 }
 
 /** Cmd/Ctrl+D: the selected clips, or the selected track when no clip is selected (like Live). */

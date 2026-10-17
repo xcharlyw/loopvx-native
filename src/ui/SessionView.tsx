@@ -101,11 +101,11 @@ export function SessionView() {
                 </View>
               </Pressable>
               {project.tracks.map((t) => {
-                if (trackKind(t) === 'midi') {
-                  // MIDI tracks play notes from the arrangement; the session grid launches audio loops.
+                if (trackKind(t) !== 'audio') {
+                  // MIDI tracks play notes from the arrangement and groups hold nothing; the session grid launches audio loops.
                   return (
                     <View key={t.id} style={[s.slot, { width: slotW, opacity: 0.35 }]}>
-                      <Txt style={s.slotText}>{scene === 0 ? 'MIDI' : ''}</Txt>
+                      <Txt style={s.slotText}>{scene === 0 ? (trackKind(t) === 'group' ? 'Gruppe' : 'MIDI') : ''}</Txt>
                     </View>
                   );
                 }

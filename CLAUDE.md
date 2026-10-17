@@ -322,6 +322,20 @@ selected clips, or the selected track when no clip is selected (like Live); also
 Erstellen → Spur duplizieren.
 **Duplicate a project**: `copyProject` (project.ts, tested) + `duplicateProject` (actions.ts): a deep copy "<Name> (Kopie)" under a new id, saved and opened; the Projekte list has a copy button next to the backup arrow. Samples are shared through the library. (Opening a `.loopvx` backup of a project that already exists also makes a "(Kopie)".)
 
+## Group tracks (issue #9)
+
+`Track.kind = 'group'` (no clips, `canHoldClip` refuses everything, `setTrackKind` never makes or unmakes one) and `Track.groupId` on the tracks that play through it (one level, groups do
+not nest). Pure functions in `project.ts` (tested): `groupTracks` (new group at the first member's place, Cmd/Ctrl+G = `groupSelectedTrack`), `setTrackGroup`, `ungroup` (Cmd/Ctrl+Shift+G,
+`removeTrack` of a group does the same: members go back to the master), `groupMembers`, `groupOf` (a `groupId` only counts while that track exists and is a group; `repairProject` clears dead ones),
+`audibleGains(project)` (replaces the per-track `audibleGain` in the mixer: a group is heard while it or one of its tracks is soloed, a track in a soloed group is heard, muting the group
+silences only the group strip). **Routing** (`mixgraph.ts`): every `TrackChain` ends in a `router` gain after the fader (sends and meter tap the fader, so a member's sends stay its own);
+`MixGraph.apply` points each member's router at its group's chain input, everything else at the master bus, so the group's devices, DJ filter, drive, pan, sends, fader and automation shape the sum;
+live and offline render share it (so the mixdown has it; stems and Ableton audio are per track, without the group). Measured offline in Chromium: group fader 0.5 halves the peak, a muted group is
+silent, a soloed member keeps the group audible and silences the rest. UI: the arrange header of a group has a diamond dot, members a coloured bar in the group's colour at the left; TrackPanel
+section "Gruppe" (member: chips Keine / groups / ＋ Neue Gruppe; group: add/remove member chips, "Gruppe auflösen"); the device chain of a group has no source slot; session slots of a group are
+disabled; `placeSample` refuses non-audio tracks. Ableton export: groups are listed with their tracks in `Projekt-Info.txt` (group effects are only in the reference mixdown), not written into the
+`.als`. Nested groups and a "+ Gruppe" button in the add row are not done.
+
 ## Device chain (plugin slots)
 
 `Track.devices` is the chain after the instrument/clips and before the DJ filter, drive, pan and fader:

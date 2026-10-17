@@ -7,6 +7,18 @@ const clip = (start: number, length: number, notes?: Clip['notes'], extra: Parti
 const track = (over: Partial<Track> = {}): Track => ({ id: 't', name: 'Lead', category: 'synth', color: '#fff', volume: 1, muted: false, solo: false, clips: [], ...over }) as Track;
 const project = (tracks: Track[]): Project => ({ id: 'p', name: 'Vocal Session', bpm: 156, key: 'F minor', tracks, sceneCount: 4, loop: { enabled: false, start: 0, end: 4 }, markers: [{ id: 'm', bar: 16, name: 'Drop' }], updatedAt: 0 }) as Project;
 
+describe('ableton export of groups', () => {
+  it('names the group, its tracks and that its effects are only in the reference mixdown', () => {
+    const g = track({ id: 'g', name: 'Drums Bus', kind: 'group', volume: 1 });
+    const a = track({ id: 'a', name: 'Kick', kind: 'audio', groupId: 'g', clips: [clip(0, 4)] });
+    const info = projectInfoText(project([g, a]), [], [{ track: a, file: '01 Kick.wav' }]);
+    expect(info).toContain('Gehört zur Gruppe „Drums Bus“');
+    expect(info).toContain('„Drums Bus“: Kick');
+    expect(info).toContain('Referenz Mixdown');
+    expect(exportableTracks(project([g, a])).map((t) => t.id)).toEqual(['a']);
+  });
+});
+
 describe('ableton export', () => {
   it('names files with the track number and a safe name', () => {
     expect(trackFileName(0, 'Kick + Bass/Rumble', 'wav')).toBe('01 Kick + Bass Rumble.wav');

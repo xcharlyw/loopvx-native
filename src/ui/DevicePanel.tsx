@@ -8,7 +8,7 @@ import { C, font, mono } from '../constants/theme';
 import { MASTER_ID, addDevice, copyDevices, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
 import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { loadSampleIntoSampler } from '../lib/actions';
-import type { Device, DeviceType, Track } from '../types';
+import type { Device, DeviceType, Track, TrackKind } from '../types';
 import { Close } from './icons';
 import { Btn, Chip, Txt } from './kit';
 import { useSampleDropTarget } from './dnd';
@@ -119,7 +119,7 @@ export function DevicePanel() {
   return (
     <Sheet title={chain ? `Geräte · ${forMaster ? 'Master' : track.name}` : 'Geräte'} compact={chain}>
       <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-        {!chain && <Txt style={s.sub}>{forMaster ? 'Master · Summe aller Spuren, vor dem Sicherheits-Limiter' : `${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : 'Audio-Spur'}`}</Txt>}
+        {!chain && <Txt style={s.sub}>{forMaster ? 'Master · Summe aller Spuren, vor dem Sicherheits-Limiter' : `${track.name} · ${kind === 'midi' ? 'MIDI-Spur' : kind === 'group' ? 'Gruppe' : 'Audio-Spur'}`}</Txt>}
 
         {!forMaster && !chain && <Source track={track} kind={kind} />}
 
@@ -244,8 +244,18 @@ function PickList({ forMaster, onPick, onCancel }: { forMaster: boolean; onPick:
 }
 
 /** The first slot of the chain: what makes the sound (the instrument or the audio clips). */
-function Source({ track, kind }: { track: Track; kind: 'audio' | 'midi' }) {
+function Source({ track, kind }: { track: Track; kind: TrackKind }) {
   const drop = useSampleDropTarget(`source:${track.id}`, (p) => kind === 'midi' && loadSampleIntoSampler(track.id, p.sampleId));
+  if (kind === 'group') {
+    return (
+      <View style={s.source}>
+        <View style={{ flex: 1 }}>
+          <Txt style={s.sourceName}>Gruppe</Txt>
+          <Txt style={s.sourceSub}>Alles, was in diese Gruppe gespielt wird, läuft durch ihre Geräte und ihren Fader</Txt>
+        </View>
+      </View>
+    );
+  }
   if (kind === 'audio') {
     return (
       <View style={s.source}>

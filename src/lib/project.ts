@@ -36,7 +36,10 @@ export function trackKind(track: Track): TrackKind {
 }
 
 /** Audio tracks take audio clips, MIDI tracks take MIDI clips: dragging a clip to the other kind is refused. */
-export const canHoldClip = (track: Track, clip: Clip): boolean => (trackKind(track) === 'midi') === Array.isArray(clip.notes);
+export const canHoldClip = (track: Track, clip: Clip): boolean => {
+  const kind = trackKind(track);
+  return kind !== 'group' && (kind === 'midi') === Array.isArray(clip.notes);
+};
 
 /** A MIDI track named "MIDI", with the synth colour so it reads differently from audio tracks at a glance. */
 export function createMidiTrack(sceneCount: number, name = 'MIDI'): Track {
@@ -50,6 +53,8 @@ export function createMidiTrack(sceneCount: number, name = 'MIDI'): Track {
 export function setTrackKind(project: Project, trackId: string, kind: TrackKind): Project {
   const track = project.tracks.find((t) => t.id === trackId);
   if (!track || trackKind(track) === kind || track.clips.length > 0) return project;
+  // A group is made with `groupTracks` and stays one; an audio or MIDI track never turns into one.
+  if (kind === 'group' || trackKind(track) === 'group') return project;
   return mapTrack(project, trackId, (t) => ({ ...t, kind, ...(kind === 'audio' && { synth: undefined }) }));
 }
 
@@ -379,7 +384,59 @@ export function moveTrackTo(project: Project, trackId: string, to: number): Proj
 }
 
 export function removeTrack(project: Project, trackId: string): Project {
-  return { ...project, tracks: project.tracks.filter((t) => t.id !== trackId) };
+  // Members of a removed group play straight into the master again.
+  return { ...project, tracks: project.tracks.filter((t) => t.id !== trackId).map((t) => (t.groupId === trackId ? withoutGroup(t) : t)) };
+}
+
+// ---------------------------------------------------------------- group tracks
+
+const withoutGroup = ({ groupId: _gone, ...rest }: Track): Track => rest;
+
+/** A group track: no clips, only the sound shaping (devices, effects, fader) of the tracks routed into it. */
+export function createGroupTrack(sceneCount: number, name = 'Gruppe'): Track {
+  return { ...createTrack('other', sceneCount, name, 'group'), color: '#b89bff', volume: 1 };
+}
+
+/** Tracks that play through the group, in list order. */
+export const groupMembers = (project: Project, groupId: string): Track[] => project.tracks.filter((t) => t.groupId === groupId);
+
+/**
+ * Put audio and MIDI tracks into a new group track, placed where the first of them is (Live's Cmd+G).
+ * Groups themselves cannot be grouped, and tracks that already sit in a group move to the new one.
+ * Unchanged when no track qualifies.
+ */
+export function groupTracks(project: Project, trackIds: string[], name = 'Gruppe'): { project: Project; groupId: string | null } {
+  const ids = new Set(trackIds);
+  const members = project.tracks.filter((t) => ids.has(t.id) && trackKind(t) !== 'group');
+  if (!members.length) return { project, groupId: null };
+  const group = createGroupTrack(project.sceneCount, name);
+  const first = project.tracks.findIndex((t) => t.id === members[0].id);
+  const tracks = project.tracks.map((t) => (members.includes(t) ? { ...t, groupId: group.id } : t));
+  tracks.splice(first, 0, group);
+  return { project: { ...project, tracks }, groupId: group.id };
+}
+
+/** Route one track into a group, or back to the master (`null`). Refused for groups, missing groups and for a group that is itself grouped. */
+export function setTrackGroup(project: Project, trackId: string, groupId: string | null): Project {
+  const track = project.tracks.find((t) => t.id === trackId);
+  if (!track || trackKind(track) === 'group') return project;
+  if (groupId === null) return track.groupId === undefined ? project : mapTrack(project, trackId, withoutGroup);
+  const group = project.tracks.find((t) => t.id === groupId);
+  if (!group || trackKind(group) !== 'group' || track.groupId === groupId) return project;
+  return mapTrack(project, trackId, (t) => ({ ...t, groupId }));
+}
+
+/** Dissolve a group: its tracks play into the master again and the group track (with its devices) goes. */
+export function ungroup(project: Project, groupId: string): Project {
+  const group = project.tracks.find((t) => t.id === groupId);
+  return group && trackKind(group) === 'group' ? removeTrack(project, groupId) : project;
+}
+
+/** The group track a track really plays through: its `groupId` only when that track still exists, is a group and the track is no group itself. */
+export function groupOf(project: Project, track: Track): Track | undefined {
+  if (!track.groupId || trackKind(track) === 'group') return undefined;
+  const group = project.tracks.find((t) => t.id === track.groupId);
+  return group && trackKind(group) === 'group' ? group : undefined;
 }
 
 /**
@@ -474,8 +531,10 @@ export function isProject(value: unknown): value is Project {
  */
 export function repairProject(project: Project): Project {
   const ok = (v: number) => Number.isFinite(v);
-  const broken = project.tracks.some((t) => t.clips.some((c) => !ok(c.start) || !ok(c.length) || !ok(c.offset)));
-  if (!broken) return project;
+  const brokenClips = project.tracks.some((t) => t.clips.some((c) => !ok(c.start) || !ok(c.length) || !ok(c.offset)));
+  const brokenGroup = project.tracks.some((t) => t.groupId !== undefined && !groupOf(project, t));
+  if (!brokenGroup && !brokenClips) return project;
+  if (!brokenClips) return { ...project, tracks: project.tracks.map((t) => (t.groupId !== undefined && !groupOf(project, t) ? withoutGroup(t) : t)) };
   return {
     ...project,
     tracks: project.tracks.map((t) => ({
@@ -504,6 +563,24 @@ export function audibleGain(track: Track, anySolo: boolean): number {
   if (track.muted) return 0;
   if (anySolo && !track.solo) return 0;
   return track.volume;
+}
+
+/**
+ * Fader gain of every track with mute and solo applied. A group is heard while it or any of its tracks is soloed,
+ * and a track in a soloed group is heard too; muting a group needs no extra step (it silences everything routed through it).
+ */
+export function audibleGains(project: Project): Map<string, number> {
+  const anySolo = project.tracks.some((t) => t.solo);
+  const gains = new Map<string, number>();
+  for (const t of project.tracks) {
+    const kind = trackKind(t);
+    const heard =
+      t.solo ||
+      (kind === 'group' && groupMembers(project, t.id).some((m) => m.solo)) ||
+      (kind !== 'group' && !!groupOf(project, t)?.solo);
+    gains.set(t.id, audibleGain(t, anySolo && !heard));
+  }
+  return gains;
 }
 
 /** Root (0 = C … 11 = B) and mode of a key name like "F# minor". */

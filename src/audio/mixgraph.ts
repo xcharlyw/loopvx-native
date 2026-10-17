@@ -1,6 +1,6 @@
 import type { AnalyserNode, AudioNode, BaseAudioContext, BiquadFilterNode, DelayNode, GainNode, StereoPannerNode, WaveShaperNode } from 'react-native-audio-api';
 import { knobValue, laneValue, parseDeviceParam, sampleLane } from '../lib/automation';
-import { audibleGain } from '../lib/project';
+import { audibleGains, groupOf } from '../lib/project';
 import { pumpHits } from '../lib/sidechain';
 import type { AutoParam, Device, Project, Track } from '../types';
 import { DELAY_FEEDBACK, LIMITER_RANGE, delaySeconds, djFilter, driveCurve, driveGains, limiterCurve, pumpEvents, reverbImpulse, trackFx } from './fx';
@@ -45,6 +45,9 @@ class TrackChain {
   private pan: StereoPannerNode;
   /** Ducking on the beat; automated by the scheduler, never by `apply`. */
   readonly pump: GainNode;
+  /** After the fader and the sends' tap: where the strip's sound goes (the master bus, or a group track's input). */
+  private router: GainNode;
+  private target: AudioNode;
   reverbSend: GainNode | null = null;
   delaySend: GainNode | null = null;
   /** Parameters an automation lane drives right now: `apply` leaves them alone so a project edit cannot fight the curve. */
@@ -73,6 +76,8 @@ class TrackChain {
     this.pan = ctx.createStereoPanner();
     this.pump = ctx.createGain();
     this.fader = ctx.createGain();
+    this.router = ctx.createGain();
+    this.target = out;
 
     afterDevices.connect(this.hp);
     this.hp.connect(this.lp);
@@ -84,7 +89,16 @@ class TrackChain {
     this.wet.connect(this.pan);
     this.pan.connect(this.pump);
     this.pump.connect(this.fader);
-    this.fader.connect(out);
+    this.fader.connect(this.router);
+    this.router.connect(out);
+  }
+
+  /** Play into `to` instead (a group track's input, or the master bus again). Only the router moves: sends and meter stay on the fader. */
+  route(to: AudioNode) {
+    if (to === this.target) return;
+    this.router.disconnect();
+    this.router.connect(to);
+    this.target = to;
   }
 
   /** Move every parameter to the track's settings: glide while playing (`smooth`), jump when rendering. */
@@ -242,8 +256,13 @@ export class MixGraph {
 
   /** Volumes, mute/solo, effects and the delay time. Safe to call on every project change. */
   apply(project: Project, smooth = true) {
-    const anySolo = project.tracks.some((t) => t.solo);
-    for (const t of project.tracks) this.chain(t).apply(this.ctx, t, audibleGain(t, anySolo), this, smooth, project.bpm);
+    const gains = audibleGains(project);
+    for (const t of project.tracks) this.chain(t).apply(this.ctx, t, gains.get(t.id) ?? t.volume, this, smooth, project.bpm);
+    // Tracks in a group play through the group's strip; everything else (and a group whose track is gone) into the master bus.
+    for (const t of project.tracks) {
+      const group = groupOf(project, t);
+      this.chain(t).route(group ? this.chain(group).input : this.out);
+    }
     this.masterBay.sync(project.master?.devices, project.bpm, smooth);
     if (this.delay) {
       const seconds = delaySeconds(project.bpm);
@@ -284,7 +303,7 @@ export class MixGraph {
    * 1/16 bar, a jump to the first value and linear ramps after it. Samples already in the past just land immediately.
    */
   scheduleAutomation(project: Project, time: number, fromBar: number, toBar: number) {
-    const anySolo = project.tracks.some((t) => t.solo);
+    const gains = audibleGains(project);
     const spb = secondsPerBar(project.bpm);
     for (const t of project.tracks) {
       const chain = t.automation?.some((l) => l.points.length) ? this.chain(t) : null;
@@ -307,7 +326,7 @@ export class MixGraph {
       for (const lane of t.automation!) {
         if (parseDeviceParam(lane.param)) continue;
         const samples = sampleLane(lane.points, fromBar, toBar);
-        samples.forEach((p, i) => chain.automate(lane.param, p.value, time + (p.bar - fromBar) * spb, i === 0 ? 'set' : 'ramp', (v) => audibleGain({ ...t, volume: t.volume * v }, anySolo), this));
+        samples.forEach((p, i) => chain.automate(lane.param, p.value, time + (p.bar - fromBar) * spb, i === 0 ? 'set' : 'ramp', (v) => ((gains.get(t.id) ?? 0) === 0 ? 0 : t.volume * v), this));
       }
     }
   }

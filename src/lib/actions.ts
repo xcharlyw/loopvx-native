@@ -13,7 +13,7 @@ import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
 import { clipNotes, exportableTracks, liveColor, midiTrackNotes, projectInfoText, readmeText, samplerFileName, samplerSample, trackFileName, wavInfo } from './abletonExport';
 import { ZipParts, joinParts } from './zipParts';
-import { startProgress } from './exportProgress';
+import { startProgress } from './exportProgressRun';
 import { buildLiveSet, type AlsTrack } from './als/liveSet';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';

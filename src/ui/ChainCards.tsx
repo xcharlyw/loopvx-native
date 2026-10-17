@@ -37,11 +37,11 @@ const PATTERNS: { id: ArpPattern; label: string }[] = [
 export function CardFrame({ title, on, onToggle, folded, onFold, right, color = C.accent, children, style }: { title: string; on?: boolean; onToggle?: () => void; folded?: boolean; onFold?: () => void; right?: ReactNode; color?: string; children?: ReactNode; style?: object }) {
   return (
     <View style={[on === false && { opacity: 0.6 }, style]}>
-      <PluginFrame style={s.card} radius={8}>
+      <PluginFrame style={s.card} radius={4}>
         <View style={s.head}>
           {onToggle && (
             <Pressable onPress={onToggle} accessibilityLabel={`${title} ${on ? 'ausschalten' : 'einschalten'}`} hitSlop={8} style={s.ledBox}>
-              <View style={[s.led, on && { backgroundColor: color, shadowColor: color, shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } }]} />
+              <View style={[s.led, on && { backgroundColor: color, borderColor: color, shadowColor: color, shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } }]} />
             </Pressable>
           )}
           <Pressable onPress={onFold} disabled={!onFold} accessibilityLabel={`${title} ${folded ? 'ausklappen' : 'einklappen'}`} style={{ flex: 1 }}>
@@ -185,10 +185,10 @@ export function InstrumentCard({ track, folded, onFold }: { track: Track; folded
 }
 
 const s = StyleSheet.create({
-  card: { padding: 8 },
-  head: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24, marginBottom: 4 },
+  card: { padding: 8, paddingTop: 0 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24, marginBottom: 8, marginHorizontal: -8, paddingHorizontal: 8, backgroundColor: '#0f0f11', borderBottomWidth: 1, borderBottomColor: '#000' },
   ledBox: { paddingVertical: 4 },
-  led: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#2a3238' },
+  led: { width: 11, height: 11, borderRadius: 2, borderWidth: 1, borderColor: '#4a4a52', backgroundColor: '#1a1a1e' },
   title: { ...font(700), fontSize: 10, letterSpacing: 1.4 },
   tiny: { minWidth: 24, height: 22, borderRadius: 5, borderWidth: 1, borderColor: '#3a3a42', backgroundColor: '#1c1c21', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   tinyText: { fontSize: 11, color: C.text },

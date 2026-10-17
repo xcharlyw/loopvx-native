@@ -8,9 +8,9 @@ import { Txt } from './kit';
 // and segmented LED meters, like a hardware console or a good VST.
 
 export const SKIN = {
-  panelTop: '#2a2a31',
-  panelBottom: '#141418',
-  edge: '#34343c',
+  panelTop: '#222226',
+  panelBottom: '#17171a',
+  edge: '#303036',
   highlight: 'rgba(255,255,255,0.07)',
   lcd: '#0a0f05',
   lcdEdge: '#1d2612',
@@ -22,7 +22,7 @@ export const SKIN = {
 } as const;
 
 /** A panel with a vertical gradient and a 1 px highlight on its top edge. */
-export function PluginFrame({ children, style, radius = 12 }: { children: ReactNode; style?: StyleProp<ViewStyle>; radius?: number }) {
+export function PluginFrame({ children, style, radius = 4 }: { children: ReactNode; style?: StyleProp<ViewStyle>; radius?: number }) {
   return (
     <View style={[{ borderRadius: radius, borderWidth: 1, borderColor: SKIN.edge, overflow: 'hidden' }, style]}>
       <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" preserveAspectRatio="none" pointerEvents="none">

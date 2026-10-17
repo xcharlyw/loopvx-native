@@ -19,10 +19,24 @@ import { FolderBar, FolderPicker, FolderRows } from './LibraryFolders';
 import { confirmDestructive } from './confirm';
 import { RecordButton } from './RecordButton';
 import { PreviewLevel, previewStyles } from './PreviewLevel';
-import { Btn, Chip, IconBtn, Section, Txt } from './kit';
+import { Btn, Chip, IconBtn, Txt } from './kit';
 import { Sheet } from './Sheet';
 import { sampleDragJustEnded, useSampleDragSource } from './dnd';
 import { web } from './drag';
+
+/** A collapsed row of the browser's "Orte" group (Live's Places): tap to open its tools. */
+function Place({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={s.place}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={s.placeHead}>
+        <Txt style={s.placeChevron}>{open ? '▾' : '▸'}</Txt>
+        <Txt style={s.placeTitle}>{title}</Txt>
+      </Pressable>
+      {open && <View style={s.placeBody}>{children}</View>}
+    </View>
+  );
+}
 
 const FILTERS: (SampleCategory | 'all')[] = ['all', 'kick', 'top', 'synth', 'vocal', 'other'];
 
@@ -140,41 +154,22 @@ export function LibraryPanel() {
 
   return (
     <Sheet title="Library">
-      <Section title="Stems trennen">
-        <Txt style={s.note}>Einen fertigen Tune hochladen: die KI trennt ihn in Drums, Bass, Synth + FX, Keys, Gitarre und Vocal. Die Stems landen hier im Ordner „Stems Export / Name des Tunes“.</Txt>
-        <View style={[s.row, { marginTop: 10 }]}>
-          <Btn small kind="primary" disabled={stemStatus !== null} accessibilityLabel="Tune in Stems trennen" onPress={() => void startStemSeparation()}>
-            {stemStatus ? 'Läuft …' : 'Tune hochladen und trennen'}
-          </Btn>
-        </View>
-        {stemStatus && <Txt style={[s.note, { marginTop: 8, color: C.accent }]}>{stemStatus}</Txt>}
-      </Section>
-
-      <Section title="Google Drive">
-        <Txt style={s.note}>Samples direkt aus deinem Google Drive vorhören und einfügen, oder vom Gerät hochladen.</Txt>
-        <View style={[s.row, { marginTop: 10 }]}>
-          <Btn small onPress={() => void upload()}>
-            <Upload size={14} />
-            Vom Gerät hochladen
-          </Btn>
-          <RecordButton />
-        </View>
-        <View style={{ marginTop: 10 }}>
-          <DriveImport />
-        </View>
-      </Section>
-
-      <Section title="Splice">
-        <SpliceSearch />
-      </Section>
-
       <TextInput style={s.search} placeholder="Suchen …" placeholderTextColor={C.dim} value={query} onChangeText={setQuery} />
+      <Txt style={s.group}>KATEGORIEN</Txt>
+      <View style={s.catList}>
+        {FILTERS.map((f) => {
+          const n = f === 'all' ? samples.length : samples.filter((x) => x.category === f).length;
+          const on = filter === f;
+          return (
+            <Pressable key={f} accessibilityLabel={`Kategorie ${f === 'all' ? 'Alle' : CATEGORY_LABELS[f]}`} accessibilityState={{ selected: on }} onPress={() => setFilter(f)} style={[s.cat, on && s.catOn]}>
+              <View style={[s.catDot, { backgroundColor: f === 'all' ? C.accent : CATEGORY_COLORS[f] }]} />
+              <Txt numberOfLines={1} style={[s.catText, on && { color: C.accent }]}>{f === 'all' ? 'Alle' : CATEGORY_LABELS[f]}</Txt>
+              <Txt style={s.catCount}>{String(n)}</Txt>
+            </Pressable>
+          );
+        })}
+      </View>
       <ScrollView horizontal style={s.filtersScroll} contentContainerStyle={s.filters}>
-        {FILTERS.map((f) => (
-          <Chip key={f} variant={filter === f ? 'on' : 'ghost'} onPress={() => setFilter(f)}>
-            {f === 'all' ? 'Alle' : CATEGORY_LABELS[f]}
-          </Chip>
-        ))}
         <Chip variant={tempoMatch ? 'on' : 'ghost'} onPress={() => setTempoMatch(!tempoMatch)}>
           {`${project.bpm} BPM`}
         </Chip>
@@ -263,6 +258,34 @@ export function LibraryPanel() {
           )}
         </View>
       ))}
+      <Txt style={[s.group, { marginTop: 14 }]}>ORTE</Txt>
+      <Place title="Stems trennen">
+        <Txt style={s.note}>Einen fertigen Tune hochladen: die KI trennt ihn in Drums, Bass, Synth + FX, Keys, Gitarre und Vocal. Die Stems landen hier im Ordner „Stems Export / Name des Tunes“.</Txt>
+        <View style={[s.row, { marginTop: 10 }]}>
+          <Btn small kind="primary" disabled={stemStatus !== null} accessibilityLabel="Tune in Stems trennen" onPress={() => void startStemSeparation()}>
+            {stemStatus ? 'Läuft …' : 'Tune hochladen und trennen'}
+          </Btn>
+        </View>
+        {stemStatus && <Txt style={[s.note, { marginTop: 8, color: C.accent }]}>{stemStatus}</Txt>}
+      </Place>
+
+      <Place title="Google Drive">
+        <Txt style={s.note}>Samples direkt aus deinem Google Drive vorhören und einfügen, oder vom Gerät hochladen.</Txt>
+        <View style={[s.row, { marginTop: 10 }]}>
+          <Btn small onPress={() => void upload()}>
+            <Upload size={14} />
+            Vom Gerät hochladen
+          </Btn>
+          <RecordButton />
+        </View>
+        <View style={{ marginTop: 10 }}>
+          <DriveImport />
+        </View>
+      </Place>
+
+      <Place title="Splice">
+        <SpliceSearch />
+      </Place>
     </Sheet>
   );
 }
@@ -321,9 +344,21 @@ const s = StyleSheet.create({
   note: { color: C.muted, fontSize: 13 },
   muted: { color: C.muted },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  group: { ...font(700), fontSize: 10, letterSpacing: 1.6, color: C.dim, marginTop: 4, marginBottom: 4 },
+  catList: { marginBottom: 8, borderTopWidth: 1, borderTopColor: '#000' },
+  cat: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 26, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: C.lineSoft },
+  catOn: { backgroundColor: 'rgba(198,255,61,0.14)' },
+  catDot: { width: 8, height: 8, borderRadius: 2 },
+  catText: { flex: 1, ...font(500), fontSize: 12.5 },
+  catCount: { ...mono(), fontSize: 10.5, color: C.dim },
+  place: { borderBottomWidth: 1, borderBottomColor: C.lineSoft },
+  placeHead: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 28, paddingHorizontal: 4 },
+  placeChevron: { fontSize: 11, color: C.accent, width: 12 },
+  placeTitle: { ...font(600), fontSize: 12.5 },
+  placeBody: { paddingBottom: 10 },
   search: {
-    height: 38,
-    borderRadius: 10,
+    height: 30,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: C.line,
     backgroundColor: C.panel,

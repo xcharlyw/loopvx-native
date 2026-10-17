@@ -405,9 +405,9 @@ export function ArrangeView() {
                   onPress={() => setState({ selectedTrackId: track.id })}
                   onLongPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'track' })}
                 >
-                  <View style={s.trackTitle}>
+                  <View style={[s.trackTitle, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.45 : 1 }]}>
                     <TrackGrip name={track.name} onDrag={(dy, phase) => dragTrack(track.id, dy, phase)} />
-                    <View style={[s.dot, trackKind(track) === 'midi' && s.dotMidi, trackKind(track) === 'group' && s.dotGroup, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
+                    <View style={[s.dot, trackKind(track) === 'midi' && s.dotMidi, trackKind(track) === 'group' && s.dotGroup, { backgroundColor: 'rgba(0,0,0,0.5)' }]} />
                     <Txt numberOfLines={1} style={s.trackName}>
                       {track.frozen ? `❄ ${track.name}` : track.name}
                     </Txt>
@@ -704,8 +704,8 @@ const s = StyleSheet.create({
   marker: { position: 'absolute', top: 2, height: MARKER_H - 4, maxWidth: 140, paddingHorizontal: 5, borderLeftWidth: 2, borderLeftColor: C.accent, backgroundColor: 'rgba(198,255,61,0.12)', borderTopRightRadius: 4, borderBottomRightRadius: 4, justifyContent: 'center' },
   markerText: { ...font(600), fontSize: 10, color: C.accent },
   rulerRow: { flexDirection: 'row', height: RULER_H, zIndex: 5 },
-  corner: { backgroundColor: C.bg, borderRightWidth: 1, borderBottomWidth: 1, borderColor: C.lineSoft },
-  rulerClip: { flex: 1, overflow: 'hidden', backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.lineSoft },
+  corner: { backgroundColor: '#141417', borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#000' },
+  rulerClip: { flex: 1, overflow: 'hidden', backgroundColor: '#141417', borderBottomWidth: 1, borderBottomColor: '#000' },
   rulerLabel: { position: 'absolute', top: 6, height: 22, paddingLeft: 4, borderLeftWidth: 1, borderLeftColor: C.line },
   rulerText: { fontSize: 11, color: C.dim, letterSpacing: 0 },
   loopRegion: {
@@ -722,27 +722,27 @@ const s = StyleSheet.create({
   loopGrip: { position: 'absolute', top: 0, width: LOOP_GRIP, height: RULER_H },
   gridLine: { position: 'absolute', top: 0, bottom: 0, width: 1 },
   trackHeader: {
-    backgroundColor: C.bg,
+    backgroundColor: '#1b1b1f',
     borderRightWidth: 1,
-    borderRightColor: C.lineSoft,
+    borderRightColor: '#000',
     borderBottomWidth: 1,
-    borderBottomColor: C.lineSoft,
+    borderBottomColor: '#0b0b0d',
     borderLeftWidth: 3,
     borderLeftColor: 'transparent',
     justifyContent: 'center',
-    gap: 6,
-    paddingLeft: 12,
-    paddingRight: 10,
+    gap: 5,
+    paddingLeft: 8,
+    paddingRight: 8,
   },
   trackHeaderSm: { paddingLeft: 8, paddingRight: 6 },
-  trackHeaderSelected: { backgroundColor: C.bg2, borderLeftColor: C.accent },
-  trackTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, overflow: 'hidden' },
+  trackHeaderSelected: { backgroundColor: '#26262c', borderLeftColor: C.accent },
+  trackTitle: { flexDirection: 'row', alignItems: 'center', gap: 6, overflow: 'hidden', height: 22, borderRadius: 2, paddingHorizontal: 4 },
   grip: { width: 18, height: 28, marginLeft: -4, alignItems: 'center', justifyContent: 'center' },
-  gripText: { color: C.muted, fontSize: 12, lineHeight: 12, letterSpacing: -2 },
+  gripText: { color: 'rgba(0,0,0,0.55)', fontSize: 12, lineHeight: 12, letterSpacing: -2 },
   insertLine: { position: 'absolute', left: 0, right: 0, height: 2, marginTop: -1, backgroundColor: C.accent, zIndex: 6 },
   dot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  trackName: { ...font(600), fontSize: 13, flexShrink: 1 },
-  fxBtn: { minWidth: 22, height: 24, paddingHorizontal: 2, borderRadius: 7, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  trackName: { ...font(700), fontSize: 12, flexShrink: 1, color: '#0d0d0f' },
+  fxBtn: { minWidth: 22, height: 22, paddingHorizontal: 2, borderRadius: 3, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
   fxBtnOn: { backgroundColor: C.accent, borderColor: C.accent },
   fxText: { ...mono(), fontSize: 9, color: C.muted },
   autoChip: { flexShrink: 1, minWidth: 0, height: 20, paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: C.accent, justifyContent: 'center' },
@@ -763,9 +763,9 @@ const s = StyleSheet.create({
   laneSelected: { backgroundColor: 'rgba(255,255,255,0.015)' },
   clip: {
     position: 'absolute',
-    top: 6,
-    bottom: 6,
-    borderRadius: 8,
+    top: 3,
+    bottom: 3,
+    borderRadius: 3,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.35)',
@@ -790,7 +790,7 @@ const s = StyleSheet.create({
   },
   clipEdge: { position: 'absolute', top: 0, bottom: 0, width: 14 },
   clipDragging: { opacity: 0.85, zIndex: 3 },
-  clipSelected: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderWidth: 2, borderColor: '#fff', borderRadius: 7 },
+  clipSelected: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderWidth: 2, borderColor: '#fff', borderRadius: 2 },
   playheadClip: { position: 'absolute', top: 0, bottom: 0, right: 0, overflow: 'hidden', zIndex: 2 },
   playhead: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: C.accent },
   emptyHint: { position: 'absolute', width: 280 },

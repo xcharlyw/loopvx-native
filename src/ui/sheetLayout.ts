@@ -51,7 +51,7 @@ export function placementFor(panel: string, size: SheetSize, win: { width: numbe
   if (!wide || !(DETAIL_PANELS as readonly string[]).includes(panel)) return { ...sheetLayout(size, win, scale), detail: false };
   if (size === 'bar') return { docked: true, width: win.width, height: BAR_HEIGHT, detail: true };
   // The mixer needs the room of its faders; the other detail views share the screen with the arrangement.
-  const share = panel === 'mixer' ? (size === 'full' ? 0.62 : 0.5) : size === 'full' ? 0.46 : 0.32;
+  const share = panel === 'mixer' ? (size === 'full' ? 0.62 : 0.5) : size === 'full' ? (panel === 'devices' ? 0.56 : 0.46) : 0.32;
   const factor = size === 'full' ? scale : 1;
   return { docked: true, width: win.width, height: Math.max(factor < 1 ? MIN_DOCKED : 220, Math.round(win.height * share * factor)), detail: true };
 }
@@ -59,7 +59,7 @@ export function placementFor(panel: string, size: SheetSize, win: { width: numbe
 /** The height a panel has at full size (the scale is a fraction of it): the whole window, or the detail view's share on a wide screen. */
 export function fullHeight(panel: string, win: { height: number }, wide: boolean): number {
   if (!wide || !(DETAIL_PANELS as readonly string[]).includes(panel)) return win.height;
-  return Math.round(win.height * (panel === 'mixer' ? 0.62 : 0.46));
+  return Math.round(win.height * (panel === 'mixer' ? 0.62 : panel === 'devices' ? 0.56 : 0.46));
 }
 
 /** Width of the browser column (Library) on the left of a wide screen. */

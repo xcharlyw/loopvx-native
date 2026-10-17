@@ -81,8 +81,8 @@ export function DevicePanel() {
   const trackId = track.id;
   const devices = track.devices ?? [];
   const kind = trackKind(track);
-  // A wide detail view (desktop) lays the chain out left to right like Live's device view.
-  const chain = width > 760;
+  // The chain is always one row, left to right like Live's device view; on a phone it scrolls sideways.
+  const chain = true;
   const inner = chain ? CARD_W - 18 : Math.max(200, width - 26);
   const toggle = (id: string) => {
     const next = new Set(folded);
@@ -304,7 +304,7 @@ function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index,
     <View style={s.controls}>
       {device.type !== 'splice' && (compact ? (
         <Pressable accessibilityLabel={`${def.label} ${device.on ? 'ausschalten' : 'einschalten'}`} onPress={() => onChange({ on: !device.on })} hitSlop={8} style={{ paddingHorizontal: 4 }}>
-          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: device.on ? C.accent : '#2a3238' }} />
+          <View style={[s.power, device.on && s.powerOn]} />
         </Pressable>
       ) : (
         <Chip variant={device.on ? 'on' : 'ghost'} onPress={() => onChange({ on: !device.on })} textStyle={{ fontSize: 11 }}>
@@ -344,8 +344,8 @@ function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index,
 
   return (
     <View style={dim && { opacity: 0.55 }}>
-      <PluginFrame style={compact ? s.cardC : s.card} radius={compact ? 8 : 12}>
-        <View style={[s.cardHead, compact && { minHeight: 26 }]}>
+      <PluginFrame style={compact ? s.cardC : s.card} radius={compact ? 4 : 12}>
+        <View style={[s.cardHead, compact && s.cardHeadC]}>
           <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ${isFolded ? 'ausklappen' : 'einklappen'}`} accessibilityState={{ expanded: !isFolded }} onPress={onToggle} style={s.titleBox}>
             <Txt style={s.chevron}>{isFolded ? '▸' : '▾'}</Txt>
             <View style={{ flex: 1 }}>
@@ -397,12 +397,17 @@ function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index,
               </View>
             )}
             <Scope device={device} p={p} bpm={bpm} width={width} compact={compact} />
-            {rows.map((row, i) => (
-              <View key={i}>
-                {row.title && <Txt style={[s.cap, { marginTop: 8 }]}>{row.title}</Txt>}
-                <KnobRow>{row.keys.map((k) => byKey.get(k)).filter((x): x is ParamDef => !!x).map(control)}</KnobRow>
-              </View>
-            ))}
+            {compact ? (
+              // One wrapping field of knobs per card (Live's compact device): the group titles give way to the knob labels.
+              <KnobRow>{rows.flatMap((row) => row.keys).map((k) => byKey.get(k)).filter((x): x is ParamDef => !!x).map(control)}</KnobRow>
+            ) : (
+              rows.map((row, i) => (
+                <View key={i}>
+                  {row.title && <Txt style={[s.cap, { marginTop: 8 }]}>{row.title}</Txt>}
+                  <KnobRow>{row.keys.map((k) => byKey.get(k)).filter((x): x is ParamDef => !!x).map(control)}</KnobRow>
+                </View>
+              ))
+            )}
           </>
         )}
       </PluginFrame>
@@ -447,9 +452,12 @@ const s = StyleSheet.create({
   presetList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   foldRow: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
   card: { padding: 12, marginBottom: 10 },
-  cardC: { padding: 8 },
+  cardC: { padding: 8, paddingTop: 0 },
+  cardHeadC: { minHeight: 24, marginHorizontal: -8, paddingHorizontal: 8, backgroundColor: '#0f0f11', borderBottomWidth: 1, borderBottomColor: '#000', marginBottom: 8 },
+  power: { width: 11, height: 11, borderRadius: 2, borderWidth: 1, borderColor: '#4a4a52', backgroundColor: '#1a1a1e' },
+  powerOn: { backgroundColor: C.accent, borderColor: C.accent, shadowColor: C.accent, shadowOpacity: 0.8, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
   toolbar: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 6 },
-  chain: { gap: 8, alignItems: 'flex-start', paddingBottom: 6 },
+  chain: { gap: 6, alignItems: 'flex-start', paddingBottom: 6, flexGrow: 1 },
   stack: { flexDirection: 'column', width: '100%' },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 36 },
   titleBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },
@@ -463,7 +471,7 @@ const s = StyleSheet.create({
   sourceSub: { ...font(400), fontSize: 11, color: C.muted, marginTop: 2 },
   open: { ...font(600), fontSize: 12, color: C.accent },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  small: { width: 30, height: 28, borderRadius: 5, borderWidth: 1, borderColor: '#3a3a42', backgroundColor: '#1c1c21', alignItems: 'center', justifyContent: 'center' },
+  small: { width: 26, height: 22, borderRadius: 3, borderWidth: 1, borderColor: '#3a3a42', backgroundColor: '#1c1c21', alignItems: 'center', justifyContent: 'center' },
   smallText: { fontSize: 11, color: C.text },
   disabled: { opacity: 0.35 },
   choice: { width: '100%', marginVertical: 6 },

@@ -72,6 +72,19 @@ export const exportableTracks = (project: Project): Track[] => project.tracks.fi
 
 const dbText = (volume: number) => (volume <= 0.0005 ? '-inf dB' : `${(20 * Math.log10(volume)).toFixed(1)} dB`);
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+/** Ableton's naming: 60 = C3. */
+export const noteName = (pitch: number): string => `${NOTE_NAMES[((Math.round(pitch) % 12) + 12) % 12]}${Math.floor(Math.round(pitch) / 12) - 2}`;
+
+/** The file name a sampler's sample gets in the export: a safe name with its own extension. */
+export function samplerFileName(sample: Pick<Sample, 'name'>): string {
+  const ext = /\.([a-z0-9]{2,5})$/i.exec(sample.name)?.[1]?.toLowerCase() ?? 'wav';
+  return `${fileSafe(sample.name.replace(/\.[a-z0-9]{2,5}$/i, ''), 'Sample')}.${ext}`;
+}
+
+/** The sample a MIDI track's sampler plays, or undefined (other instruments, or the sample is gone). */
+export const samplerSample = <T extends Pick<Sample, 'id'>>(track: Track, samples: T[]): T | undefined => (track.synth?.wave === 'sample' ? samples.find((x) => x.id === track.synth?.sampleId) : undefined);
+
 /** The instrument of a MIDI track in a few words, for the info file. */
 export function instrumentText(track: Track, samples: Pick<Sample, 'id' | 'name'>[]): string {
   const s = track.synth;
@@ -79,12 +92,17 @@ export function instrumentText(track: Track, samples: Pick<Sample, 'id' | 'name'
   if (s.wave === 'kit909') return '909-Drum-Maschine (Noten wie im Drum Rack: Kick C1 = 36, Snare D1, Clap D#1, Hats F#1/A#1)';
   if (s.wave === 'kick') return 'synthetischer Kick';
   if (s.wave === 'noise') return 'Rauschen durch einen Hochpass (Hats, Snares, Riser)';
-  if (s.wave === 'sample') return `Sampler mit „${samples.find((x) => x.id === s.sampleId)?.name ?? 'einem Sample'}“`;
+  if (s.wave === 'sample') {
+    const sample = samples.find((x) => x.id === s.sampleId);
+    if (!sample) return 'Sampler (das Sample ist nicht mehr in der Library)';
+    const extra = [`Grundton ${noteName(s.sampleRoot ?? 60)}`, s.tune ? `${s.tune > 0 ? '+' : ''}${s.tune} Cent` : '', s.gainDb ? `${s.gainDb > 0 ? '+' : ''}${s.gainDb} dB` : '', s.oneShot ? 'One-Shot' : ''].filter(Boolean).join(', ');
+    return `Sampler mit „${sample.name}“ (Datei: Samples/Sampler/${samplerFileName(sample)}; ${extra}). Zieh die Datei auf die MIDI-Spur, Live macht einen Simpler daraus: sein Grundton ist ebenfalls C3, bei One-Shot den Modus „One-Shot“ wählen.`;
+  }
   const parts = [`Oszillator ${s.wave}`];
   if (s.tableA) parts.push(`Wavetable ${s.tableA}`);
   if (s.unison && s.unison > 1) parts.push(`Unison ${s.unison}`);
   parts.push(`Filter ${Math.round(s.cutoff)} Hz`);
-  return parts.join(', ');
+  return `${parts.join(', ')} (in der Set-Spur „… (Audio)“ als Audio mitgeliefert)`;
 }
 
 /** What the track's own effects and sends were, and what to put into Live for them. */
@@ -102,7 +120,7 @@ export function trackEffectHints(track: Track): string[] {
 }
 
 /** Everything that does not travel in the files, as plain German text. */
-export function projectInfoText(project: Project, samples: Pick<Sample, 'id' | 'name'>[], files: { track: Track; file: string }[]): string {
+export function projectInfoText(project: Project, samples: Pick<Sample, 'id' | 'name'>[], files: { track: Track; file: string }[], problems: string[] = []): string {
   const lines: string[] = [];
   lines.push(`${project.name}`, '', `Tempo: ${project.bpm} BPM, 4/4`, `Tonart: ${project.key}${project.scale ? `, Skala ${project.scale}` : ''}`, '');
   if (project.markers?.length) {
@@ -119,6 +137,10 @@ export function projectInfoText(project: Project, samples: Pick<Sample, 'id' | '
     if (midi && (track.seq?.on || track.arp?.on)) lines.push(`  ${track.seq?.on ? 'Sequencer' : 'Arpeggiator'} ist schon in die Noten eingerechnet: in Live keinen eigenen Arpeggiator davorsetzen.`);
     for (const hint of trackEffectHints(track)) lines.push(`  - ${hint}`);
   }
+  if (problems.length) {
+    lines.push('', 'NICHT EXPORTIERT / PROBLEME:');
+    for (const p of problems) lines.push(`  - ${p}`);
+  }
   const master = project.master?.devices ?? [];
   if (master.length) {
     lines.push('', 'Master-Effekte:');
@@ -134,10 +156,11 @@ So geht es:
 1. ZIP entpacken. Im Ordner „${folder}“ liegt „${project.name.replace(/[^\w\s+.-]/g, ' ').replace(/\s+/g, ' ').trim() || 'loopvx'}.als“: mit Doppelklick in Live 12 öffnen. Den Ordner nicht umbenennen oder verschieben, die Audiodateien liegen in „Samples/Imported“.
 2. Im Set sind schon da: Tempo ${project.bpm} BPM, alle Spuren mit Name, Lautstärke und Pan, die Clips an ihrer Stelle (${Math.ceil(bars)} Takte), die MIDI-Noten, die Marker und die zwei Sends (A Reverb, B Delay) mit dem Hall- und Delay-Anteil aus LOOPVX.
    - Audiospuren: ohne die LOOPVX-Effekte, deine Ableton-Plugins setzt du selbst davor.
-   - MIDI-Spuren: mit Noten (Sequencer und Arpeggiator sind schon eingerechnet), aber noch ohne Klang: zieh einen Synth deiner Wahl davor (Wavetable, Operator, Serum 2 …).
+   - MIDI-Spuren: mit Noten (Sequencer und Arpeggiator sind schon eingerechnet), aber ohne Instrument. Damit du es trotzdem hörst, steht direkt dahinter eine Audiospur „… (Audio)“ mit dem LOOPVX-Klang dieser Spur (Synth, Sampler, Drums, ohne Effekte). Willst du stattdessen ein Ableton-Instrument (Wavetable, Operator, Serum 2 …): Instrument auf die MIDI-Spur ziehen und die Audiospur „(Audio)“ stummschalten.
+   - Sampler: das Sample liegt in „Samples/Sampler“. Ziehe es auf die MIDI-Spur, dann macht Live einen Simpler daraus (Grundton und Einstellungen stehen in „Projekt-Info.txt“).
 3. „Referenz Mixdown.wav“ ist der fertige Mix aus LOOPVX mit allen Effekten, zum Vergleichen (nicht im Set).
 4. „Projekt-Info.txt“ listet pro Spur Instrument und Effekte aus LOOPVX mit dem passenden Live-Gerät. Automation wird nicht übertragen.
 
-Falls Live das Set nicht öffnet oder Dateien als fehlend meldet: im Ordner „Audio“ und „MIDI“ liegen alle Spuren auch einzeln. Ziehe sie bei Takt 1 in ein neues Set auf ${project.bpm} BPM (die Audiodateien sind schon auf dieses Tempo gedehnt).
+Falls Live das Set nicht öffnet oder Dateien als fehlend meldet: die Audiodateien liegen in „Samples/Imported“ und die MIDI-Dateien in „MIDI“. Ziehe sie bei Takt 1 in ein neues Set auf ${project.bpm} BPM (die Audiodateien sind schon auf dieses Tempo gedehnt).
 `;
 }

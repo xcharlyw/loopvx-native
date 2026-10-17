@@ -11,7 +11,8 @@ import { packProject, unpackProject, usedSampleIds, type PackedSample } from './
 import { detectTempo, snapTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
-import { clipNotes, exportableTracks, liveColor, midiTrackNotes, projectInfoText, readmeText, trackFileName, wavInfo } from './abletonExport';
+import { clipNotes, exportableTracks, liveColor, midiTrackNotes, projectInfoText, readmeText, samplerFileName, samplerSample, trackFileName, wavInfo } from './abletonExport';
+import { ZipParts, joinParts } from './zipParts';
 import { buildLiveSet, type AlsTrack } from './als/liveSet';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
@@ -404,9 +405,12 @@ export async function exportStems() {
 
 /**
  * A Live project folder for Ableton Live 12 as one ZIP: the Live set (.als) with every track (volume, pan, sends), the clips
- * at their place, the MIDI notes (sequencer and arpeggiator applied), tempo and locators; the audio of every track as one dry
- * WAV without LOOPVX effects (Live's own plugins take over) in Samples/Imported; the same audio and the MIDI as single files; a
- * reference mixdown with the effects; and a text file with instrument and effects of each track and the closest Live device.
+ * at their place, the MIDI notes (sequencer and arpeggiator applied), tempo and locators; the audio of every audio track as one
+ * dry WAV without LOOPVX effects (Live's own plugins take over) in Samples/Imported; every MIDI track also as audio (what its
+ * LOOPVX instrument sounds like, dry) so the set sounds like the song before an instrument is chosen; the samples of the
+ * samplers in Samples/Sampler; a reference mixdown with the effects; and a text file with instrument and effects of each track
+ * and the closest Live device. A track that cannot be rendered is left out and named in the info file, it does not stop the rest.
+ * The ZIP is written in chunks without compression so a long project does not need its size twice in memory.
  */
 export async function exportForAbleton() {
   const { project, samples } = getState();
@@ -419,40 +423,69 @@ export async function exportForAbleton() {
   const region = { from: 0, to: bars };
   const folder = `${fileSafe(project.name, 'loopvx')} Project`;
   const setName = `${fileSafe(project.name, 'loopvx')}.als`;
+  const problems: string[] = [];
   try {
-    const files: Record<string, Uint8Array> = {};
+    const zip = new ZipParts();
     const listed: { track: (typeof tracks)[number]; file: string }[] = [];
     const alsTracks: AlsTrack[] = [];
     const now = Math.floor(Date.now() / 1000);
+    const samplerDone = new Set<string>();
+    /** A dry render of one track (no fader, effects, devices, automation or master chain; clip gain, fades, looping, instrument stay). */
+    const renderDry = (track: (typeof tracks)[number]) => {
+      const bare = { ...track, clips: track.clips.filter((c) => !c.muted), fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
+      return renderWav({ ...project, tracks: [bare], master: undefined }, region);
+    };
     for (const [i, track] of tracks.entries()) {
       toast(`Ableton-Export: Spur ${i + 1} von ${tracks.length} „${track.name}“ …`);
       const base = { name: track.name, color: liveColor(i), volume: track.volume, pan: track.fx?.pan ?? 0, sends: [track.fx?.reverb ?? 0, track.fx?.delay ?? 0] as [number, number] };
-      if (trackKind(track) === 'midi') {
-        const file = trackFileName(i, track.name, 'mid');
-        files[`${folder}/MIDI/${file}`] = writeMidiFile(midiTrackNotes(track), { bpm: project.bpm, lengthBars: Math.ceil(bars), name: track.name });
-        listed.push({ track, file });
-        alsTracks.push({ ...base, midi: { clips: track.clips.filter((c) => !c.muted && c.notes).map((c) => ({ start: c.start, length: c.length, notes: clipNotes(track, c) })) } });
-      } else {
-        const file = trackFileName(i, track.name, 'wav');
-        // bare copy: no fader, effects, devices, automation or master chain; clip gain, fades and looping stay
-        const live = track.clips.filter((c) => !c.muted);
-        const bare = { ...track, clips: live, fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
-        const wav = await renderWav({ ...project, tracks: [bare], master: undefined }, region);
-        files[`${folder}/Samples/Imported/${file}`] = wav;
-        files[`${folder}/Audio/${file}`] = wav;
-        listed.push({ track, file });
+      const addAudio = (file: string, wav: Uint8Array, name: string, clips: { start: number; length: number }[]) => {
+        zip.add(`${folder}/Samples/Imported/${file}`, wav);
         const { frames, sampleRate } = wavInfo(wav);
-        alsTracks.push({ ...base, audio: { relPath: `Samples/Imported/${file}`, bytes: wav.byteLength, frames, sampleRate, modDate: now, totalBars: bars, clips: live.map((c) => ({ start: c.start, length: c.length })) } });
+        alsTracks.push({ ...base, name, audio: { relPath: `Samples/Imported/${file}`, bytes: wav.byteLength, frames, sampleRate, modDate: now, totalBars: bars, clips } });
+      };
+      try {
+        if (trackKind(track) === 'midi') {
+          const file = trackFileName(i, track.name, 'mid');
+          zip.add(`${folder}/MIDI/${file}`, writeMidiFile(midiTrackNotes(track), { bpm: project.bpm, lengthBars: Math.ceil(bars), name: track.name }));
+          listed.push({ track, file });
+          alsTracks.push({ ...base, midi: { clips: track.clips.filter((c) => !c.muted && c.notes).map((c) => ({ start: c.start, length: c.length, notes: clipNotes(track, c) })) } });
+          // the sample of a sampler goes along, so it can be dropped on the MIDI track (Live makes a Simpler of it)
+          const sample = samplerSample(track, samples);
+          if (sample && !samplerDone.has(sample.id)) {
+            samplerDone.add(sample.id);
+            try {
+              zip.add(`${folder}/Samples/Sampler/${samplerFileName(sample)}`, new Uint8Array(await readSampleData(sample)));
+            } catch {
+              problems.push(`Sampler-Sample „${sample.name}“ (Spur „${track.name}“): Audio fehlt auf diesem Gerät. Datei → „Fehlende Samples laden“, dann noch einmal exportieren.`);
+            }
+          }
+          // what the LOOPVX instrument sounds like, dry: an audio track right behind the MIDI track
+          try {
+            addAudio(trackFileName(i, `${track.name} Audio`, 'wav'), await renderDry(track), `${track.name} (Audio)`, [{ start: 0, length: bars }]);
+          } catch (e) {
+            problems.push(`Spur „${track.name}“: Audio-Version nicht gerendert (${errorText(e)}).`);
+          }
+        } else {
+          const file = trackFileName(i, track.name, 'wav');
+          addAudio(file, await renderDry(track), track.name, track.clips.filter((c) => !c.muted).map((c) => ({ start: c.start, length: c.length })));
+          listed.push({ track, file });
+        }
+      } catch (e) {
+        problems.push(`Spur „${track.name}“ nicht exportiert (${errorText(e)}). Fehlt ein Sample, hilft Datei → „Fehlende Samples laden“.`);
       }
     }
+    if (!alsTracks.length) throw new Error(problems[0] ?? 'Es konnte keine Spur exportiert werden.');
     toast('Ableton-Export: Live-Set und Referenz-Mixdown …');
-    files[`${folder}/${setName}`] = buildLiveSet({ bpm: project.bpm, tracks: alsTracks, markers: (project.markers ?? []).map((m) => ({ bar: m.bar, name: m.name })) });
-    files[`${folder}/Referenz Mixdown.wav`] = await renderWav(project, region);
-    files[`${folder}/Projekt-Info.txt`] = strToU8(projectInfoText(project, samples, listed));
-    files[`${folder}/LIES MICH.txt`] = strToU8(readmeText(project, bars, folder));
-    // level 0: WAV barely compresses, and storing is instant.
-    await saveFile(zipSync(files, { level: 0 }), `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Ableton.zip`, 'application/zip', 'public.zip-archive');
-    toast('Ableton-Paket fertig: ZIP entpacken, die .als in Live 12 öffnen (siehe „LIES MICH.txt“).');
+    try {
+      zip.add(`${folder}/Referenz Mixdown.wav`, await renderWav(project, region));
+    } catch (e) {
+      problems.push(`Referenz-Mixdown nicht gerendert (${errorText(e)}).`);
+    }
+    zip.add(`${folder}/${setName}`, buildLiveSet({ bpm: project.bpm, tracks: alsTracks, markers: (project.markers ?? []).map((m) => ({ bar: m.bar, name: m.name })) }));
+    zip.add(`${folder}/Projekt-Info.txt`, strToU8(projectInfoText(project, samples, listed, problems)));
+    zip.add(`${folder}/LIES MICH.txt`, strToU8(readmeText(project, bars, folder)));
+    await saveParts(zip.finish(), `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Ableton.zip`, 'application/zip', 'public.zip-archive');
+    toast(problems.length ? `Ableton-Paket fertig, aber ${problems.length} Problem${problems.length > 1 ? 'e' : ''}: siehe „Projekt-Info.txt“.` : 'Ableton-Paket fertig: ZIP entpacken, die .als in Live 12 öffnen (siehe „LIES MICH.txt“).', problems.length ? 'error' : undefined);
   } catch (e) {
     toast(errorText(e), 'error');
   }
@@ -585,6 +618,20 @@ async function saveFile(data: Uint8Array, name: string, mimeType: string, uti: s
   file.create();
   file.write(data);
   await Sharing.shareAsync(file.uri, { mimeType, dialogTitle: name, UTI: uti });
+}
+
+/** Like `saveFile` for a file that comes in chunks: the browser builds its Blob from them without joining them first. */
+async function saveParts(parts: Uint8Array[], name: string, mimeType: string, uti: string) {
+  if (Platform.OS === 'web') {
+    const url = URL.createObjectURL(new Blob(parts as BlobPart[], { type: mimeType }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return;
+  }
+  await saveFile(joinParts(parts), name, mimeType, uti);
 }
 
 /** A sample dropped on a MIDI track's instrument: the sampler takes it (or replaces the instrument), one undo step, played once. */

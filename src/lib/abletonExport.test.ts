@@ -1,6 +1,6 @@
 import { DEFAULT_SEQ } from '../audio/notefx';
 import type { Clip, Project, Track } from '../types';
-import { clipNotes, exportableTracks, instrumentText, liveColor, midiTrackNotes, projectInfoText, readmeText, trackEffectHints, trackFileName, wavInfo } from './abletonExport';
+import { noteName, samplerFileName, samplerSample, clipNotes, exportableTracks, instrumentText, liveColor, midiTrackNotes, projectInfoText, readmeText, trackEffectHints, trackFileName, wavInfo } from './abletonExport';
 import { encodeWav } from '../audio/wav';
 
 const clip = (start: number, length: number, notes?: Clip['notes'], extra: Partial<Clip> = {}): Clip => ({ id: `c${start}`, sampleId: notes ? '' : 's1', start, length, offset: 0, notes, ...extra });
@@ -46,7 +46,8 @@ describe('ableton export', () => {
     expect(hints.join('\n')).toContain('Saturator');
     expect(hints.join('\n')).toContain('Compressor → Compressor');
     expect(hints.join('\n')).toMatch(/Kickstart.*\(aus\)/);
-    const info = projectInfoText(project([t]), [], [{ track: t, file: '01 Bass.wav' }]);
+    const info = projectInfoText(project([t]), [], [{ track: t, file: '01 Bass.wav' }], ['Spur „X“: Audio fehlt']);
+    expect(info).toContain('Spur „X“: Audio fehlt');
     expect(info).toContain('Tempo: 156 BPM');
     expect(info).toContain('Takt 17: Drop');
     expect(info).toContain('-6.0 dB');
@@ -56,6 +57,15 @@ describe('ableton export', () => {
   it('describes instruments and the how-to', () => {
     expect(instrumentText(track({ synth: { wave: 'kit909', cutoff: 1, resonance: 0 } as Track['synth'] }), [])).toContain('Drum Rack');
     expect(instrumentText(track({ synth: { wave: 'sawtooth', cutoff: 2400, resonance: 0 } as Track['synth'] }), [])).toContain('2400 Hz');
+    const smp = [{ id: 's9', name: 'Vocal Chop #3.mp3' }];
+    const sampler = track({ synth: { wave: 'sample', sampleId: 's9', sampleRoot: 62, tune: -20, oneShot: true, cutoff: 1, resonance: 0 } as Track['synth'] });
+    expect(instrumentText(sampler, smp)).toContain('Samples/Sampler/Vocal Chop 3.mp3');
+    expect(instrumentText(sampler, smp)).toContain('Grundton D3, -20 Cent, One-Shot');
+    expect(samplerSample(sampler, smp)?.id).toBe('s9');
+    expect(samplerSample(track({ synth: { wave: 'sawtooth', cutoff: 1, resonance: 0 } as Track['synth'] }), smp)).toBeUndefined();
+    expect(noteName(60)).toBe('C3');
+    expect(noteName(36)).toBe('C1');
+    expect(samplerFileName({ name: 'a/b:c' })).toBe('a b c.wav');
     expect(readmeText(project([]), 64.2, 'X Project')).toContain('65 Takte');
     expect(readmeText(project([]), 64, 'X Project')).toContain('156 BPM');
   });

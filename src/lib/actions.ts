@@ -1,6 +1,6 @@
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { zipSync } from 'fflate';
+import { strToU8, zipSync } from 'fflate';
 import { Platform } from 'react-native';
 import { engine } from '../audio/engine';
 import { projectEndBars, sampleLengthBars } from '../audio/timing';
@@ -11,6 +11,7 @@ import { packProject, unpackProject, usedSampleIds, type PackedSample } from './
 import { detectTempo, snapTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
+import { exportableTracks, midiTrackNotes, projectInfoText, readmeText, trackFileName } from './abletonExport';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
 import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, copyProject, trackForSample, uid, updateClip } from './project';
@@ -395,6 +396,49 @@ export async function exportStems() {
     // level 0: WAV barely compresses, and storing is instant.
     const zip = zipSync(files, { level: 0 });
     await saveFile(zip, `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Stems.zip`, 'application/zip', 'public.zip-archive');
+  } catch (e) {
+    toast(errorText(e), 'error');
+  }
+}
+
+/**
+ * A folder for Ableton Live as one ZIP: every audio track without LOOPVX effects (Live's own plugins take over), every MIDI
+ * track as a .mid with the sequencer and arpeggiator applied, all from bar 1 and equally long, a reference mixdown with the
+ * effects, and a text file with tempo, key, markers, faders and the Live device for each LOOPVX effect.
+ */
+export async function exportForAbleton() {
+  const { project, samples } = getState();
+  const tracks = exportableTracks(project);
+  if (!tracks.length) {
+    toast('Nichts zu exportieren – lege zuerst Clips ins Arrangement.');
+    return;
+  }
+  const bars = projectEndBars(project);
+  const region = { from: 0, to: bars };
+  try {
+    const files: Record<string, Uint8Array> = {};
+    const listed: { track: (typeof tracks)[number]; file: string }[] = [];
+    for (const [i, track] of tracks.entries()) {
+      toast(`Ableton-Export: Spur ${i + 1} von ${tracks.length} „${track.name}“ …`);
+      if (trackKind(track) === 'midi') {
+        const file = trackFileName(i, track.name, 'mid');
+        files[file] = writeMidiFile(midiTrackNotes(track), { bpm: project.bpm, lengthBars: Math.ceil(bars), name: track.name });
+        listed.push({ track, file });
+      } else {
+        const file = trackFileName(i, track.name, 'wav');
+        // bare copy: no fader, effects, devices, automation or master chain; clip gain, fades and looping stay
+        const bare = { ...track, clips: track.clips.filter((c) => !c.muted), fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
+        files[file] = await renderWav({ ...project, tracks: [bare], master: undefined }, region);
+        listed.push({ track, file });
+      }
+    }
+    toast('Ableton-Export: Referenz-Mixdown …');
+    files['00 Referenz Mixdown.wav'] = await renderWav(project, region);
+    files['Projekt-Info.txt'] = strToU8(projectInfoText(project, samples, listed));
+    files['LIES MICH.txt'] = strToU8(readmeText(project, bars));
+    // level 0: WAV barely compresses, and storing is instant.
+    await saveFile(zipSync(files, { level: 0 }), `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Ableton.zip`, 'application/zip', 'public.zip-archive');
+    toast('Ableton-Paket fertig: ZIP entpacken und die Dateien auf Takt 1 ziehen (siehe „LIES MICH.txt“).');
   } catch (e) {
     toast(errorText(e), 'error');
   }

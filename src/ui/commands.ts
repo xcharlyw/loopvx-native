@@ -14,8 +14,7 @@ import {
   setCursor,
   splitSelectedClip,
   toggleMuteSelectedClips,
-  togglePlay,
-} from '../lib/actions';
+  togglePlay, exportForAbleton } from '../lib/actions';
 import type { KeySpec } from '../lib/keymap';
 import { addMarker } from '../lib/markers';
 import { startStemSeparation } from '../lib/stems';
@@ -115,6 +114,7 @@ export const COMMANDS: Command[] = [
   { id: 'missing', label: 'Fehlende Samples laden', group: 'Datei', keys: [], run: () => void runLoadMissing() },
   { id: 'stems', label: 'Tune in Stems trennen …', group: 'Datei', keys: [], run: () => void startStemSeparation() },
   { id: 'export', label: 'Audio exportieren …', group: 'Datei', separator: true, keys: [{ letter: 'r', mod: true, shift: true }], run: () => setState({ panel: 'export' }) },
+  { id: 'abletonExport', label: 'Für Ableton exportieren', group: 'Datei', keys: [], enabled: () => getState().project.tracks.some((t) => t.clips.length > 0), run: () => void exportForAbleton() },
 
   // Bearbeiten
   { id: 'undo', label: 'Rückgängig', group: 'Bearbeiten', keys: [{ letter: 'z', mod: true }], run: undo },

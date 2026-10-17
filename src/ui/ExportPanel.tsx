@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { C } from '../constants/theme';
-import { canShareFiles, exportRegion, exportStems, exportWav, renderMixdown, shareMixdown } from '../lib/actions';
+import { canShareFiles, exportForAbleton, exportRegion, exportStems, exportWav, renderMixdown, shareMixdown } from '../lib/actions';
 import { useStore } from '../lib/store';
 import { Export } from './icons';
 import { Btn, Section, Txt } from './kit';
@@ -82,6 +82,17 @@ export function ExportPanel() {
         <View style={s.row}>
           <Btn disabled={busy || !tracks.length} onPress={() => void run(exportStems)}>
             Stems (ZIP)
+          </Btn>
+        </View>
+      </Section>
+
+      <Section title="Für Ableton Live">
+        <Txt style={[s.note, { marginTop: 0, marginBottom: 10 }]}>
+          Das ganze Arrangement (unabhängig vom Loop) als ZIP: Audiospuren ohne LOOPVX-Effekte, jede MIDI-Spur als .mid (Sequencer und Arpeggiator schon eingerechnet), alles ab Takt 1 gleich lang, dazu ein Referenz-Mixdown und „Projekt-Info.txt“ mit Tempo, Tonart, Markern, Lautstärken und dem passenden Live-Gerät für jeden Effekt. In Live setzt du deine eigenen Plugins davor.
+        </Txt>
+        <View style={s.row}>
+          <Btn disabled={busy || !project.tracks.some((t) => t.clips.length)} onPress={() => void run(exportForAbleton)}>
+            Für Ableton (ZIP)
           </Btn>
         </View>
       </Section>

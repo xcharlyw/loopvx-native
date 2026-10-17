@@ -88,7 +88,7 @@ export function ExportPanel() {
 
       <Section title="Für Ableton Live">
         <Txt style={[s.note, { marginTop: 0, marginBottom: 10 }]}>
-          Das ganze Arrangement (unabhängig vom Loop) als ZIP: Audiospuren ohne LOOPVX-Effekte, jede MIDI-Spur als .mid (Sequencer und Arpeggiator schon eingerechnet), alles ab Takt 1 gleich lang, dazu ein Referenz-Mixdown und „Projekt-Info.txt“ mit Tempo, Tonart, Markern, Lautstärken und dem passenden Live-Gerät für jeden Effekt. In Live setzt du deine eigenen Plugins davor.
+          Das ganze Arrangement (unabhängig vom Loop) als Live-12-Projektordner in einer ZIP: ein fertiges Live-Set (.als) mit Spuren, Clips, MIDI-Noten, Tempo, Markern, Lautstärken, Pan und Sends. Die Audiospuren kommen ohne LOOPVX-Effekte, damit du deine Ableton-Plugins davorsetzt; die MIDI-Spuren (Sequencer und Arpeggiator schon eingerechnet) haben noch keinen Synth. Dazu ein Referenz-Mixdown und „Projekt-Info.txt“ mit dem passenden Live-Gerät für jeden Effekt.
         </Txt>
         <View style={s.row}>
           <Btn disabled={busy || !project.tracks.some((t) => t.clips.length)} onPress={() => void run(exportForAbleton)}>

@@ -11,7 +11,8 @@ import { packProject, unpackProject, usedSampleIds, type PackedSample } from './
 import { detectTempo, snapTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
-import { exportableTracks, midiTrackNotes, projectInfoText, readmeText, trackFileName } from './abletonExport';
+import { clipNotes, exportableTracks, liveColor, midiTrackNotes, projectInfoText, readmeText, trackFileName, wavInfo } from './abletonExport';
+import { buildLiveSet, type AlsTrack } from './als/liveSet';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
 import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, copyProject, trackForSample, uid, updateClip } from './project';
@@ -402,9 +403,10 @@ export async function exportStems() {
 }
 
 /**
- * A folder for Ableton Live as one ZIP: every audio track without LOOPVX effects (Live's own plugins take over), every MIDI
- * track as a .mid with the sequencer and arpeggiator applied, all from bar 1 and equally long, a reference mixdown with the
- * effects, and a text file with tempo, key, markers, faders and the Live device for each LOOPVX effect.
+ * A Live project folder for Ableton Live 12 as one ZIP: the Live set (.als) with every track (volume, pan, sends), the clips
+ * at their place, the MIDI notes (sequencer and arpeggiator applied), tempo and locators; the audio of every track as one dry
+ * WAV without LOOPVX effects (Live's own plugins take over) in Samples/Imported; the same audio and the MIDI as single files; a
+ * reference mixdown with the effects; and a text file with instrument and effects of each track and the closest Live device.
  */
 export async function exportForAbleton() {
   const { project, samples } = getState();
@@ -415,30 +417,42 @@ export async function exportForAbleton() {
   }
   const bars = projectEndBars(project);
   const region = { from: 0, to: bars };
+  const folder = `${fileSafe(project.name, 'loopvx')} Project`;
+  const setName = `${fileSafe(project.name, 'loopvx')}.als`;
   try {
     const files: Record<string, Uint8Array> = {};
     const listed: { track: (typeof tracks)[number]; file: string }[] = [];
+    const alsTracks: AlsTrack[] = [];
+    const now = Math.floor(Date.now() / 1000);
     for (const [i, track] of tracks.entries()) {
       toast(`Ableton-Export: Spur ${i + 1} von ${tracks.length} „${track.name}“ …`);
+      const base = { name: track.name, color: liveColor(i), volume: track.volume, pan: track.fx?.pan ?? 0, sends: [track.fx?.reverb ?? 0, track.fx?.delay ?? 0] as [number, number] };
       if (trackKind(track) === 'midi') {
         const file = trackFileName(i, track.name, 'mid');
-        files[file] = writeMidiFile(midiTrackNotes(track), { bpm: project.bpm, lengthBars: Math.ceil(bars), name: track.name });
+        files[`${folder}/MIDI/${file}`] = writeMidiFile(midiTrackNotes(track), { bpm: project.bpm, lengthBars: Math.ceil(bars), name: track.name });
         listed.push({ track, file });
+        alsTracks.push({ ...base, midi: { clips: track.clips.filter((c) => !c.muted && c.notes).map((c) => ({ start: c.start, length: c.length, notes: clipNotes(track, c) })) } });
       } else {
         const file = trackFileName(i, track.name, 'wav');
         // bare copy: no fader, effects, devices, automation or master chain; clip gain, fades and looping stay
-        const bare = { ...track, clips: track.clips.filter((c) => !c.muted), fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
-        files[file] = await renderWav({ ...project, tracks: [bare], master: undefined }, region);
+        const live = track.clips.filter((c) => !c.muted);
+        const bare = { ...track, clips: live, fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
+        const wav = await renderWav({ ...project, tracks: [bare], master: undefined }, region);
+        files[`${folder}/Samples/Imported/${file}`] = wav;
+        files[`${folder}/Audio/${file}`] = wav;
         listed.push({ track, file });
+        const { frames, sampleRate } = wavInfo(wav);
+        alsTracks.push({ ...base, audio: { relPath: `Samples/Imported/${file}`, bytes: wav.byteLength, frames, sampleRate, modDate: now, totalBars: bars, clips: live.map((c) => ({ start: c.start, length: c.length })) } });
       }
     }
-    toast('Ableton-Export: Referenz-Mixdown …');
-    files['00 Referenz Mixdown.wav'] = await renderWav(project, region);
-    files['Projekt-Info.txt'] = strToU8(projectInfoText(project, samples, listed));
-    files['LIES MICH.txt'] = strToU8(readmeText(project, bars));
+    toast('Ableton-Export: Live-Set und Referenz-Mixdown …');
+    files[`${folder}/${setName}`] = buildLiveSet({ bpm: project.bpm, tracks: alsTracks, markers: (project.markers ?? []).map((m) => ({ bar: m.bar, name: m.name })) });
+    files[`${folder}/Referenz Mixdown.wav`] = await renderWav(project, region);
+    files[`${folder}/Projekt-Info.txt`] = strToU8(projectInfoText(project, samples, listed));
+    files[`${folder}/LIES MICH.txt`] = strToU8(readmeText(project, bars, folder));
     // level 0: WAV barely compresses, and storing is instant.
     await saveFile(zipSync(files, { level: 0 }), `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Ableton.zip`, 'application/zip', 'public.zip-archive');
-    toast('Ableton-Paket fertig: ZIP entpacken und die Dateien auf Takt 1 ziehen (siehe „LIES MICH.txt“).');
+    toast('Ableton-Paket fertig: ZIP entpacken, die .als in Live 12 öffnen (siehe „LIES MICH.txt“).');
   } catch (e) {
     toast(errorText(e), 'error');
   }

@@ -1,6 +1,7 @@
 import { DEFAULT_SEQ } from '../audio/notefx';
 import type { Clip, Project, Track } from '../types';
-import { exportableTracks, instrumentText, midiTrackNotes, projectInfoText, readmeText, trackEffectHints, trackFileName } from './abletonExport';
+import { clipNotes, exportableTracks, instrumentText, liveColor, midiTrackNotes, projectInfoText, readmeText, trackEffectHints, trackFileName, wavInfo } from './abletonExport';
+import { encodeWav } from '../audio/wav';
 
 const clip = (start: number, length: number, notes?: Clip['notes'], extra: Partial<Clip> = {}): Clip => ({ id: `c${start}`, sampleId: notes ? '' : 's1', start, length, offset: 0, notes, ...extra });
 const track = (over: Partial<Track> = {}): Track => ({ id: 't', name: 'Lead', category: 'synth', color: '#fff', volume: 1, muted: false, solo: false, clips: [], ...over }) as Track;
@@ -55,7 +56,15 @@ describe('ableton export', () => {
   it('describes instruments and the how-to', () => {
     expect(instrumentText(track({ synth: { wave: 'kit909', cutoff: 1, resonance: 0 } as Track['synth'] }), [])).toContain('Drum Rack');
     expect(instrumentText(track({ synth: { wave: 'sawtooth', cutoff: 2400, resonance: 0 } as Track['synth'] }), [])).toContain('2400 Hz');
-    expect(readmeText(project([]), 64.2)).toContain('65 Takte');
-    expect(readmeText(project([]), 64)).toContain('156 BPM');
+    expect(readmeText(project([]), 64.2, 'X Project')).toContain('65 Takte');
+    expect(readmeText(project([]), 64, 'X Project')).toContain('156 BPM');
+  });
+
+  it('cuts the notes of one clip and reads WAV headers', () => {
+    const t = track({ clips: [clip(0, 1, [{ pitch: 60, start: 0.5, length: 2, velocity: 1 }, { pitch: 62, start: 1.5, length: 1, velocity: 1 }])] });
+    expect(clipNotes(t, t.clips[0])).toEqual([{ pitch: 60, start: 0.5, length: 0.5, velocity: 1 }]);
+    const wav = new Uint8Array(encodeWav({ sampleRate: 44100, channels: [new Float32Array(1000), new Float32Array(1000)] }));
+    expect(wavInfo(wav)).toEqual({ frames: 1000, sampleRate: 44100 });
+    expect(new Set([0, 1, 2, 3, 4].map(liveColor)).size).toBe(5);
   });
 });

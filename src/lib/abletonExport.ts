@@ -1,6 +1,6 @@
 import { applyNoteFx } from '../audio/notefx';
 import { deviceDef } from '../audio/devices';
-import type { DeviceType, Note, Project, Sample, Track } from '../types';
+import type { Clip, DeviceType, Note, Project, Sample, Track } from '../types';
 import { trackKind } from './project';
 
 // Export for Ableton Live: the project's audio without LOOPVX effects (so Live's own plugins take over), the MIDI of every
@@ -44,6 +44,27 @@ export function midiTrackNotes(track: Track): Note[] {
     }
   }
   return notes.sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+}
+
+/** The notes of one MIDI clip as they sound (sequencer and arpeggiator applied), relative to the clip start, cut at its end. */
+export function clipNotes(track: Track, clip: Clip): Note[] {
+  if (!clip.notes) return [];
+  return applyNoteFx(clip.notes, { arp: track.arp, seq: track.seq }, clip.length)
+    .filter((n) => n.start < clip.length - 1e-9)
+    .map((n) => ({ ...n, length: Math.min(n.length, clip.length - n.start) }));
+}
+
+/** Live's colour indices that look different from each other, handed out in track order. */
+const LIVE_COLORS = [26, 13, 20, 8, 36, 48, 3, 56, 30, 17, 41, 25];
+export const liveColor = (index: number): number => LIVE_COLORS[index % LIVE_COLORS.length];
+
+/** What the WAV that `encodeWav` writes holds (16-bit PCM): frames and sample rate, read from its header. */
+export function wavInfo(wav: Uint8Array): { frames: number; sampleRate: number } {
+  const v = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  const channels = v.getUint16(22, true);
+  const sampleRate = v.getUint32(24, true);
+  const bytesPerFrame = channels * (v.getUint16(34, true) / 8);
+  return { frames: Math.floor((wav.byteLength - 44) / bytesPerFrame), sampleRate };
 }
 
 /** A track that has something to export: at least one clip that is not deactivated. */
@@ -106,17 +127,17 @@ export function projectInfoText(project: Project, samples: Pick<Sample, 'id' | '
   return lines.join('\n') + '\n';
 }
 
-export function readmeText(project: Project, bars: number): string {
-  return `${project.name} für Ableton Live
+export function readmeText(project: Project, bars: number, folder: string): string {
+  return `${project.name} für Ableton Live 12
 
 So geht es:
-1. Neues Live-Set öffnen und das Tempo auf ${project.bpm} BPM stellen (4/4).
-2. Alle Dateien aus diesem Ordner ins Arrangement ziehen und bei Takt 1 ablegen (alle sind ${Math.ceil(bars)} Takte lang und beginnen genau auf Takt 1).
-   - „.wav“: die Audiospuren, ohne die LOOPVX-Effekte. Lautstärke und Effekte stellst du in Live selbst ein.
-   - „.mid“: die MIDI-Spuren. Zieh sie auf eine MIDI-Spur und setz davor einen Synth deiner Wahl (Wavetable, Operator, Serum 2 …).
-3. „00 Referenz Mixdown.wav“ ist der fertige Mix aus LOOPVX mit allen Effekten: leg ihn auf eine eigene Spur zum Vergleichen und schalte ihn zum Mischen stumm.
-4. In „Projekt-Info.txt“ steht, was nicht in den Dateien steckt: Tonart, Marker, Lautstärken, Instrument und Effekte jeder Spur, mit dem passenden Live-Gerät.
+1. ZIP entpacken. Im Ordner „${folder}“ liegt „${project.name.replace(/[^\w\s+.-]/g, ' ').replace(/\s+/g, ' ').trim() || 'loopvx'}.als“: mit Doppelklick in Live 12 öffnen. Den Ordner nicht umbenennen oder verschieben, die Audiodateien liegen in „Samples/Imported“.
+2. Im Set sind schon da: Tempo ${project.bpm} BPM, alle Spuren mit Name, Lautstärke und Pan, die Clips an ihrer Stelle (${Math.ceil(bars)} Takte), die MIDI-Noten, die Marker und die zwei Sends (A Reverb, B Delay) mit dem Hall- und Delay-Anteil aus LOOPVX.
+   - Audiospuren: ohne die LOOPVX-Effekte, deine Ableton-Plugins setzt du selbst davor.
+   - MIDI-Spuren: mit Noten (Sequencer und Arpeggiator sind schon eingerechnet), aber noch ohne Klang: zieh einen Synth deiner Wahl davor (Wavetable, Operator, Serum 2 …).
+3. „Referenz Mixdown.wav“ ist der fertige Mix aus LOOPVX mit allen Effekten, zum Vergleichen (nicht im Set).
+4. „Projekt-Info.txt“ listet pro Spur Instrument und Effekte aus LOOPVX mit dem passenden Live-Gerät. Automation wird nicht übertragen.
 
-Die Audiodateien sind schon auf ${project.bpm} BPM gedehnt: in Live Warp ausschalten (oder auf „Re-Pitch“ lassen, es ändert nichts).
+Falls Live das Set nicht öffnet oder Dateien als fehlend meldet: im Ordner „Audio“ und „MIDI“ liegen alle Spuren auch einzeln. Ziehe sie bei Takt 1 in ein neues Set auf ${project.bpm} BPM (die Audiodateien sind schon auf dieses Tempo gedehnt).
 `;
 }

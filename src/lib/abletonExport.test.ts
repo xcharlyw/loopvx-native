@@ -1,6 +1,6 @@
 import { DEFAULT_SEQ } from '../audio/notefx';
 import type { Clip, Project, Track } from '../types';
-import { noteName, samplerFileName, samplerSample, clipNotes, exportableTracks, instrumentText, liveColor, midiTrackNotes, projectInfoText, readmeText, trackEffectHints, trackFileName, wavInfo } from './abletonExport';
+import { hasEffects, wetProject, noteName, samplerFileName, samplerSample, clipNotes, exportableTracks, instrumentText, liveColor, midiTrackNotes, projectInfoText, readmeText, trackEffectHints, trackFileName, wavInfo } from './abletonExport';
 import { encodeWav } from '../audio/wav';
 
 const clip = (start: number, length: number, notes?: Clip['notes'], extra: Partial<Clip> = {}): Clip => ({ id: `c${start}`, sampleId: notes ? '' : 's1', start, length, offset: 0, notes, ...extra });
@@ -52,6 +52,7 @@ describe('ableton export', () => {
     expect(info).toContain('Takt 17: Drop');
     expect(info).toContain('-6.0 dB');
     expect(info).toContain('Pan L 50 %');
+    expect(info).toContain('Wet-Version (mit den LOOPVX-Effekten, in Live stummgeschaltet): 01 Bass wet.wav');
   });
 
   it('describes instruments and the how-to', () => {
@@ -68,6 +69,21 @@ describe('ableton export', () => {
     expect(samplerFileName({ name: 'a/b:c' })).toBe('a b c.wav');
     expect(readmeText(project([]), 64.2, 'X Project')).toContain('65 Takte');
     expect(readmeText(project([]), 64, 'X Project')).toContain('156 BPM');
+  });
+
+  it('knows which tracks have effects and builds their wet render without fader and pan', () => {
+    expect(hasEffects(track())).toBe(false);
+    expect(hasEffects(track({ fx: { pan: 0.4 } }))).toBe(false);
+    expect(hasEffects(track({ fx: { reverb: 0.2 } }))).toBe(true);
+    expect(hasEffects(track({ devices: [{ id: 'd', type: 'eq', on: false, params: {} }] }))).toBe(false);
+    expect(hasEffects(track({ devices: [{ id: 'd', type: 'eq', on: true, params: {} }] }))).toBe(true);
+    const kick = track({ id: 'kick', name: 'Kick', volume: 0.7, clips: [clip(0, 4, [{ pitch: 36, start: 0, length: 1, velocity: 1 }])] });
+    const bass = track({ id: 'bass', volume: 0.5, fx: { pump: 0.8, pumpFrom: 'kick', pan: -0.3, reverb: 0.1 }, clips: [clip(0, 4, undefined, { muted: false }), clip(8, 2, undefined, { muted: true })] });
+    const w = wetProject(project([kick, bass]), bass);
+    expect(w.tracks.map((t) => [t.id, t.volume])).toEqual([['bass', 1], ['kick', 0]]);
+    expect(w.tracks[0].fx).toMatchObject({ pump: 0.8, pumpFrom: 'kick', reverb: 0.1, pan: 0 });
+    expect(w.tracks[0].clips).toHaveLength(1);
+    expect(wetProject(project([kick]), kick).tracks).toHaveLength(1);
   });
 
   it('cuts the notes of one clip and reads WAV headers', () => {

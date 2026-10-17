@@ -37,6 +37,8 @@ export interface AlsTrack {
   volume: number;
   /** -1 (left) … 1 (right). */
   pan: number;
+  /** Track switched off in Live (its activator): the clips stay, nothing sounds. */
+  muted?: boolean;
   /** Send levels to the two return tracks (reverb, delay), 0..1. */
   sends: [number, number];
   audio?: AlsAudio;
@@ -176,6 +178,7 @@ export function buildLiveSetXml(input: AlsInput): string {
         TRACKID: '@@TRACKID@@',
         NAME: esc(t.name),
         COLOR: String(t.color),
+        ON: t.muted ? 'false' : 'true',
         VOLUME: num(clamp(t.volume, 0, MAX_VOLUME)),
         PAN: num(clamp(t.pan, -1, 1)),
         SEND0: num(clamp(t.sends[0], MIN_SEND, 1)),

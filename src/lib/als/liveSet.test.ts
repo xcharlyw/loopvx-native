@@ -56,6 +56,14 @@ describe('live set', () => {
     expect(trackIds.every((id) => id < next && !ids.includes(id))).toBe(true);
   });
 
+  it('switches a track off in Live when it is muted', () => {
+    const on = (xml: string) => [...xml.matchAll(/<Mixer><LomId Value="0" \/><LomIdView Value="0" \/><IsExpanded Value="true" \/><BreakoutIsExpanded Value="false" \/><On><LomId Value="0" \/><Manual Value="(true|false)"/g)].map((m) => m[1]).slice(0, 2); // the two tracks; the returned tracks come after them
+    const a = input();
+    expect(on(buildLiveSetXml(a))).toEqual(['true', 'true']);
+    a.tracks[0].muted = true;
+    expect(on(buildLiveSetXml(a))).toEqual(['false', 'true']);
+  });
+
   it('is gzipped XML', () => {
     const bytes = buildLiveSet(input());
     expect(bytes[0]).toBe(0x1f);

@@ -11,7 +11,7 @@ import { packProject, unpackProject, usedSampleIds, type PackedSample } from './
 import { detectTempo, snapTempo, toMono, type TempoGuess } from '../audio/tempo';
 import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
-import { clipNotes, exportableTracks, liveColor, midiTrackNotes, projectInfoText, readmeText, samplerFileName, samplerSample, trackFileName, wavInfo } from './abletonExport';
+import { clipNotes, exportableTracks, hasEffects, liveColor, midiTrackNotes, projectInfoText, readmeText, samplerFileName, samplerSample, trackFileName, wavInfo, wetProject } from './abletonExport';
 import { ZipParts, joinParts } from './zipParts';
 import { startProgress } from './exportProgressRun';
 import { buildLiveSet, type AlsTrack } from './als/liveSet';
@@ -429,13 +429,16 @@ export async function exportForAbleton() {
   const setName = `${fileSafe(project.name, 'loopvx')}.als`;
   const problems: string[] = [];
   // the work in steps: one per track, the reference mixdown (about as much as half the tracks), writing the files
-  const bar = startProgress('Ableton-Export', tracks.length + Math.max(1, tracks.length * 0.6) + 0.5);
+  const wetCount = tracks.filter(hasEffects).length;
+  const bar = startProgress('Ableton-Export', tracks.length + wetCount + Math.max(1, tracks.length * 0.6) + 0.5);
   try {
     const zip = new ZipParts();
     const listed: { track: (typeof tracks)[number]; file: string }[] = [];
     const alsTracks: AlsTrack[] = [];
     const now = Math.floor(Date.now() / 1000);
     const samplerDone = new Set<string>();
+    /** The wet version sits in the set but is switched off, with no pan or sends of its own (the effects are in the audio). */
+    const WET_TRACK = { muted: true, pan: 0, sends: [0, 0] as [number, number] };
     /** A dry render of one track (no fader, effects, devices, automation or master chain; clip gain, fades, looping, instrument stay). */
     const renderDry = (track: (typeof tracks)[number]) => {
       const bare = { ...track, clips: track.clips.filter((c) => !c.muted), fx: undefined, devices: undefined, automation: undefined, volume: 1, muted: false, solo: false };
@@ -444,10 +447,10 @@ export async function exportForAbleton() {
     for (const [i, track] of tracks.entries()) {
       await bar.step(`Spur ${i + 1} von ${tracks.length}: ${track.name}`);
       const base = { name: track.name, color: liveColor(i), volume: track.volume, pan: track.fx?.pan ?? 0, sends: [track.fx?.reverb ?? 0, track.fx?.delay ?? 0] as [number, number] };
-      const addAudio = (file: string, wav: Uint8Array, name: string, clips: { start: number; length: number }[]) => {
+      const addAudio = (file: string, wav: Uint8Array, name: string, clips: { start: number; length: number }[], extra: Partial<AlsTrack> = {}) => {
         zip.add(`${folder}/Samples/Imported/${file}`, wav);
         const { frames, sampleRate } = wavInfo(wav);
-        alsTracks.push({ ...base, name, audio: { relPath: `Samples/Imported/${file}`, bytes: wav.byteLength, frames, sampleRate, modDate: now, totalBars: bars, clips } });
+        alsTracks.push({ ...base, ...extra, name, audio: { relPath: `Samples/Imported/${file}`, bytes: wav.byteLength, frames, sampleRate, modDate: now, totalBars: bars, clips } });
       };
       try {
         if (trackKind(track) === 'midi') {
@@ -471,10 +474,30 @@ export async function exportForAbleton() {
           } catch (e) {
             problems.push(`Spur „${track.name}“: Audio-Version nicht gerendert (${errorText(e)}).`);
           }
+          if (hasEffects(track)) {
+            await bar.step(`Spur ${i + 1} von ${tracks.length}: ${track.name} (wet)`);
+            try {
+              addAudio(trackFileName(i, `${track.name} Audio wet`, 'wav'), await renderWav(wetProject(project, track), region), `${track.name} (Audio wet)`, [{ start: 0, length: bars }], WET_TRACK);
+            } catch (e) {
+              problems.push(`Spur „${track.name}“: Wet-Version nicht gerendert (${errorText(e)}).`);
+            }
+            bar.advance(1);
+          }
         } else {
           const file = trackFileName(i, track.name, 'wav');
-          addAudio(file, await renderDry(track), track.name, track.clips.filter((c) => !c.muted).map((c) => ({ start: c.start, length: c.length })));
+          const pieces = track.clips.filter((c) => !c.muted).map((c) => ({ start: c.start, length: c.length }));
+          addAudio(file, await renderDry(track), track.name, pieces);
           listed.push({ track, file });
+          // with LOOPVX effects on the track: the wet version too, switched off in the set (the dry one is the one to put plugins on)
+          if (hasEffects(track)) {
+            await bar.step(`Spur ${i + 1} von ${tracks.length}: ${track.name} (wet)`);
+            try {
+              addAudio(trackFileName(i, `${track.name} wet`, 'wav'), await renderWav(wetProject(project, track), region), `${track.name} (wet)`, pieces, WET_TRACK);
+            } catch (e) {
+              problems.push(`Spur „${track.name}“: Wet-Version nicht gerendert (${errorText(e)}).`);
+            }
+            bar.advance(1);
+          }
         }
       } catch (e) {
         problems.push(`Spur „${track.name}“ nicht exportiert (${errorText(e)}). Fehlt ein Sample, hilft Datei → „Fehlende Samples laden“.`);

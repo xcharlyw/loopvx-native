@@ -67,6 +67,26 @@ export function wavInfo(wav: Uint8Array): { frames: number; sampleRate: number }
   return { frames: Math.floor((wav.byteLength - 44) / bytesPerFrame), sampleRate };
 }
 
+/**
+ * Whether a track has LOOPVX effects that deserve a "wet" version next to the dry one: a device that is on, the DJ filter, drive,
+ * a reverb or delay send, the pump or automation. A pan alone is not a plugin.
+ */
+export function hasEffects(track: Track): boolean {
+  const fx = track.fx;
+  return !!(fx?.filter || fx?.drive || fx?.reverb || fx?.delay || fx?.pump || (track.devices ?? []).some((d) => d.on && d.type !== 'splice') || track.automation?.length);
+}
+
+/**
+ * The project for the wet render of one track: its effects, sends, pump and automation stay, the fader and the pan do not (Live's
+ * mixer carries them). A sidechain source is kept silent (volume 0) so the pump still ducks on its hits, not on every beat.
+ */
+export function wetProject(project: Project, track: Track): Project {
+  const mine: Track = { ...track, clips: track.clips.filter((c) => !c.muted), volume: 1, muted: false, solo: false, fx: track.fx ? { ...track.fx, pan: 0 } : undefined };
+  const source = track.fx?.pumpFrom ? project.tracks.find((t) => t.id === track.fx?.pumpFrom && t.id !== track.id) : undefined;
+  const silent: Track[] = source ? [{ ...source, clips: source.clips.filter((c) => !c.muted), volume: 0, muted: false, solo: false, devices: undefined, automation: undefined, fx: undefined }] : [];
+  return { ...project, tracks: [mine, ...silent], master: undefined };
+}
+
 /** A track that has something to export: at least one clip that is not deactivated. */
 export const exportableTracks = (project: Project): Track[] => project.tracks.filter((t) => t.clips.some((c) => !c.muted));
 
@@ -134,6 +154,7 @@ export function projectInfoText(project: Project, samples: Pick<Sample, 'id' | '
     lines.push('', `${file}  (${midi ? 'MIDI' : 'Audio'})`);
     lines.push(`  Name in LOOPVX: ${track.name}`, `  Lautstärke: ${dbText(track.volume)}${track.fx?.pan ? `, Pan ${track.fx.pan < 0 ? 'L' : 'R'} ${Math.round(Math.abs(track.fx.pan) * 100)} %` : ''}`);
     if (midi) lines.push(`  Instrument: ${instrumentText(track, samples)}`);
+    if (hasEffects(track)) lines.push(`  Wet-Version (mit den LOOPVX-Effekten, in Live stummgeschaltet): ${file.replace(/\.(wav|mid)$/, midi ? ' Audio wet.wav' : ' wet.wav')}`);
     if (midi && (track.seq?.on || track.arp?.on)) lines.push(`  ${track.seq?.on ? 'Sequencer' : 'Arpeggiator'} ist schon in die Noten eingerechnet: in Live keinen eigenen Arpeggiator davorsetzen.`);
     for (const hint of trackEffectHints(track)) lines.push(`  - ${hint}`);
   }
@@ -155,7 +176,7 @@ export function readmeText(project: Project, bars: number, folder: string): stri
 So geht es:
 1. ZIP entpacken. Im Ordner „${folder}“ liegt „${project.name.replace(/[^\w\s+.-]/g, ' ').replace(/\s+/g, ' ').trim() || 'loopvx'}.als“: mit Doppelklick in Live 12 öffnen. Den Ordner nicht umbenennen oder verschieben, die Audiodateien liegen in „Samples/Imported“.
 2. Im Set sind schon da: Tempo ${project.bpm} BPM, alle Spuren mit Name, Lautstärke und Pan, die Clips an ihrer Stelle (${Math.ceil(bars)} Takte), die MIDI-Noten, die Marker und die zwei Sends (A Reverb, B Delay) mit dem Hall- und Delay-Anteil aus LOOPVX.
-   - Audiospuren: ohne die LOOPVX-Effekte, deine Ableton-Plugins setzt du selbst davor.
+   - Audiospuren: ohne die LOOPVX-Effekte („dry“), deine Ableton-Plugins setzt du selbst davor. Hatte eine Spur Effekte, steht dahinter zusätzlich eine stummgeschaltete Spur „… (wet)“ mit dem Klang inklusive Effekten, Hall- und Delay-Anteil (ohne Lautstärke und Pan): zum Vergleichen oder falls du den LOOPVX-Klang behalten willst.
    - MIDI-Spuren: mit Noten (Sequencer und Arpeggiator sind schon eingerechnet), aber ohne Instrument. Damit du es trotzdem hörst, steht direkt dahinter eine Audiospur „… (Audio)“ mit dem LOOPVX-Klang dieser Spur (Synth, Sampler, Drums, ohne Effekte). Willst du stattdessen ein Ableton-Instrument (Wavetable, Operator, Serum 2 …): Instrument auf die MIDI-Spur ziehen und die Audiospur „(Audio)“ stummschalten.
    - Sampler: das Sample liegt in „Samples/Sampler“. Ziehe es auf die MIDI-Spur, dann macht Live einen Simpler daraus (Grundton und Einstellungen stehen in „Projekt-Info.txt“).
 3. „Referenz Mixdown.wav“ ist der fertige Mix aus LOOPVX mit allen Effekten, zum Vergleichen (nicht im Set).

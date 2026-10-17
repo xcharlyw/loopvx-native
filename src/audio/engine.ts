@@ -20,7 +20,7 @@ import { sampleSource } from '../lib/samples';
 import { DECAY_FLOOR, padAt, planHit } from './drum909';
 import { createLimiter, MixGraph } from './mixgraph';
 import { preparePageAudio } from './pageAudio';
-import { adsrPoints, isBipolar, kickSweep, morphRange, noiseSamples, noteHold, pitchRate, planVoice, voicePeak, type OscPart } from './synth';
+import { adsrPoints, isBipolar, kickSweep, morphRange, noiseSamples, noteHold, pitchRate, planVoice, slicePlan, voicePeak, type OscPart } from './synth';
 import { tableSpectrum } from './wavetables';
 import { beatsInWindow, clipEnvelope, clipGainAt, dbToGain, loopEndSeconds, nextBoundary, planClip, planPreview, projectEndBars, sampleLengthBars, secondsPerBar, warpRate } from './timing';
 
@@ -402,14 +402,27 @@ function startSynthVoice(
   if (isOscWave(synth.wave)) return startOscVoice(ctx, synth, pitch, level, when, hold, bpm, dest);
   if (synth.wave === 'kit909') return startKitVoice(ctx, synth, pitch, level, when, dest);
   let osc: AudioBufferSourceNode | OscillatorNode;
+  let sliceStart = 0;
+  let sliceLength: number | undefined;
   if (synth.wave === 'sample') {
     const buffer = synth.sampleId ? buffers.get(synth.sampleId) : undefined;
     if (!buffer) return null;
     const src = ctx.createBufferSource({ pitchCorrection: false });
     src.buffer = buffer;
-    src.playbackRate.value = pitchRate(pitch, synth.sampleRoot, synth.tune);
-    // One-shot: the sample plays out (drums); otherwise the note length gates it like a synth.
-    if (synth.oneShot) hold = Math.max(hold, buffer.duration / src.playbackRate.value);
+    if (synth.slices) {
+      // A slicer: the note is a pad that plays one piece of the loop, to its end (one-shot), in the project tempo.
+      const plan = slicePlan(synth, pitch, buffer.duration, bpm);
+      if (!plan) return null;
+      src.playbackRate.value = plan.rate;
+      // The release ends exactly where the piece does, so the cut never clicks.
+      hold = Math.max(0.005, plan.length / plan.rate - synth.release);
+      sliceStart = plan.offset;
+      sliceLength = plan.length;
+    } else {
+      src.playbackRate.value = pitchRate(pitch, synth.sampleRoot, synth.tune);
+      // One-shot: the sample plays out (drums); otherwise the note length gates it like a synth.
+      if (synth.oneShot) hold = Math.max(hold, buffer.duration / src.playbackRate.value);
+    }
     osc = src;
   } else if (synth.wave === 'noise') {
     const src = ctx.createBufferSource({ pitchCorrection: false });
@@ -439,7 +452,8 @@ function startSynthVoice(
   osc.connect(filter);
   filter.connect(amp);
   amp.connect(dest);
-  osc.start(when);
+  if (sliceLength !== undefined) (osc as AudioBufferSourceNode).start(when, sliceStart, sliceLength);
+  else osc.start(when);
   osc.stop(when + points[points.length - 1].t + 0.01);
   return osc;
 }

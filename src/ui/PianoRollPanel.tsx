@@ -5,7 +5,7 @@ import { engine } from '../audio/engine';
 import { formatBarPosition } from '../audio/timing';
 import { applyPreset, presetById, SUGGESTED_PRESET } from '../audio/presets';
 import { padAt } from '../audio/drum909';
-import { isDrumWave } from '../audio/synth';
+import { SLICE_ROOT, isDrumWave } from '../audio/synth';
 import { C, mono } from '../constants/theme';
 import { exportMidiClip, togglePlay } from '../lib/actions';
 import { noteName } from '../lib/midi';
@@ -179,6 +179,7 @@ export function PianoRollPanel() {
   const moveDrag = useDrag('start', true, (dx, dy, phase, at) => drag('move', dx, dy, phase, at));
   const resizeDrag = useDrag('start', true, (dx, _dy, phase, at) => drag('resize', dx, 0, phase, at));
   const kit = found?.track.synth?.wave === 'kit909'; // the 909: grooves over its pads
+  const sliceCount = found?.track.synth?.slices?.length ?? 0; // a slicer: the keys from C1 up are its slices
   const sampler = !!found?.track.synth && isDrumWave(found.track.synth.wave); // drum styles, C3 centred
   const mode = kit ? 'kit' : sampler ? 'drum' : 'synth';
   const [picked, setStyle] = useState(kit ? lastKit : sampler ? lastDrum : lastStyle);
@@ -318,7 +319,7 @@ export function PianoRollPanel() {
             const black = BLACK.has(pitch % 12);
             return (
               <View key={row} style={[s.key, black && s.keyBlack]}>
-                {kit ? padAt(pitch) && <Txt style={s.keyText}>{padAt(pitch)!.short}</Txt> : pitch % 12 === 0 && <Txt style={s.keyText}>{noteName(pitch)}</Txt>}
+                {kit ? padAt(pitch) && <Txt style={s.keyText}>{padAt(pitch)!.short}</Txt> : sliceCount && pitch >= SLICE_ROOT && pitch < SLICE_ROOT + sliceCount ? <Txt style={s.keyText}>{`S${pitch - SLICE_ROOT + 1}`}</Txt> : pitch % 12 === 0 && <Txt style={s.keyText}>{noteName(pitch)}</Txt>}
               </View>
             );
           })}

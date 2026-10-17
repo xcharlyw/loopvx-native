@@ -1,5 +1,5 @@
 import { midiToHz } from '../lib/midi';
-import { adsrPoints, isDrumWave, kickSweep, morphRange, noiseSamples, noteHold, pitchRate, planVoice, SAMPLE_ROOT, voicePeak } from './synth';
+import { adsrPoints, isDrumWave, kickSweep, morphRange, noiseSamples, noteHold, pitchRate, planVoice, SAMPLE_ROOT, SLICE_ROOT, slicePlan, voicePeak } from './synth';
 
 describe('adsrPoints', () => {
   const env = { attack: 0.01, decay: 0.1, sustain: 0.5, release: 0.2 };
@@ -191,5 +191,27 @@ describe('wavetable voices and the mod matrix', () => {
     expect(morphRange(0.5, 0.25)).toEqual({ lo: 0.5, hi: 0.75 });
     expect(morphRange(0.5, -0.25)).toEqual({ lo: 0.25, hi: 0.5 });
     expect(morphRange(0.9, 0.5)).toEqual({ lo: 0.90625, hi: 1 }); // the grid is 1/64
+  });
+});
+
+describe('slicePlan (slicer instrument)', () => {
+  const synth = { slices: [0, 0.5, 1.2], sliceBpm: 140 };
+  it('puts slice 0 on C1 like the drum rack and plays up to the next slice', () => {
+    expect(SLICE_ROOT).toBe(36);
+    expect(slicePlan(synth, 36, 2, 140)).toEqual({ offset: 0, length: 0.5, rate: 1 });
+    expect(slicePlan(synth, 37, 2, 140)).toEqual({ offset: 0.5, length: 0.7, rate: 1 });
+  });
+  it('plays the last slice to the end of the sample', () => {
+    expect(slicePlan(synth, 38, 2, 140)).toEqual({ offset: 1.2, length: 0.8, rate: 1 });
+  });
+  it('warps to the project tempo (re-pitch) when the loop tempo is known', () => {
+    expect(slicePlan(synth, 36, 2, 154)?.rate).toBeCloseTo(1.1, 6);
+    expect(slicePlan({ slices: [0, 1] }, 36, 2, 154)?.rate).toBe(1);
+  });
+  it('is silent for notes without a slice or a slice outside the sample', () => {
+    expect(slicePlan(synth, 35, 2, 140)).toBeNull();
+    expect(slicePlan(synth, 39, 2, 140)).toBeNull();
+    expect(slicePlan(synth, 38, 1, 140)).toBeNull();
+    expect(slicePlan({}, 36, 2, 140)).toBeNull();
   });
 });

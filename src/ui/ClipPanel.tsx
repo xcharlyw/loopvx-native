@@ -4,7 +4,7 @@ import { engine } from '../audio/engine';
 import { sampleLengthBars } from '../audio/timing';
 import { BEATS_PER_BAR } from '../config';
 import { C, font, mono } from '../constants/theme';
-import { toggleMuteSelectedClips, consolidateSelectedClip, copySelectedClips, loopSelection, pasteClipsAtCursor, detectSampleTempo, exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
+import { openSlicePanel, toggleMuteSelectedClips, consolidateSelectedClip, copySelectedClips, loopSelection, pasteClipsAtCursor, detectSampleTempo, exportMidiClip, scaleSelectedClip, setSampleBpm, setSampleWarp } from '../lib/actions';
 import { findClip, updateClip } from '../lib/project';
 import { errorText, setState, toast, updateProject, useStore } from '../lib/store';
 import type { Clip } from '../types';
@@ -106,6 +106,9 @@ export function ClipPanel() {
         <View style={[s.row, { marginTop: 10 }]}>
           <Btn small disabled={detecting} onPress={() => void detect()}>
             {detecting ? 'Erkenne …' : 'Tempo erkennen'}
+          </Btn>
+          <Btn small accessibilityLabel="Sample in Slices zerlegen" onPress={() => openSlicePanel(sample.id)}>
+            ✂ Slicen …
           </Btn>
         </View>
         <Txt style={s.note}>

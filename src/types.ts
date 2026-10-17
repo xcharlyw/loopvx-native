@@ -57,6 +57,12 @@ export interface SynthSettings {
   sampleId?: string;
   /** wave 'sample': every note plays the whole sample, whatever its length (drums). */
   oneShot?: boolean;
+  /**
+   * wave 'sample' as a slicer: start times in seconds of the pieces a loop was cut into. Note 36 + i (the Drum Rack
+   * layout, kick C1) plays piece i to the next start (the last one to the end), warped from `sliceBpm` to the project tempo.
+   */
+  slices?: number[];
+  sliceBpm?: number;
   /** wave 'sample': the note on which the sample sounds unchanged (default C3 = 60), fine tune in cents. */
   sampleRoot?: number;
   tune?: number;

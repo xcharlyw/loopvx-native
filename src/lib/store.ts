@@ -11,7 +11,7 @@ import type { WinRect } from './windows';
 export type View = 'arrange' | 'session';
 /** Size of the open panel: full, half (docked below, the arrangement stays usable) or only its title bar. */
 export type SheetSize = 'full' | 'half' | 'bar';
-export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'notefx' | 'automation' | 'arranger' | 'markers' | 'shortcuts' | 'menu';
+export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'notefx' | 'automation' | 'arranger' | 'markers' | 'shortcuts' | 'menu' | 'slice';
 
 export interface Toast {
   id: number;
@@ -70,6 +70,8 @@ export interface AppState {
   zoom: number;
   /** Library sample armed for placing into the session grid. */
   armedSampleId: string | null;
+  /** The sample the Slice panel cuts up. */
+  sliceSampleId: string | null;
   toasts: Toast[];
   ready: boolean;
   canUndo: boolean;
@@ -108,6 +110,7 @@ let state: AppState = {
   cursor: 0,
   zoom: 56,
   armedSampleId: null,
+  sliceSampleId: null,
   toasts: [],
   ready: false,
   canUndo: false,

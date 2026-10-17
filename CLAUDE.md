@@ -547,6 +547,20 @@ Levels were balanced by offline renders (peaks 0.3-0.7). UI: the "909" tile in `
 Tune/Decay/Gain), preset `kit-909`, piano roll rows labelled with pad names, grooves `kit-techno`/`kit-rolling`/`kit-minimal` (`KIT_STYLES`, 2-bar phrases, fill in the
 last beat). **Never heard on a phone**; the sounds are synthesized approximations of a 909, not samples.
 
+## Slicing a loop (issue #9)
+
+Clip sheet "✂ Slicen …" (or Bearbeiten → "Clip slicen …", panel `slice`, `state.sliceSampleId`) → `SlicePanel`: the waveform with the cut lines, "Schneiden nach" Transienten (+ sensitivity) or a beat grid
+1/4, 1/8, 1/16 (needs the sample's tempo), a pad per slice (tap = audition through the real instrument), "Auf Pads legen" and "In MIDI umwandeln" (`sliceSampleToTrack`, one undo step, new track at the end).
+Pure `audio/slicing.ts` (tested on synthetic kicks, hats, a steady bass bed): `detectOnsets` (5 ms energy steps in dB, a rise of 14 dB at sensitivity 0 down to 4 dB at 1, strongest hit per `minGapMs`,
+refined to the sample where the sound really starts, `exactStart`; 0 is always a start; at most `MAX_SLICES` = 32), `gridOnsets`, `toSlices` (tile 0..duration, no slice under 20 ms), `sliceBars`
+(where a slice sits in the project, warped like a clip). **The instrument is a sampler with `synth.slices`** (start times in seconds) and `synth.sliceBpm` (the loop's tempo), no new wave, so
+`usedSampleIds`, backup, Drive sync and the Ableton export's sampler files treat it as the sample instrument it is: note 36 + i (C1 up, the Drum Rack layout, `SLICE_ROOT`) plays slice i to the
+next start, re-pitched to the project tempo like a clip (`slicePlan` in synth.ts, tested; `startSynthVoice` starts the source with offset and duration, `SLICER_PRESET` has a 4 ms release and the
+hold ends that much before the piece, so the cut never clicks); a note without a slice is silent. `slicerTrack` (`lib/sliceTrack.ts`, tested) builds the MIDI track "<name> Slices"; mode 'midi' adds
+one clip with a note per slice in the original order (positions from `sliceBars`, clip length in whole bars) at the playhead. Dropping another sample on the track (`withSamplerSample`) clears the slices.
+The piano roll labels the slicer's keys S1, S2 …. Measured offline in Chromium: a 2-bar loop of 8 kicks and 8 hats gives 16 slices and the MIDI version correlates 0.999 with the audio clip, at 150 and at
+160 BPM project tempo. Not done: slicing by hand (moving or adding cut lines), a Drum-Rack view with one device per pad, slicing a stem or a loop longer than 32 pieces into several tracks.
+
 ## Drag samples into the sampler
 
 `src/ui/dnd.tsx` (web only): a module store for one carried sample, `useSampleDragSource` (Library rows: mouse after 6 px; touch after a 350 ms hold, then

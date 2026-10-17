@@ -32,6 +32,7 @@ import { TopBar } from './TopBar';
 import { COMMANDS } from './commands';
 import { SampleDragGhost } from './dnd';
 import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
+import { SlicePanel } from './SlicePanel';
 import { useAppDims, useSmall } from './hooks';
 import { browserWidth, clampScale, fullHeight, placementFor } from './sheetLayout';
 import { useDrag, web } from './drag';
@@ -151,6 +152,7 @@ function Shell() {
               {panel === 'markers' && <MarkersPanel />}
               {panel === 'shortcuts' && <ShortcutsPanel />}
               {panel === 'menu' && <MenuPanel />}
+              {panel === 'slice' && <SlicePanel />}
             </View>
           </View>
         </View>

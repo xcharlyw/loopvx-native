@@ -17,6 +17,8 @@ import { startProgress } from './exportProgressRun';
 import { buildLiveSet, type AlsTrack } from './als/liveSet';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
+import { slicerTrack } from './sliceTrack';
+import type { Slice } from '../audio/slicing';
 import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, groupTracks, ungroup, copyProject, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
 import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
@@ -102,6 +104,28 @@ export function duplicateSelectedTrack() {
     return r.project;
   });
   if (copyId && copyId !== selectedTrackId) setState({ selectedTrackId: copyId, selectedClipId: null });
+}
+
+/** Open the Slice panel for a library sample (the selected clip's, from the clip sheet or the menu). */
+export function openSlicePanel(sampleId?: string) {
+  const state = getState();
+  const id = sampleId ?? (selectedClipIds().length ? state.project.tracks.flatMap((t) => t.clips).find((c) => c.id === state.selectedClipId)?.sampleId : undefined);
+  const sample = id ? state.samples.find((x) => x.id === id) : undefined;
+  if (!sample) return toast('Wähle zuerst einen Audio-Clip aus, den du slicen willst.');
+  setState({ sliceSampleId: sample.id, panel: 'slice' });
+}
+
+/**
+ * Cut-up loop on a new MIDI track: 'pads' = a slicer instrument (note 36 = C1 plays slice 1), 'midi' = the same plus the notes
+ * that play the loop back in order from the playhead. One undo step; the new track is selected.
+ */
+export function sliceSampleToTrack(sample: Sample, slices: Slice[], mode: 'pads' | 'midi') {
+  if (!slices.length) return toast('Keine Slices.');
+  const { project, cursor } = getState();
+  const track = slicerTrack(sample, slices, { mode, projectBpm: project.bpm, sceneCount: project.sceneCount, startBar: cursor });
+  updateProject((p) => ({ ...p, tracks: [...p.tracks, track] }));
+  setState({ selectedTrackId: track.id, selectedClipId: track.clips[0]?.id ?? null, panel: 'none' });
+  toast(mode === 'midi' ? `${slices.length} Slices als MIDI auf „${track.name}“, ab Takt ${Math.floor(cursor) + 1}.` : `${slices.length} Slices auf „${track.name}“: C1 spielt Slice 1, jede Taste darüber den nächsten.`);
 }
 
 /** Cmd/Ctrl+G: put the selected track into a new group track (Live's Group Tracks); on a group it adds nothing. */

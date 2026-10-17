@@ -152,6 +152,31 @@ export const SAMPLE_ROOT = 60;
 /** Playback rate that puts a sample instrument's sample on `pitch`: `root` is where it sounds unchanged, `tune` is in cents. */
 export const pitchRate = (pitch: number, root = SAMPLE_ROOT, tune = 0) => Math.pow(2, (pitch - root) / 12 + tune / 1200);
 
+/** First pad of a slicer instrument: slice 0 sits on C1 = 36 like the kick of the Drum Rack. */
+export const SLICE_ROOT = 36;
+
+/**
+ * What a slicer note plays: piece `pitch - 36` of the sample from `offset`, `length` seconds of the sample, at `rate`
+ * (re-pitch to the project tempo when the loop's tempo is known). Null when the note has no slice.
+ */
+export function slicePlan(
+  synth: Pick<SynthSettings, 'slices' | 'sliceBpm'>,
+  pitch: number,
+  bufferDuration: number,
+  projectBpm: number,
+): { offset: number; length: number; rate: number } | null {
+  const slices = synth.slices;
+  const i = pitch - SLICE_ROOT;
+  if (!slices || i < 0 || i >= slices.length) return null;
+  const offset = slices[i];
+  const end = slices[i + 1] ?? bufferDuration;
+  if (!(offset >= 0) || offset >= bufferDuration || end <= offset) return null;
+  return { offset, length: Math.min(end, bufferDuration) - offset, rate: synth.sliceBpm ? projectBpm / synth.sliceBpm : 1 };
+}
+
+/** The sound settings of a slicer: open filter, a fast envelope that fades out within the last 4 ms of each piece. */
+export const SLICER_PRESET: Partial<SynthSettings> = { wave: 'sample', cutoff: 16000, resonance: 0.7, attack: 0.001, decay: 1.5, sustain: 1, release: 0.004, oneShot: true };
+
 /** What switching an instrument to a sample sets: open filter, no envelope shaping, one-shot. */
 export const SAMPLER_PRESET: Partial<SynthSettings> = { wave: 'sample', cutoff: 16000, resonance: 0.7, attack: 0.001, decay: 1.5, sustain: 1, release: 0.05, oneShot: true };
 

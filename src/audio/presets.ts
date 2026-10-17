@@ -646,7 +646,8 @@ export function applyInstrument(track: Track, synth: SynthSettings, fx: SoundPre
  * the new sample; any other instrument is replaced by a fresh sampler playing it.
  */
 export function withSamplerSample(track: Track, sampleId: string): Track {
-  if (track.synth?.wave === 'sample') return { ...track, synth: { ...track.synth, sampleId } };
+  // A slicer's slices belong to its sample: a new sample makes it a plain sampler again.
+  if (track.synth?.wave === 'sample') return { ...track, synth: { ...track.synth, sampleId, slices: undefined, sliceBpm: undefined } };
   return applyInstrument(track, { ...DEFAULT_SYNTH, ...SAMPLER_PRESET, sampleId } as SynthSettings);
 }
 

@@ -7,6 +7,7 @@ import { mapTrack } from '../../lib/project';
 import { setState, updateProject } from '../../lib/store';
 import type { SynthSettings, Track, TrackFx } from '../../types';
 import { Chip, Txt } from '../kit';
+import { PluginFrame, SKIN } from '../skin';
 import { Keys } from './Keys';
 import { Knob as BaseKnob, KnobRow } from './Knob';
 import { Panel } from './SynthPage';
@@ -21,38 +22,64 @@ export { KnobRow, Panel };
 const PCT = (v: number) => `${Math.round(v * 100)} %`;
 export const DB = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')} dB`;
 
-/** The plugin's top bar: the LOOPVX mark with the instrument's name, the preset switcher in the middle (tap the name for the browser), a level knob. */
-export function Header({ track, synth, name, sub, onStep, browsable, onLevel, onTitle }: { track: Track; synth: SynthSettings; name: string; sub: string; onStep?: (dir: 1 | -1) => void; browsable?: ReactNode; onLevel: (db: number) => void; onTitle?: () => void }) {
+/**
+ * The plugin's top bar: the LOOPVX mark with the instrument's name, the preset display in the middle (‹ › step, the name opens the
+ * browser), a play button to hear the sound, and the level knob.
+ */
+export function Header({ track, synth, name, sub, onStep, browsable, onLevel, onTitle, onPlay }: { track: Track; synth: SynthSettings; name: string; sub: string; onStep?: (dir: 1 | -1) => void; browsable?: ReactNode; onLevel: (db: number) => void; onTitle?: () => void; onPlay?: () => void }) {
+  // Narrow (a phone): the mark, play and level on one line, the preset display under them at full width.
+  const [width, setWidth] = useState(600);
+  const narrow = width < 520;
+  const lcdBox = (
+    <View style={[h.lcd, narrow && h.lcdNarrow]}>
+      {onStep && (
+        <Pressable accessibilityLabel="Vorheriges Preset" hitSlop={8} onPress={() => onStep(-1)} style={h.step}>
+          <Txt style={h.stepText}>◀</Txt>
+        </Pressable>
+      )}
+      <Pressable accessibilityLabel="Preset-Browser" disabled={!onTitle} onPress={onTitle} style={h.name}>
+        <Txt numberOfLines={1} style={h.nameText}>
+          {name}
+        </Txt>
+        <Txt numberOfLines={1} style={h.nameSub}>{`${sub} · ${track.name}`.toUpperCase()}</Txt>
+      </Pressable>
+      {onTitle && (
+        <Pressable accessibilityLabel="Presets durchsuchen" hitSlop={6} onPress={onTitle} style={h.step}>
+          <Txt style={h.stepText}>☰</Txt>
+        </Pressable>
+      )}
+      {onStep && (
+        <Pressable accessibilityLabel="Nächstes Preset" hitSlop={8} onPress={() => onStep(1)} style={h.step}>
+          <Txt style={h.stepText}>▶</Txt>
+        </Pressable>
+      )}
+    </View>
+  );
   return (
     <View style={h.wrap}>
-      <View style={h.top}>
-        <View style={h.brand}>
-          <Svg width={30} height={30} viewBox="0 0 36 36">
-            <Path d="M6,18 C10,6 14,6 18,18 S26,30 30,18" fill="none" stroke={C.accent} strokeWidth={2.6} strokeLinecap="round" />
-          </Svg>
-          <View>
-            <Txt style={h.logo}>LOOPVX</Txt>
-            <Txt style={h.kind}>{INSTRUMENT_KINDS.find((k) => k.kind === instrumentKind(synth.wave))?.title.toUpperCase()}</Txt>
+      <PluginFrame style={h.frame} radius={10}>
+        <View style={[h.top, narrow && h.topNarrow]} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+          <View style={[h.brand, narrow && { flex: 1 }]}>
+            <Svg width={28} height={28} viewBox="0 0 36 36">
+              <Path d="M6,18 C10,6 14,6 18,18 S26,30 30,18" fill="none" stroke={C.accent} strokeWidth={2.8} strokeLinecap="round" />
+            </Svg>
+            <View>
+              <Txt style={h.logo}>LOOPVX</Txt>
+              <Txt style={h.kind}>{INSTRUMENT_KINDS.find((k) => k.kind === instrumentKind(synth.wave))?.title.toUpperCase()}</Txt>
+            </View>
           </View>
-        </View>
-        <View style={h.bar}>
-          {onStep && (
-            <Pressable accessibilityLabel="Vorheriges Preset" hitSlop={8} onPress={() => onStep(-1)} style={h.step}>
-              <Txt style={h.stepText}>‹</Txt>
+          {!narrow && lcdBox}
+          {onPlay && (
+            <Pressable accessibilityLabel="Anhören" onPress={onPlay} style={h.play}>
+              <Svg width={12} height={12} viewBox="0 0 12 12">
+                <Path d="M2,1 L11,6 L2,11 Z" fill={C.accentInk} />
+              </Svg>
             </Pressable>
           )}
-          <Pressable accessibilityLabel="Preset-Browser" disabled={!onTitle} onPress={onTitle} style={h.name}>
-            <Txt numberOfLines={1} style={h.nameText}>{name}</Txt>
-            <Txt numberOfLines={1} style={h.nameSub}>{`${track.name} · ${sub}`.toUpperCase()}</Txt>
-          </Pressable>
-          {onStep && (
-            <Pressable accessibilityLabel="Nächstes Preset" hitSlop={8} onPress={() => onStep(1)} style={h.step}>
-              <Txt style={h.stepText}>›</Txt>
-            </Pressable>
-          )}
+          <Knob label="Level" size={42} width={54} value={synth.gainDb ?? 0} min={-24} max={6} step={0.5} reset={0} format={DB} onChange={onLevel} />
+          {narrow && lcdBox}
         </View>
-        <Knob label="Level" size={44} width={56} value={synth.gainDb ?? 0} min={-24} max={6} step={0.5} reset={0} format={DB} onChange={onLevel} />
-      </View>
+      </PluginFrame>
       {browsable}
     </View>
   );
@@ -126,17 +153,21 @@ export function ChangeInstrument() {
 }
 
 const h = StyleSheet.create({
-  wrap: { marginBottom: 10, gap: 10 },
-  top: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  wrap: { gap: 8 },
+  frame: { paddingHorizontal: 12, paddingVertical: 8 },
+  top: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  topNarrow: { rowGap: 8 },
+  lcdNarrow: { flexBasis: '100%', flexGrow: 1 },
+  lcd: { flex: 1, minWidth: 190, flexDirection: 'row', alignItems: 'center', height: 46, backgroundColor: SKIN.lcd, borderWidth: 1, borderColor: SKIN.lcdEdge, borderRadius: 6 },
+  play: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', paddingLeft: 2 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logo: { ...cond(700), fontSize: 18, letterSpacing: 2.4, color: C.text, lineHeight: 20 },
   kind: { ...cond(600), fontSize: 10, letterSpacing: 4, color: C.muted, lineHeight: 12 },
-  bar: { flex: 1, minWidth: 180, flexDirection: 'row', alignItems: 'center', backgroundColor: '#121215', borderWidth: 1, borderColor: '#24242b', borderRadius: 12 },
-  step: { paddingHorizontal: 14, paddingVertical: 10 },
-  stepText: { color: C.muted, fontSize: 22, lineHeight: 24 },
-  name: { flex: 1, alignItems: 'center', paddingVertical: 7 },
-  nameText: { ...cond(700), fontSize: 17, letterSpacing: 1.6, color: C.text, textTransform: 'uppercase' },
-  nameSub: { ...cond(600), fontSize: 10, letterSpacing: 2.4, color: C.muted },
+  step: { paddingHorizontal: 11, height: 44, justifyContent: 'center' },
+  stepText: { color: '#6f8a3a', fontSize: 11 },
+  name: { flex: 1, alignItems: 'center', justifyContent: 'center', minWidth: 0 },
+  nameText: { ...mono(500), fontSize: 15, letterSpacing: 1, color: SKIN.lcdText, textTransform: 'uppercase', textShadowColor: 'rgba(198,255,61,0.55)', textShadowRadius: 8 },
+  nameSub: { ...mono(), fontSize: 9, letterSpacing: 1.2, color: '#6f8a3a', marginTop: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   list: { marginTop: 10, borderWidth: 1, borderColor: '#24242b', borderRadius: 10, overflow: 'hidden' },
   row: { paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#24242b' },

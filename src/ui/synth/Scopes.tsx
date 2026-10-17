@@ -10,13 +10,20 @@ import type { OscWave } from '../../types';
 // current settings (the maths lives in audio/scopes.ts and is tested against the real filter).
 
 export const GRID = '#17171b';
-const BG = '#0c0c0f';
+const BG = '#09090b';
 
-/** Frame and background shared by all scopes. */
+/** Frame and background shared by all scopes: a recessed display with a faint grid, like a plugin's screen. */
 export function Frame({ width, height, children, id }: { width: number; height: number; children: React.ReactNode; id: string }) {
+  const cols = Math.max(2, Math.round(width / 40));
   return (
-    <View style={{ width, height, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#1f1f26', backgroundColor: BG }}>
+    <View style={{ width, height, borderRadius: 6, overflow: 'hidden', borderWidth: 1, borderColor: '#25252d', backgroundColor: BG }}>
       <Svg width={width} height={height}>
+        {Array.from({ length: cols - 1 }, (_, i) => (
+          <Line key={`gx${i}`} x1={((i + 1) / cols) * width} y1={0} x2={((i + 1) / cols) * width} y2={height} stroke="#121216" strokeWidth={1} />
+        ))}
+        {[0.25, 0.5, 0.75].map((f) => (
+          <Line key={`gy${f}`} x1={0} y1={f * height} x2={width} y2={f * height} stroke="#121216" strokeWidth={1} />
+        ))}
         <Defs>
           <LinearGradient id={`g-${id}`} x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor="#c6ff3d" stopOpacity="0.16" />
@@ -114,11 +121,11 @@ export function FilterEnvMini({ cutoff, octaves, decay, width, height = 44, colo
   );
 }
 
-/** The LFO: two cycles of its sine, as tall as its depth. */
-export function LfoScope({ rate, depth, width, height = 64, color = C.accent }: { rate: number; depth: number; width: number; height?: number; color?: string }) {
+/** The LFO over whole bars in its shape (default sine), as tall as its depth. */
+export function LfoScope({ rate, depth, width, height = 64, color = C.accent, wave }: { rate: number; depth: number; width: number; height?: number; color?: string; wave?: OscWave }) {
   const { bars, cycles } = lfoWindow(rate);
   const n = 320;
-  const shape = lfoShape(n, cycles);
+  const shape = wave && wave !== 'sine' ? Array.from({ length: n }, (_, i) => waveShape(wave, 1, ((i / (n - 1)) * cycles) % 1)[0]) : lfoShape(n, cycles);
   const amp = (height / 2 - 8) * Math.max(0.05, depth);
   const path = line(shape.map((v, i) => [(i / (n - 1)) * width, height / 2 - v * amp] as [number, number]));
   return (

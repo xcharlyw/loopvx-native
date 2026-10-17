@@ -329,6 +329,17 @@ Chrome's zoom already keeps percentage boxes at the parent's size (that made the
 
 ## Sound panels: synth, sampler and drums are separate (Serum-style skin)
 
+**Synth redesign (Karl: "improve the plugin design, especially the synth")**: `SynthPage` is laid out by `synthLayout(width)` (`lib/synthView.ts`, tested): **rack** (≥ 900 px, one
+plugin screen: OSC A | OSC B | SUB | FILTER, then MODULATION | MATRIX, then FX RACK | KEYBOARD in `SynthPanel`; the Sound window opens 1100 × 740, `DEFAULT_SIZE` in windows.ts, fitted to
+the screen), **columns** (620–900) or **tabs** on a phone (OSC / FILTER / MOD). `Panel` is a `PluginFrame` with a header band (LED, title, a control: the oscillator's ◀ wave ▶ LCD, the
+filter's LP/HP/BP/24 segment switch, the mod source tabs); the MIDI-effects, sampler and drum panels use it too. MODULATION has tabs ENV 1 (the amp ADSR) / ENV 2 / LFO 1 / LFO 2 (dot =
+routed), LFO rates are stepped knobs (`rateIndex`/`rateAt`, LFO 1 has "Aus"), LFO shapes are wave buttons and drawn in `LfoScope`, "+ Ziel" routes the source; the MATRIX rows have a
+bipolar amount slider (`BiSlider`, double tap = 0). New knobs: OSC B "Fein" (`oscB.detune`), Filter "Env Zeit" (`filterDecay`). Plugin knobs (`Knob skin="synth"`) have a tick ring,
+a shaded cap, a glow on the value arc and a **white modulation ring** (`mod` prop, `modArc` in knobMath.ts; the sweep per knob is `modRings`: cutoff ±4 octaves, reso ±12 dB, wavetable
+positions). The header (`skin.tsx` `Header`) is a green LCD preset display (◀ name ☰ ▶), a round play button (`onPlay`) and the level knob; on a narrow panel the LCD goes under the
+mark. Scope frames are recessed displays with a faint grid. Checked in Chromium at 1440, 1100 and iPhone 13 widths; not touched on a phone.
+
+
 `InstrumentPanel` (panel `instrument`, also the floating window) is only a dispatcher by `instrumentKind(track.synth.wave)`: **`SynthPanel`** (oscillator synth), **`SamplerPanel`** (the sampler, its own panel: sample list with peaks,
 Root / Tune, whole sample or note length, filter, amp envelope; a slicer shows its slice count) and **`DrumPanel`** (synth kick, noise, 909 pads). The synth page no longer carries "Instrument laden" tiles or SYNTH / FX tabs: **the instrument is chosen
 in the track sheet** (TrackPanel → Sound: chips Synth / Sampler / Kick / Noise / 909 = `withInstrumentKind` in presets.ts, tested; it replaces the instrument and resets the track's sound effects, pan stays), and every panel ends with "Instrument wechseln …" which opens

@@ -61,3 +61,15 @@ export function fillRange(t: number, min: number, max: number, curve: KnobCurve 
   const b = tToDeg(t);
   return { from: Math.min(a, b), to: Math.max(a, b) };
 }
+
+/**
+ * The modulation ring of a knob (Serum's ring around a modulated knob): from the knob's position over `span` of the dial (-1..1, signed),
+ * clipped at the ends of the dial. Null when there is no modulation worth drawing.
+ */
+export function modArc(t: number, span: number): { from: number; to: number } | null {
+  if (!Number.isFinite(span) || Math.abs(span) < 0.005) return null;
+  const a = tToDeg(t);
+  const b = tToDeg(t + span);
+  if (Math.abs(b - a) < 1) return null;
+  return { from: Math.min(a, b), to: Math.max(a, b) };
+}

@@ -24,7 +24,8 @@ export const MIN_H = 180;
 const KEEP = 90;
 
 export const DEFAULT_SIZE: Record<WinId, { w: number; h: number }> = {
-  instrument: { w: 680, h: 620 },
+  // The synth is laid out as one plugin screen from 900 px on (see synthLayout); the window is fitted to the screen.
+  instrument: { w: 1100, h: 740 },
   devices: { w: 560, h: 560 },
   notefx: { w: 460, h: 600 },
 };

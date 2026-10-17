@@ -7,7 +7,8 @@ import { clipFades, cursorGrid, dbToGain, projectEndBars, snapBars } from '../au
 import { loadSampleIntoSampler, loopSelection, placeSample, setCursor } from '../lib/actions';
 import { applyGroupEdit, clipsInRange, groupEdit } from '../lib/clipgroup';
 import { addMarker } from '../lib/markers';
-import { createMidiTrack, createTrack, mapTrack, trackKind, type ClipEdit } from '../lib/project';
+import { insertionY, reorderTarget } from '../lib/trackReorder';
+import { createMidiTrack, createTrack, mapTrack, moveTrackTo, trackKind, type ClipEdit } from '../lib/project';
 import { getState, selectedClipIds, setClipSelection, setState, updateProject, useStore } from '../lib/store';
 import type { Clip, Note, Track } from '../types';
 import { AUTO_ORDER, deviceAutoParams, laneOf, paramDef } from '../lib/automation';
@@ -142,6 +143,19 @@ export function ArrangeView() {
     });
   // Automation mode: the curve shown over a track's clips (the open lane's, else the first one it has, else volume).
   const overlayParam = (t: Track, m: Record<string, AutoParam> = lanes): AutoParam => m[t.id] ?? t.automation?.find((l) => l.points.length)?.param ?? 'volume';
+
+  // Reordering tracks: the grip in a header drags the whole header; `to` is the slot it would take.
+  const [reorder, setReorder] = useState<{ id: string; to: number; dy: number } | null>(null);
+  const blockHeights = project.tracks.map((t) => rowH + (!autoMode && lanes[t.id] ? LANE_H : 0));
+  const dragTrack = (id: string, dy: number, phase: DragPhase) => {
+    const from = project.tracks.findIndex((t) => t.id === id);
+    const to = reorderTarget(blockHeights, from, dy);
+    if (phase === 'move') setReorder({ id, to, dy });
+    else {
+      setReorder(null);
+      if (phase === 'end' && to !== from) updateProject((p) => moveTrackTo(p, id, to), { reschedule: false });
+    }
+  };
 
   const grid = zoom >= 32 ? 0.25 : 1;
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -376,13 +390,15 @@ export function ArrangeView() {
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
       >
-        <ScrollView scrollEnabled={!drag} contentContainerStyle={{ flexDirection: 'row', height: bodyH }}>
+        <ScrollView scrollEnabled={!drag && !reorder} contentContainerStyle={{ flexDirection: 'row', height: bodyH }}>
           <View style={{ width: headerW }}>
+            {reorder && <View pointerEvents="none" style={[s.insertLine, { top: insertionY(blockHeights, project.tracks.findIndex((t) => t.id === reorder.id), reorder.to) }]} />}
             {project.tracks.map((track) => {
               const selected = selectedTrackId === track.id;
               const laneParam = lanes[track.id];
               return (
                 <Fragment key={track.id}>
+                <View style={reorder?.id === track.id ? { zIndex: 5, opacity: 0.85, transform: [{ translateY: reorder.dy }] } : undefined}>
                 <HeaderDrop track={track}>
                 <Pressable
                   style={[s.trackHeader, { height: rowH }, small && s.trackHeaderSm, selected && s.trackHeaderSelected]}
@@ -390,6 +406,7 @@ export function ArrangeView() {
                   onLongPress={() => setState({ selectedTrackId: track.id, selectedClipId: null, panel: 'track' })}
                 >
                   <View style={s.trackTitle}>
+                    <TrackGrip name={track.name} onDrag={(dy, phase) => dragTrack(track.id, dy, phase)} />
                     <View style={[s.dot, trackKind(track) === 'midi' && s.dotMidi, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
                     <Txt numberOfLines={1} style={s.trackName}>
                       {track.name}
@@ -435,6 +452,7 @@ export function ArrangeView() {
                   </View>
                 </Pressable>
                 </HeaderDrop>
+                </View>
                 {laneParam && !autoMode && (
                   <Pressable accessibilityLabel={`Parameter der Automation von ${track.name}`} onPress={() => cycleLane(track)} style={[s.laneHeader, { height: LANE_H }]}>
                     <Txt style={s.laneParam}>{`${paramDef(track, laneParam).label} ▾`}</Txt>
@@ -544,6 +562,16 @@ function LaneRow({ track, param, zoom, width, totalBars }: { track: Track; param
   return (
     <View style={[s.lane, { width, height: LANE_H }]}>
       <AutomationCurve track={track} param={param} start={0} span={totalBars} width={width} height={LANE_H - 1} selected={sel} onSelect={setSel} grid={zoom >= 36 ? 1 : zoom >= 18 ? 4 : 8} labels={false} />
+    </View>
+  );
+}
+
+/** The grip at the left of a track header: grab it and drag up or down to reorder (it claims the touch at once, so the list does not scroll). */
+function TrackGrip({ name, onDrag }: { name: string; onDrag: (dy: number, phase: DragPhase) => void }) {
+  const handlers = useDrag('start', true, (_dx, dy, phase) => onDrag(dy, phase));
+  return (
+    <View {...handlers} accessibilityLabel={`Spur ${name} verschieben`} accessibilityRole="button" style={[s.grip, web({ touchAction: 'none', cursor: 'grab' })]}>
+      <Txt style={s.gripText}>⋮⋮</Txt>
     </View>
   );
 }
@@ -709,6 +737,9 @@ const s = StyleSheet.create({
   trackHeaderSm: { paddingLeft: 8, paddingRight: 6 },
   trackHeaderSelected: { backgroundColor: C.bg2, borderLeftColor: C.accent },
   trackTitle: { flexDirection: 'row', alignItems: 'center', gap: 8, overflow: 'hidden' },
+  grip: { width: 18, height: 28, marginLeft: -4, alignItems: 'center', justifyContent: 'center' },
+  gripText: { color: C.muted, fontSize: 12, lineHeight: 12, letterSpacing: -2 },
+  insertLine: { position: 'absolute', left: 0, right: 0, height: 2, marginTop: -1, backgroundColor: C.accent, zIndex: 6 },
   dot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
   trackName: { ...font(600), fontSize: 13, flexShrink: 1 },
   fxBtn: { minWidth: 22, height: 24, paddingHorizontal: 2, borderRadius: 7, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },

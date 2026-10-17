@@ -315,7 +315,7 @@ disabled). The type can only be changed on an empty track (`setTrackKind`, Track
 header marks MIDI tracks with a square colour dot (audio: round) and has an FX button (opens the device chain, shows the
 device count); the add row has "+ Audio" and "+ MIDI".
 Track order: `moveTrack(project, id, delta)` (pure, tested), buttons "▲ Nach oben" / "▼ Nach unten" in the TrackPanel (section "Position"); one undo step each, the panel stays open
-(use the half-size sheet to watch the arrangement). No drag-to-reorder in the headers yet (a drag there fights the vertical scroll on touch).
+(use the half-size sheet to watch the arrangement). **Drag to reorder** (issue #9): the grip "⋮⋮" at the left of a header (`TrackGrip` in ArrangeView, `useDrag('start')` so it claims the touch at once and the list does not scroll; `touchAction: none`) drags the header; `reorderTarget`/`insertionY` (`lib/trackReorder.ts`, tested; block heights include open automation lanes) pick the slot (a swap happens when the dragged centre passes the neighbour's centre), a lime line shows it, `moveTrackTo` applies it on release (one undo step). Checked in Chromium with the mouse (Kick + Bass dragged two slots down); touch uses the same responder, not tried on a phone.
 **Duplicate a track**: `duplicateTrack` (project.ts, tested) puts a deep copy right below ("<Name> Kopie", solo off) with fresh ids for the track, clips and devices;
 device automation lanes (`dev:<id>:<key>`) are remapped to the copy's devices. `duplicateSelectedTrack` selects the copy. Cmd/Ctrl+D = `duplicateSelection`: the
 selected clips, or the selected track when no clip is selected (like Live); also "⧉ Duplizieren" in the TrackPanel, the copy button in the BottomBar's track group and

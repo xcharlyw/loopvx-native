@@ -1,4 +1,4 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject, copyDevices, MASTER_ID } from './project';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, moveTrackTo, createTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject, copyDevices, MASTER_ID } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -334,6 +334,24 @@ describe('moveTrack', () => {
     const p = base();
     const moved = moveTrack(p, 'a', 1);
     expect(moved.tracks.find((t) => t.id === 'a')).toBe(p.tracks[0]);
+  });
+});
+
+describe('moveTrackTo', () => {
+  const base = () => {
+    const p = createProject('T', 150, 'F minor');
+    return { ...p, tracks: ['a', 'b', 'c'].map((id) => ({ ...createTrack('synth', 8, id, 'midi'), id })) };
+  };
+  const order = (p: ReturnType<typeof base>) => p.tracks.map((t) => t.id).join('');
+  it('puts a track at a list position', () => {
+    expect(order(moveTrackTo(base(), 'a', 2))).toBe('bca');
+    expect(order(moveTrackTo(base(), 'c', 0))).toBe('cab');
+    expect(order(moveTrackTo(base(), 'b', 7))).toBe('acb');
+  });
+  it('is unchanged for the same place or an unknown id', () => {
+    const p = base();
+    expect(moveTrackTo(p, 'b', 1)).toBe(p);
+    expect(moveTrackTo(p, 'zzz', 0)).toBe(p);
   });
 });
 

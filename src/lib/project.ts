@@ -372,6 +372,12 @@ export function moveTrack(project: Project, trackId: string, delta: number): Pro
   return { ...project, tracks };
 }
 
+/** Put a track at list position `to` (clamped), for drag-to-reorder. Unchanged when it is already there. */
+export function moveTrackTo(project: Project, trackId: string, to: number): Project {
+  const from = project.tracks.findIndex((t) => t.id === trackId);
+  return from < 0 ? project : moveTrack(project, trackId, to - from);
+}
+
 export function removeTrack(project: Project, trackId: string): Project {
   return { ...project, tracks: project.tracks.filter((t) => t.id !== trackId) };
 }

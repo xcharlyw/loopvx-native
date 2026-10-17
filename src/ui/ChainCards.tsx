@@ -161,7 +161,7 @@ export function InstrumentCard({ track, folded, onFold }: { track: Track; folded
     else set({ tableA: next.slice(2), posA: synth.posA ?? 0, ...(!synth.tableA && synth.cutoff < 6000 ? { cutoff: 9000 } : {}) });
   };
   return (
-    <CardFrame title={isOsc ? 'SYNTH' : 'INSTRUMENT'} folded={folded} onFold={onFold} right={expandBtn('instrument')} style={{ width: CARD_W_SYNTH }}>
+    <CardFrame title={isOsc ? 'SYNTH' : synth.wave === 'sample' ? 'SAMPLER' : 'DRUMS'} folded={folded} onFold={onFold} right={expandBtn('instrument')} style={{ width: CARD_W_SYNTH }}>
       <Switcher name={name} onStep={stepPreset} label="Sound" />
       {isOsc ? (
         <>

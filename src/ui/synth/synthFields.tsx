@@ -1,6 +1,9 @@
 import { View } from 'react-native';
 import type { SynthSettings } from '../../types';
-import { Knob, KnobRow } from './Knob';
+import { Knob as BaseKnob, KnobRow } from './Knob';
+
+/** The compact synth card wears the same plugin skin as the big editor. */
+const Knob = (p: React.ComponentProps<typeof BaseKnob>) => <BaseKnob skin="synth" {...p} />;
 
 const PCT = (v: number) => `${Math.round(v * 100)}%`;
 const CT = (v: number) => `${Math.round(v)}ct`;

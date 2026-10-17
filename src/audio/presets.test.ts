@@ -1,5 +1,6 @@
-import { createProject } from '../lib/project';
-import { applyInstrument, applyPreset, withSamplerSample, PRESET_CATEGORIES, PRESETS, presetById, SUGGESTED_PRESET } from './presets';
+import { DEFAULT_SYNTH, createProject } from '../lib/project';
+import type { SynthSettings, Track } from '../types';
+import { applyInstrument, applyPreset, instrumentKind, withInstrumentKind, withSamplerSample, PRESET_CATEGORIES, PRESETS, presetById, SUGGESTED_PRESET } from './presets';
 import { planVoice } from './synth';
 
 describe('sound presets', () => {
@@ -114,5 +115,28 @@ describe('the 40 genre presets', () => {
     expect(named(/trance lead|uplifting|pluck lead|voice lead/i)).toBeGreaterThanOrEqual(5);
     expect(named(/stab/i)).toBeGreaterThanOrEqual(7);
     expect(named(/pluck|pizzicato|kalimba/i)).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe('withInstrumentKind', () => {
+  const base = (synth?: SynthSettings): Track => ({ id: 't', name: 'T', category: 'synth', color: '#fff', volume: 1, muted: false, solo: false, clips: [], slots: [], synth, fx: { reverb: 0.4, pan: 0.2 } }) as Track;
+  it('loads each instrument and resets the sound effects but keeps the pan', () => {
+    for (const [kind, wave] of [['sample', 'sample'], ['kick', 'kick'], ['noise', 'noise'], ['kit', 'kit909']] as const) {
+      const t = withInstrumentKind(base(), kind, 's1');
+      expect(t.synth?.wave).toBe(wave);
+      expect(t.fx).toMatchObject({ pan: 0.2, reverb: 0 });
+    }
+  });
+  it('the sampler takes the earlier sample, else the first one given', () => {
+    expect(withInstrumentKind(base(), 'sample', 'first').synth?.sampleId).toBe('first');
+    expect(withInstrumentKind(base({ ...(DEFAULT_SYNTH as SynthSettings), sampleId: 'mine' }), 'sample', 'first').synth?.sampleId).toBe('mine');
+  });
+  it('is unchanged for the kind the track already is, and back to the synth works', () => {
+    const synth = base({ ...DEFAULT_SYNTH, wave: 'sawtooth' });
+    expect(withInstrumentKind(synth, 'synth')).toBe(synth);
+    const sampler = withInstrumentKind(base(), 'sample', 's1');
+    expect(withInstrumentKind(sampler, 'synth').synth?.wave).toBe('sawtooth');
+    expect(instrumentKind('kit909')).toBe('kit');
+    expect(instrumentKind('square')).toBe('synth');
   });
 });

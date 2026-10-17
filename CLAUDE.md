@@ -294,16 +294,16 @@ everything that measures the window uses `useAppDims()` / `scaledSize` (Shell, P
 follow the pointer exactly (checked in Chromium at 80 %: a 200/80 px drag moved a plugin window 200/80 px; header, tracks, docked chain and bottom bar all fit). Do not give the zoom box a 100/scale size:
 Chrome's zoom already keeps percentage boxes at the parent's size (that made the app overflow the window).
 
-## Sound panel (Serum-style)
+## Sound panels: synth, sampler and drums are separate (Serum-style skin)
 
-`InstrumentPanel` is built like a plugin: preset switcher (◀ ▶ through `PRESETS`), "Instrument laden" tiles
-(Synth / Sampler / Kick / Noise, `applyInstrument` replaces the instrument and the track's sound effects),
-tabs per kind (`TABS`) with rotary `Knob`s (`src/ui/synth/`) and live scopes: wave shape, the **real filter
-response** (`filterResponse` in `audio/scopes.ts` equals Chromium's `getFrequencyResponse` to 0.000 dB; note
-that lowpass/highpass resonance is in **dB** in Web Audio, bandpass Q is linear), amp envelope, LFO (cycles per
-bar over a window of whole bars), sample peaks. Knob math is pure (`lib/knobMath.ts`): vertical drag,
-log curves, steps, double tap resets. The keyboard (`Keys`) uses the responder grant, not `Pressable.onPressIn`,
-which waits and swallows quick taps on web. Sampler settings: `sampleRoot`, `tune` (cents), `gainDb`.
+`InstrumentPanel` (panel `instrument`, also the floating window) is only a dispatcher by `instrumentKind(track.synth.wave)`: **`SynthPanel`** (oscillator synth), **`SamplerPanel`** (the sampler, its own panel: sample list with peaks,
+Root / Tune, whole sample or note length, filter, amp envelope; a slicer shows its slice count) and **`DrumPanel`** (synth kick, noise, 909 pads). The synth page no longer carries "Instrument laden" tiles or SYNTH / FX tabs: **the instrument is chosen
+in the track sheet** (TrackPanel → Sound: chips Synth / Sampler / Kick / Noise / 909 = `withInstrumentKind` in presets.ts, tested; it replaces the instrument and resets the track's sound effects, pan stays), and every panel ends with "Instrument wechseln …" which opens
+the track sheet. A sample dropped on the window still turns the track into a sampler. All three panels wear the plugin skin from Karl's design boards (Barlow Condensed + JetBrains Mono, `#121215` panels with a LED title, skin knobs `Knob skin="synth"`): shared pieces
+in `ui/synth/skin.tsx` (`Header` = LOOPVX mark + instrument name, preset switcher ‹ name › with a browser (synth only), Level knob = `synth.gainDb`; `PresetBrowser`, `FxRack` = Drive / Reverb / Delay / Pump of the track, `KeyboardPanel`), `ui/synth/useInstrument.ts` (the edit
+functions, a knob drag is one undo step) and `SynthPage.tsx` (OSC A/B with wavetables, filter, amp, mod matrix; four tabs OSC / FILTER / AMP / MOD on a phone, everything at once from 620 px). The compact synth card in the device chain uses the same knobs (`synthFields.tsx`)
+and is titled SYNTH / SAMPLER / DRUMS. Knob maths is pure (`lib/knobMath.ts`); the live scopes (`audio/scopes.ts`: wave, the real filter response, envelope, LFO) are unchanged. Not in the design boards' layout (they are only half-rendered templates): ENV 2 / LFO 1 / MACROS as
+separate cards (they live in the MOD panel), the POLY readout. Checked in Chromium (desktop window and iPhone viewport); not heard or touched on a phone.
 
 ## Track types
 

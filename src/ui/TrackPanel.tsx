@@ -4,7 +4,7 @@ import { DEVICE_DEFS } from '../audio/devices';
 import { paramDef } from '../lib/automation';
 import { sidechainSources } from '../lib/sidechain';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
-import { presetById } from '../audio/presets';
+import { INSTRUMENT_KINDS, instrumentKind, presetById, withInstrumentKind } from '../audio/presets';
 import { C, font } from '../constants/theme';
 import { createMidiClipOnTrack, deleteSelectedTrack, duplicateSelectedTrack, freezeSelectedTrack, importMidiToTrack, unfreezeSelectedTrack } from '../lib/actions';
 import { MAX_TRACK_NAME, TRACK_COLORS, groupMembers, groupOf, groupTracks, mapTrack, moveTrack, renameTrack, setTrackGroup, setTrackKind, trackKind, trackSynth, ungroup } from '../lib/project';
@@ -243,10 +243,26 @@ export function TrackPanel() {
 
       <Section title="Sound">
         <Txt style={s.soundName}>{soundName}</Txt>
-        <Txt style={s.note}>Wähle ein Preset (Reese Bass, Supersaw, Pluck, Pad, Drums …) und forme den Klang mit Oszillatoren, Unison, Filter und LFO.</Txt>
+        <View style={[s.buttons, { marginTop: 8 }]}>
+          {INSTRUMENT_KINDS.map((k) => (
+            <Chip
+              key={k.kind}
+              variant={instrumentKind(synth.wave) === k.kind ? 'on' : 'ghost'}
+              accessibilityLabel={`Instrument ${k.title}`}
+              onPress={() => {
+                if (instrumentKind(synth.wave) === k.kind) return;
+                updateProject((p) => mapTrack(p, trackId, (t) => withInstrumentKind(t, k.kind, getState().samples[0]?.id)));
+                if (k.kind === 'sample' && !getState().samples.length) toast('Lade zuerst ein Sample in die Bibliothek.');
+              }}
+            >
+              {k.title}
+            </Chip>
+          ))}
+        </View>
+        <Txt style={s.note}>Der Synth, der Sampler und die Drums haben je ein eigenes Fenster. Wechselst du das Instrument, ersetzt es den Klang der Spur (die Effekte der Spur werden zurückgesetzt).</Txt>
         <View style={[s.buttons, { marginTop: 10 }]}>
           <Btn kind="primary" onPress={() => setState({ panel: 'instrument' })}>
-            Sound wählen & bearbeiten
+            Sound bearbeiten
           </Btn>
           <Btn accessibilityLabel="MIDI-Effekte öffnen" onPress={() => setState({ panel: 'notefx' })}>
             Arpeggiator · Sequencer

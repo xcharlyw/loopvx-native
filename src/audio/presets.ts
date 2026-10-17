@@ -651,6 +651,33 @@ export function withSamplerSample(track: Track, sampleId: string): Track {
   return applyInstrument(track, { ...DEFAULT_SYNTH, ...SAMPLER_PRESET, sampleId } as SynthSettings);
 }
 
+/** The instruments a MIDI track can load: the synth, the sampler (its own panel), and three drum instruments. */
+export type InstrumentKind = 'synth' | 'sample' | 'kick' | 'noise' | 'kit';
+export const INSTRUMENT_KINDS: { kind: InstrumentKind; title: string; sub: string }[] = [
+  { kind: 'synth', title: 'Synth', sub: 'Oszillatoren' },
+  { kind: 'sample', title: 'Sampler', sub: 'Dein Sample' },
+  { kind: 'kick', title: 'Kick', sub: 'Synthetisch' },
+  { kind: 'noise', title: 'Noise', sub: 'Hat · Snare' },
+  { kind: 'kit', title: '909', sub: 'Drum-Kit' },
+];
+export const instrumentKind = (wave: SynthSettings['wave']): InstrumentKind => (wave === 'sample' ? 'sample' : wave === 'kick' ? 'kick' : wave === 'noise' ? 'noise' : wave === 'kit909' ? 'kit' : 'synth');
+
+/**
+ * "Load an instrument": replaces the whole instrument and the track's sound effects, like dropping a device on a track
+ * (the DJ filter and pan stay). The sampler takes the track's earlier sample, else `firstSampleId`. Unchanged for the kind it already is.
+ */
+export function withInstrumentKind(track: Track, kind: InstrumentKind, firstSampleId?: string): Track {
+  if (instrumentKind(track.synth?.wave ?? DEFAULT_SYNTH.wave) === kind && track.synth) return track;
+  const sampleId = track.synth?.sampleId;
+  const next: SynthSettings =
+    kind === 'synth' ? { ...DEFAULT_SYNTH, sampleId }
+    : kind === 'sample' ? ({ ...DEFAULT_SYNTH, ...SAMPLER_PRESET, sampleId: sampleId ?? firstSampleId } as SynthSettings)
+    : kind === 'kick' ? ({ ...DEFAULT_SYNTH, ...KICK_PRESET, sampleId } as SynthSettings)
+    : kind === 'kit' ? ({ ...DEFAULT_SYNTH, ...KIT909_PRESET, sampleId } as SynthSettings)
+    : ({ ...DEFAULT_SYNTH, ...NOISE_PRESET, sampleId } as SynthSettings);
+  return applyInstrument(track, next);
+}
+
 export const applyPreset = (track: Track, preset: SoundPreset): Track => applyInstrument(track, { ...preset.synth, preset: preset.id }, preset.fx);
 
 /** Which preset suits a generator style best (so the UI can offer to load it). */

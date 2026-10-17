@@ -142,7 +142,7 @@ export function Section({ title, children, style }: { title: string; children: R
 
 /** `.ms.mute` / `.ms.solo`. */
 export function MsButton({ label, on, onPress }: { label: 'M' | 'S'; on: boolean; onPress: () => void }) {
-  const onColor = label === 'M' ? C.mute : C.accent;
+  const onColor = label === 'M' ? C.mute : '#3dc8ff';
   return (
     <Pressable style={[s.ms, on && { backgroundColor: onColor, borderColor: onColor }]} onPress={onPress}>
       <Txt style={[s.msText, on && { color: '#111' }]}>{label}</Txt>
@@ -161,9 +161,9 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 36,
-    paddingHorizontal: 14,
-    borderRadius: 999,
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: 4,
     backgroundColor: C.panel,
     borderWidth: 1,
     borderColor: C.line,
@@ -171,24 +171,24 @@ const s = StyleSheet.create({
   pillGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 36,
-    borderRadius: 999,
+    height: 32,
+    borderRadius: 4,
     backgroundColor: C.panel,
     borderWidth: 1,
     borderColor: C.line,
     overflow: 'hidden',
   },
   groupLine: { width: 1, alignSelf: 'stretch', backgroundColor: C.line },
-  iconBtn: { minWidth: 36, height: 34, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  iconBtn: { minWidth: 34, height: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.4 },
   btn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    height: 36,
+    height: 34,
     paddingHorizontal: 14,
-    borderRadius: 999,
+    borderRadius: 4,
     backgroundColor: C.panel2,
     borderWidth: 1,
     borderColor: C.line,
@@ -200,9 +200,9 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 30,
-    paddingHorizontal: 12,
-    borderRadius: 999,
+    height: 28,
+    paddingHorizontal: 11,
+    borderRadius: 4,
     backgroundColor: C.text,
     flexShrink: 0,
   },
@@ -213,7 +213,7 @@ const s = StyleSheet.create({
     backgroundColor: C.panel,
     borderWidth: 1,
     borderColor: C.line,
-    borderRadius: RADIUS,
+    borderRadius: 6,
     padding: 12,
     marginBottom: 12,
   },
@@ -221,7 +221,7 @@ const s = StyleSheet.create({
   ms: {
     width: 24,
     height: 22,
-    borderRadius: 6,
+    borderRadius: 3,
     backgroundColor: C.panel,
     borderWidth: 1,
     borderColor: C.line,

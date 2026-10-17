@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { APP_NAME } from '../config';
-import { C, font, mono } from '../constants/theme';
+import { C, cond, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { formatBarPosition, formatClock, secondsPerBar } from '../audio/timing';
 import { setCursor, togglePlay } from '../lib/actions';
@@ -17,9 +17,9 @@ function Position({ small }: { small: boolean }) {
   const bpm = useStore((s) => s.project.bpm);
   const pos = usePlayhead();
   return (
-    <Pill style={small && sm.pill}>
-      {!small && <Mono>{formatClock(pos * secondsPerBar(bpm))}</Mono>}
-      <Mono>{formatBarPosition(pos)}</Mono>
+    <Pill style={[s.lcd, small && sm.pill]}>
+      {!small && <Mono style={s.lcdDim}>{formatClock(pos * secondsPerBar(bpm))}</Mono>}
+      <Mono style={s.lcdText}>{formatBarPosition(pos)}</Mono>
     </Pill>
   );
 }
@@ -29,9 +29,9 @@ function KeyPicker({ small }: { small: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Pill style={small && sm.pill} onPress={() => setOpen(true)}>
+      <Pill style={[s.lcd, small && sm.pill]} onPress={() => setOpen(true)}>
         <View style={s.select}>
-          <Mono numberOfLines={1} style={{ paddingLeft: 4, maxWidth: (small ? 78 : 96) - 14 }}>
+          <Mono numberOfLines={1} style={{ paddingLeft: 4, color: C.accent, maxWidth: (small ? 78 : 96) - 14 }}>
             {key}
           </Mono>
           <SelectArrow />
@@ -150,7 +150,7 @@ export function TopBar() {
 
       <Position small={small} />
 
-      <Pill style={small && sm.pill}>
+      <Pill style={[s.lcd, small && sm.pill]}>
         <TextInput
           style={[s.bpmInput, small && { width: 34 }]}
           inputMode="decimal"
@@ -161,8 +161,8 @@ export function TopBar() {
           onSubmitEditing={commitBpm}
           selectTextOnFocus
         />
-        <Mono style={s.muted}>BPM</Mono>
-        {!small && <Mono style={s.muted}>4/4</Mono>}
+        <Mono style={s.lcdDim}>BPM</Mono>
+        {!small && <Mono style={s.lcdDim}>4/4</Mono>}
       </Pill>
 
       <KeyPicker small={small} />
@@ -189,17 +189,21 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
-    borderBottomColor: C.lineSoft,
-    backgroundColor: C.bg,
+    borderBottomColor: '#000',
+    backgroundColor: '#141417',
     zIndex: 5,
   },
-  logo: { ...font(700), fontSize: 20, letterSpacing: 1.2, paddingLeft: 2, paddingRight: 6 },
+  logo: { ...cond(700), fontSize: 22, letterSpacing: 2, paddingLeft: 2, paddingRight: 6 },
   break: { flexBasis: '100%', height: 0 },
   muted: { color: C.muted },
+  /** Live's recessed read-outs: dark inset, neon digits. */
+  lcd: { backgroundColor: '#08090a', borderColor: '#22271a' },
+  lcdText: { color: C.accent },
+  lcdDim: { color: '#7d8a55' },
   select: { flexDirection: 'row', alignItems: 'center' },
   bpmInput: {
     width: 46,
@@ -207,7 +211,7 @@ const s = StyleSheet.create({
     paddingLeft: 2,
     paddingRight: 1,
     textAlign: 'right',
-    color: C.text,
+    color: C.accent,
     ...mono(),
     fontSize: 13,
     letterSpacing: 0.26,

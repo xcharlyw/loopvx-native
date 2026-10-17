@@ -322,6 +322,17 @@ selected clips, or the selected track when no clip is selected (like Live); also
 Erstellen → Spur duplizieren.
 **Duplicate a project**: `copyProject` (project.ts, tested) + `duplicateProject` (actions.ts): a deep copy "<Name> (Kopie)" under a new id, saved and opened; the Projekte list has a copy button next to the backup arrow. Samples are shared through the library. (Opening a `.loopvx` backup of a project that already exists also makes a "(Kopie)".)
 
+## Freezing a track (issue #9)
+
+TrackPanel "Einfrieren" / "Auftauen" (❄ in the arrange header while frozen; command "Spur einfrieren / auftauen"): `freezeSelectedTrack` renders the track like Ableton's wet render (`wetProject`: clips, instrument, devices, DJ filter, drive, sends, pump and automation, **pan baked in**, fader
+and master chain not) from bar 0 to its last clip plus 2 bars of tail into a stereo WAV sample "<name> (eingefroren)" in the library folder "Eingefroren" (id `freeze:<uid>`, `bpm = project bpm`) and sets `Track.frozen = { sampleId, bars }`. **The track keeps all its own data**; `frozen` only changes what plays:
+`playProject` (project.ts, used by `engine.play/syncMixer/render`, so live, offline and the mixer all see it) switches a frozen track's devices, automation and `fx` (incl. pan) off, `playClips` makes `scheduleWindow` play one audio clip of the render instead of the track's clips (the original clips stay in the
+view for other tracks' sidechain), `arrangementSampleIds` / backup / duplicate-cleanup list the render as used. Fader, mute and solo stay live. **Any edit of what the render was made from thaws the track**: `updateProject` runs `invalidateFrozen(before, after)` (clips, instrument, devices, arp/seq, automation, kind,
+filter/drive/reverb/delay/pump/pumpFrom, **pan**, or the project tempo; volume, mute, solo, name, colour do not count) and toasts "… wurde aufgetaut". Exports (mixdown, stems, Ableton, consolidate) render `thawProject(project)`, so they never depend on a render another device may not have; the Ableton export
+does not write the frozen state. `cleanupFrozenSamples` (after a freeze or unfreeze) deletes `freeze:` samples that no stored project and no track uses. Not frozen: groups (freeze the members), Session mode (its slots play live with their effects). A frozen render missing its audio on a device (not synced yet) makes
+the track silent there until "Fehlende laden". Measured offline in Chromium (synth + EQ + reverb/delay/filter, pan 0.4): the frozen track renders at the same level (L 0.242 vs 0.246, R 0.476 vs 0.484) and correlates 0.984 / 0.988 with the live one (after the one-render-block offset audio clips have in the offline
+render against MIDI voices, 129 samples ≈ 3 ms, existing behaviour); muted stays silent; an edit thaws. The CPU saving itself was not measured on a phone.
+
 ## Group tracks (issue #9)
 
 `Track.kind = 'group'` (no clips, `canHoldClip` refuses everything, `setTrackKind` never makes or unmakes one) and `Track.groupId` on the tracks that play through it (one level, groups do

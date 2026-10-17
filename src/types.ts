@@ -239,6 +239,12 @@ export interface SessionSlot {
  */
 export type TrackKind = 'audio' | 'midi' | 'group';
 
+export interface FrozenTrack {
+  sampleId: string;
+  /** Bars the render covers, from bar 0 (the last clip plus a tail for reverb and delay). */
+  bars: number;
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -251,6 +257,11 @@ export interface Track {
   clips: Clip[];
   /** Missing in older projects: see `trackKind` (inferred from what the track holds). */
   kind?: TrackKind;
+  /**
+   * Frozen (bounced): the track's sound rendered to the library sample `sampleId`, which plays instead of its clips, instrument and effects
+   * (CPU relief). The track's own data stays untouched; any change to what the render was made from drops the freeze (`invalidateFrozen`).
+   */
+  frozen?: FrozenTrack;
   /** The group track this track plays through (instead of straight into the master); one level, groups do not nest. */
   groupId?: string;
   /** Instrument for the track's MIDI clips (defaults apply when missing). */

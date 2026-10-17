@@ -2,7 +2,7 @@ import { snapBars } from '../audio/timing';
 import { MAX_DEVICES, createDevice, deviceParams } from '../audio/devices';
 import { setLane } from './automation';
 import type { ScaleName } from './melody';
-import type { AutoParam, AutomationLane, Clip, Device, DeviceType, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
+import type { AutoParam, AutomationLane, Clip, Device, DeviceType, FrozenTrack, Note, Project, Sample, SampleCategory, SynthSettings, Track, TrackKind } from '../types';
 
 export const uid = (): string =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -260,14 +260,68 @@ export const isMidiClip = (clip: Clip): boolean => Array.isArray(clip.notes);
 
 export const trackSynth = (track: Track): SynthSettings => ({ ...DEFAULT_SYNTH, ...track.synth });
 
-/** Every sample the arrangement plays: audio clips plus the sample instruments of tracks with MIDI clips. */
+/** Every sample the arrangement plays: audio clips plus the sample instruments of tracks with MIDI clips (a frozen track: its render). */
 export function arrangementSampleIds(project: Project): Set<string> {
   const ids = new Set<string>();
   for (const t of project.tracks) {
+    if (t.frozen) {
+      ids.add(t.frozen.sampleId);
+      continue;
+    }
     for (const c of t.clips) if (c.sampleId) ids.add(c.sampleId);
     if (t.synth?.wave === 'sample' && t.synth.sampleId && t.clips.some(isMidiClip)) ids.add(t.synth.sampleId);
   }
   return ids;
+}
+
+// ---------------------------------------------------------------- freezing
+
+/** The audio a frozen track plays: one clip with the render, from bar 0. */
+export const frozenClip = (f: FrozenTrack): Clip => ({ id: `frozen:${f.sampleId}`, sampleId: f.sampleId, start: 0, length: f.bars, offset: 0 });
+
+/** The clips the engine plays for a track: the render when it is frozen, else its own. */
+export const playClips = (track: Track): Clip[] => (track.frozen ? [frozenClip(track.frozen)] : track.clips);
+
+/**
+ * The project as it sounds: a frozen track has its effects and its pan baked into the render (a mono signal panned and a stereo render
+ * panned again would not match), so its devices, automation, DJ filter, drive, sends, pump and pan are switched off (fader, mute and solo stay live). Its clips stay for the sidechain of other tracks.
+ * The same project when nothing is frozen.
+ */
+export function playProject(project: Project): Project {
+  if (!project.tracks.some((t) => t.frozen)) return project;
+  return {
+    ...project,
+    tracks: project.tracks.map((t) => (t.frozen ? { ...t, devices: undefined, automation: undefined, fx: undefined } : t)),
+  };
+}
+
+/** The project with every freeze removed: what exports render from, so they never depend on a render another device may not have. */
+export function thawProject(project: Project): Project {
+  if (!project.tracks.some((t) => t.frozen)) return project;
+  return { ...project, tracks: project.tracks.map(({ frozen: _gone, ...t }) => t) };
+}
+
+const sameFx = (a: Track['fx'], b: Track['fx']) => (a?.pan ?? 0) === (b?.pan ?? 0) && a?.filter === b?.filter && a?.drive === b?.drive && a?.reverb === b?.reverb && a?.delay === b?.delay && a?.pump === b?.pump && a?.pumpFrom === b?.pumpFrom;
+
+/**
+ * Drop the freeze of every track whose sound changed between `before` and `after` (clips, instrument, devices, automation, MIDI effects,
+ * filter/drive/sends/pump/pan, or the project tempo): the render would no longer match. Volume, mute, solo, name and colour do not count.
+ * Returns the project and the names of the tracks that thawed.
+ */
+export function invalidateFrozen(before: Project, after: Project): { project: Project; thawed: string[] } {
+  if (before === after || !after.tracks.some((t) => t.frozen)) return { project: after, thawed: [] };
+  const thawed: string[] = [];
+  const tempo = before.bpm !== after.bpm;
+  const tracks = after.tracks.map((t) => {
+    if (!t.frozen) return t;
+    const was = before.tracks.find((x) => x.id === t.id);
+    const same = !!was && !tempo && was.clips === t.clips && was.synth === t.synth && was.devices === t.devices && was.arp === t.arp && was.seq === t.seq && was.automation === t.automation && was.kind === t.kind && sameFx(was.fx, t.fx);
+    if (same) return t;
+    thawed.push(t.name);
+    const { frozen: _gone, ...rest } = t;
+    return rest;
+  });
+  return thawed.length ? { project: { ...after, tracks }, thawed } : { project: after, thawed };
 }
 
 export function createMidiClip(start: number, length = 4): Clip {

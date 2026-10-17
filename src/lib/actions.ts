@@ -6,6 +6,7 @@ import { engine } from '../audio/engine';
 import { projectEndBars, sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
 import { db } from '../storage/db';
+import { usedSampleIds as usedByProjects } from './duplicates';
 import type { Clip, Project, Sample } from '../types';
 import { packProject, unpackProject, usedSampleIds, type PackedSample } from './backup';
 import { detectTempo, snapTempo, toMono, type TempoGuess } from '../audio/tempo';
@@ -20,9 +21,9 @@ import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
 import { slicerTrack } from './sliceTrack';
 import { stopTrackRecording } from './trackRecording';
 import type { Slice } from '../audio/slicing';
-import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, groupTracks, ungroup, copyProject, trackForSample, uid, updateClip } from './project';
-import { pickFile, readSampleData, storeSampleAudio } from './samples';
-import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, setSamples, setState, toast, updateProject, upsertSample } from './store';
+import { thawProject, addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, groupTracks, ungroup, copyProject, trackForSample, uid, updateClip } from './project';
+import { deleteSample, pickFile, readSampleData, storeSampleAudio } from './samples';
+import { errorText, getState, openProject, selectedClipIds, setClipSelection, recordHistory, removeSamples, setSamples, setState, toast, updateProject, upsertSample } from './store';
 
 export async function togglePlay() {
   const { project, view, cursor } = getState();
@@ -131,6 +132,70 @@ export function sliceSampleToTrack(sample: Sample, slices: Slice[], mode: 'pads'
   toast(mode === 'midi' ? `${slices.length} Slices als MIDI auf „${track.name}“, ab Takt ${Math.floor(cursor) + 1}.` : `${slices.length} Slices auf „${track.name}“: C1 spielt Slice 1, jede Taste darüber den nächsten.`);
 }
 
+/** Bars a freeze renders: up to the last clip, rounded up, plus two bars for the tails of reverb and delay. */
+const FREEZE_TAIL_BARS = 2;
+
+/**
+ * Freeze the selected track (Live's Freeze Track): its sound (clips, instrument, devices, effects, sends, pump, automation and pan; not the
+ * fader) is rendered to a library sample in the folder "Eingefroren" which plays instead, so a heavy synth costs no CPU. The track keeps all
+ * its data; editing what the render was made from thaws it again (`invalidateFrozen`). Exports always render the thawed project.
+ */
+export async function freezeSelectedTrack() {
+  const { selectedTrackId } = getState();
+  const project = getState().project;
+  const track = project.tracks.find((t) => t.id === selectedTrackId);
+  if (!track) return toast('Wähle zuerst eine Spur aus.');
+  if (trackKind(track) === 'group') return toast('Eine Gruppe lässt sich nicht einfrieren: friere ihre Spuren einzeln ein.');
+  if (track.frozen) return toast(`„${track.name}“ ist schon eingefroren.`);
+  const clips = track.clips.filter((c) => !c.muted);
+  if (!clips.length) return toast('Die Spur hat keine Clips zum Einfrieren.');
+  const bars = Math.ceil(Math.max(...clips.map((c) => c.start + c.length))) + FREEZE_TAIL_BARS;
+  const bar = startProgress('Spur einfrieren', 1);
+  try {
+    await bar.step(`${track.name} rendern`);
+    engine.stop();
+    // The pan goes into the render (wetProject takes it out, Live's mixer carries it there): see `playProject`.
+    const wet = wetProject(thawProject(project), track);
+    const baked = { ...wet, tracks: wet.tracks.map((t, i) => (i === 0 && track.fx?.pan ? { ...t, fx: { ...t.fx, pan: track.fx.pan } } : t)) };
+    const data = await renderWav(baked, { from: 0, to: bars });
+    const seconds = bars * (240 / project.bpm);
+    const sample: Sample = { id: `freeze:${uid()}`, name: `${track.name} (eingefroren).wav`, category: track.category, folder: 'Eingefroren', duration: seconds, size: data.byteLength, bpm: project.bpm, addedAt: Date.now() };
+    const stored = await storeSampleAudio(sample, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer, 'wav');
+    setSamples([...getState().samples.filter((x) => x.id !== stored.id), stored]);
+    updateProject((p) => mapTrack(p, track.id, (t) => ({ ...t, frozen: { sampleId: stored.id, bars } })));
+    bar.advance(1);
+    bar.finish(`„${track.name}“ ist eingefroren`);
+    toast(`„${track.name}“ eingefroren: sie spielt jetzt als Audio. Änderst du ihren Klang, taut sie von selbst auf.`);
+    await cleanupFrozenSamples(); // renders of earlier freezes that were thawed by an edit
+  } catch (e) {
+    bar.fail();
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Thaw the selected track: its own clips, instrument and effects play again; the render leaves the library when no other track uses it. */
+export async function unfreezeSelectedTrack() {
+  const { selectedTrackId, project } = getState();
+  const track = project.tracks.find((t) => t.id === selectedTrackId);
+  if (!track?.frozen) return toast('Die Spur ist nicht eingefroren.');
+  updateProject((p) => mapTrack(p, track.id, ({ frozen: _gone, ...t }) => t));
+  toast(`„${track.name}“ ist aufgetaut.`);
+  await cleanupFrozenSamples();
+}
+
+/**
+ * Renders of frozen tracks that no stored project and no track uses any more (after an unfreeze, or when an edit thawed the track)
+ * leave the library, so the "Eingefroren" folder does not fill up with megabytes nobody plays. Samples a copy of a project still
+ * points at are kept.
+ */
+export async function cleanupFrozenSamples() {
+  const candidates = getState().samples.filter((x) => x.id.startsWith('freeze:'));
+  if (!candidates.length) return;
+  const used = usedByProjects([...(await db.getProjects()), getState().project]);
+  const orphans = candidates.filter((x) => !used.has(x.id));
+  if (orphans.length) await removeSamples(orphans, deleteSample).catch(() => undefined);
+}
+
 /** Cmd/Ctrl+G: put the selected track into a new group track (Live's Group Tracks); on a group it adds nothing. */
 export function groupSelectedTrack() {
   const { selectedTrackId } = getState();
@@ -221,7 +286,7 @@ export function duplicateSelectedClip() {
  * new sample in the folder "Konsolidiert".
  */
 export async function consolidateSelectedClip() {
-  const { project } = getState();
+  const project = thawProject(getState().project);
   const ids = selectedClipIds();
   if (!ids.length) {
     toast('Wähle einen Clip aus, dann Konsolidieren (Strg/Cmd + J).');
@@ -389,7 +454,7 @@ export async function exportWav() {
 
 /** The mixdown of the export region as a WAV, or null (nothing to render, or the render failed: already told). */
 export async function renderMixdown(): Promise<{ data: Uint8Array; name: string } | null> {
-  const { project } = getState();
+  const project = thawProject(getState().project);
   if (!project.tracks.some((t) => t.clips.length)) {
     toast('Nichts zu exportieren – lege zuerst Clips ins Arrangement.');
     return null;
@@ -435,7 +500,7 @@ export async function shareMixdown(mix: { data: Uint8Array; name: string }) {
 
 /** One WAV per track (post-fader, mute and solo ignored), zipped: drag them straight into Ableton. */
 export async function exportStems() {
-  const { project } = getState();
+  const project = thawProject(getState().project);
   const region = exportRegion(project);
   const tracks = project.tracks.filter((t) => t.clips.some((c) => c.start < region.to && c.start + c.length > region.from));
   if (!tracks.length) {
@@ -470,7 +535,8 @@ export async function exportStems() {
  * The ZIP is written in chunks without compression so a long project does not need its size twice in memory.
  */
 export async function exportForAbleton() {
-  const { project, samples } = getState();
+  const { samples } = getState();
+  const project = thawProject(getState().project);
   const tracks = exportableTracks(project);
   if (!tracks.length) {
     toast('Nichts zu exportieren – lege zuerst Clips ins Arrangement.');

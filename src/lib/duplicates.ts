@@ -92,13 +92,14 @@ export function libraryDuplicates(samples: Sample[], usedIds: Set<string>): Dupl
 }
 
 /** Every sample id the given projects play (clips, session slots, sample instruments). */
-export function usedSampleIds(projects: { tracks: { clips: { sampleId: string }[]; slots: ({ sampleId: string } | null)[]; synth?: { sampleId?: string } }[] }[]): Set<string> {
+export function usedSampleIds(projects: { tracks: { clips: { sampleId: string }[]; slots: ({ sampleId: string } | null)[]; synth?: { sampleId?: string }; frozen?: { sampleId: string } }[] }[]): Set<string> {
   const ids = new Set<string>();
   for (const p of projects)
     for (const t of p.tracks) {
       for (const c of t.clips) if (c.sampleId) ids.add(c.sampleId);
       for (const sl of t.slots) if (sl?.sampleId) ids.add(sl.sampleId);
       if (t.synth?.sampleId) ids.add(t.synth.sampleId);
+      if (t.frozen) ids.add(t.frozen.sampleId);
     }
   return ids;
 }

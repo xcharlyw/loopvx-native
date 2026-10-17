@@ -1,4 +1,5 @@
-import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, moveTrackTo, createTrack, groupTracks, setTrackGroup, ungroup, groupMembers, groupOf, audibleGains, createGroupTrack, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject, copyDevices, MASTER_ID } from './project';
+import type { Project } from '../types';
+import { addDevice, moveDevice, removeDevice, updateDevice, addClip, addNote, canHoldClip, createMidiTrack, setTrackKind, trackKind, arrangementSampleIds, duplicateNote, findNote, MIN_NOTE, noteIndexAt, quantizeNotes, transposeNotes, updateNote, mapTrack, moveTrack, moveTrackTo, createTrack, groupTracks, setTrackGroup, ungroup, groupMembers, groupOf, audibleGains, createGroupTrack, playClips, playProject, thawProject, invalidateFrozen, frozenClip, audibleGain, createMidiClip, scaleClip, createProject, isMidiClip, toggleNote, editClip, isProject, removeClip, splitClip, removeTrack, renameTrack, repairProject, setSlot, trackForSample, updateClip, toggleClipsMuted, duplicateTrack, copyProject, copyDevices, MASTER_ID } from './project';
 
 describe('project helpers', () => {
   it('creates the default stack layout', () => {
@@ -568,6 +569,86 @@ describe('group tracks', () => {
       const muted = mapTrack(project, groupId, (t) => ({ ...t, muted: true }));
       expect(gain(muted, groupId)).toBe(0);
       expect(gain(muted, 'a')).toBe(0.8);
+    });
+  });
+});
+
+describe('freezing a track', () => {
+  const frozenTrack = (): ReturnType<typeof createMidiTrack> => ({
+    ...createMidiTrack(8, 'Lead'),
+    id: 'lead',
+    clips: [{ ...createMidiClip(0, 4), notes: [{ pitch: 60, start: 0, length: 1, velocity: 1 }] }],
+    devices: [{ id: 'd', type: 'eq', on: true, params: {} }],
+    automation: [{ param: 'filter', points: [{ bar: 0, value: 0 }] }],
+    fx: { filter: 0.4, reverb: 0.3, pan: -0.5 },
+    frozen: { sampleId: 'freeze:lead', bars: 6 },
+  });
+  const proj = (...tracks: ReturnType<typeof frozenTrack>[]): Project => ({ ...createProject('T', 150, 'E minor'), tracks });
+
+  it('plays the render instead of the clips', () => {
+    const t = frozenTrack();
+    expect(playClips(t)).toEqual([frozenClip(t.frozen!)]);
+    expect(frozenClip(t.frozen!)).toMatchObject({ sampleId: 'freeze:lead', start: 0, length: 6, offset: 0 });
+    expect(playClips({ ...t, frozen: undefined })).toBe(t.clips);
+  });
+  it('arrangementSampleIds lists the render, not what it was made from', () => {
+    const ids = arrangementSampleIds(proj(frozenTrack()));
+    expect([...ids]).toEqual(['freeze:lead']);
+  });
+  it('playProject switches off the baked effects and pan but keeps the fader and the notes for the sidechain', () => {
+    const p = proj(frozenTrack());
+    const out = playProject(p).tracks[0];
+    expect(out.devices).toBeUndefined();
+    expect(out.automation).toBeUndefined();
+    expect(out.fx).toBeUndefined();
+    expect(out.clips).toBe(p.tracks[0].clips);
+    expect(out.volume).toBe(p.tracks[0].volume);
+  });
+  it('playProject and thawProject return the same project when nothing is frozen', () => {
+    const p = proj({ ...frozenTrack(), frozen: undefined });
+    expect(playProject(p)).toBe(p);
+    expect(thawProject(p)).toBe(p);
+  });
+  it('thawProject removes every freeze and keeps the rest', () => {
+    const p = proj(frozenTrack());
+    const t = thawProject(p).tracks[0];
+    expect(t.frozen).toBeUndefined();
+    expect(t.devices).toBe(p.tracks[0].devices);
+  });
+
+  describe('invalidateFrozen', () => {
+    const edit = (p: Project, fn: (t: ReturnType<typeof frozenTrack>) => ReturnType<typeof frozenTrack>) => ({ ...p, tracks: p.tracks.map(fn) }) as Project;
+    it('keeps the freeze for fader, mute, solo, name and colour', () => {
+      const p = proj(frozenTrack());
+      const after = edit(p, (t) => ({ ...t, volume: 0.3, muted: true, solo: true, name: 'X', color: '#fff' }));
+      expect(invalidateFrozen(p, after)).toEqual({ project: after, thawed: [] });
+    });
+    it.each([
+      ['clips', (t: ReturnType<typeof frozenTrack>) => ({ ...t, clips: [...t.clips] })],
+      ['instrument', (t: ReturnType<typeof frozenTrack>) => ({ ...t, synth: { ...(t.synth as object) } as never })],
+      ['devices', (t: ReturnType<typeof frozenTrack>) => ({ ...t, devices: [] })],
+      ['automation', (t: ReturnType<typeof frozenTrack>) => ({ ...t, automation: [] })],
+      ['reverb send', (t: ReturnType<typeof frozenTrack>) => ({ ...t, fx: { ...t.fx, reverb: 0.9 } })],
+      ['filter', (t: ReturnType<typeof frozenTrack>) => ({ ...t, fx: { ...t.fx, filter: 0 } })],
+      ['pan (it is baked in)', (t: ReturnType<typeof frozenTrack>) => ({ ...t, fx: { ...t.fx, pan: 0.9 } })],
+    ])('thaws when the %s change', (_name, change) => {
+      const p = proj(frozenTrack());
+      const r = invalidateFrozen(p, edit(p, change));
+      expect(r.thawed).toEqual(['Lead']);
+      expect(r.project.tracks[0].frozen).toBeUndefined();
+    });
+    it('thaws every frozen track when the tempo changes', () => {
+      const p = proj(frozenTrack());
+      const r = invalidateFrozen(p, { ...p, bpm: 160 });
+      expect(r.thawed).toEqual(['Lead']);
+    });
+    it('leaves other tracks alone and does nothing for an unchanged project', () => {
+      const p = proj(frozenTrack(), { ...frozenTrack(), id: 'b', name: 'B', frozen: { sampleId: 'freeze:b', bars: 2 } });
+      const after = edit(p, (t) => (t.id === 'b' ? { ...t, devices: [] } : t));
+      const r = invalidateFrozen(p, after);
+      expect(r.thawed).toEqual(['B']);
+      expect(r.project.tracks[0].frozen).toBeDefined();
+      expect(invalidateFrozen(p, p).project).toBe(p);
     });
   });
 });

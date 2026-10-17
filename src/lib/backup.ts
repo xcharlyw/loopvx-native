@@ -22,6 +22,7 @@ export function usedSampleIds(project: Project): Set<string> {
     for (const c of t.clips) if (c.sampleId) ids.add(c.sampleId); // MIDI clips have none
     for (const s of t.slots) if (s) ids.add(s.sampleId);
     if (t.synth?.wave === 'sample' && t.synth.sampleId) ids.add(t.synth.sampleId);
+    if (t.frozen) ids.add(t.frozen.sampleId);
   }
   return ids;
 }

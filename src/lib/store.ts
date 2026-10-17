@@ -4,7 +4,7 @@ import { engine } from '../audio/engine';
 import { db } from '../storage/db';
 import type { Project, Sample } from '../types';
 import { History } from './history';
-import { createProject, isProject, repairProject } from './project';
+import { createProject, invalidateFrozen, isProject, repairProject } from './project';
 import { clampUiScale } from './uiScale';
 import { DEFAULT_CC_MAP, cleanCcMap, type CcMap, type CcTarget } from './midiIn';
 import { DEFAULT_REC_SETTINGS, clampRecSettings, type RecSettings } from './recordingMath';
@@ -216,7 +216,10 @@ export function discardLastHistory() {
  */
 export function updateProject(fn: (p: Project) => Project, opts: { reschedule?: boolean; merge?: boolean; record?: boolean } = {}) {
   const before = state.project;
-  const changed = fn(before);
+  const edited = fn(before);
+  // A frozen track whose sound was edited thaws: its render would no longer match.
+  const { project: changed, thawed } = invalidateFrozen(before, edited);
+  if (thawed.length) toast(`${thawed.map((n) => `„${n}“`).join(', ')} ${thawed.length > 1 ? 'wurden' : 'wurde'} aufgetaut, weil sich der Klang geändert hat.`);
   // `record: false`: the caller already recorded the undo step (a drag records once, however long it takes).
   if (changed !== before && opts.record !== false) {
     history.record({ project: before, samples: state.samples }, { continuous: opts.merge ?? opts.reschedule === false });

@@ -15,7 +15,7 @@ import {
 import { Platform } from 'react-native';
 import type { ArpSettings, Clip, OscWave, Project, Sample, SeqSettings, SynthSettings, Track } from '../types';
 import { applyNoteFx } from './notefx';
-import { arrangementSampleIds, trackSynth } from '../lib/project';
+import { arrangementSampleIds, playClips, playProject, trackSynth } from '../lib/project';
 import { sampleSource } from '../lib/samples';
 import { DECAY_FLOOR, padAt, planHit } from './drum909';
 import { createLimiter, MixGraph } from './mixgraph';
@@ -526,7 +526,7 @@ function scheduleWindow(
   const spb = secondsPerBar(project.bpm);
   const sources: Voice[] = [];
   for (const track of project.tracks) {
-    for (const clip of track.clips) {
+    for (const clip of playClips(track)) {
       if (clip.muted) continue; // deactivated clip: silent live and in the export
       if (clip.notes) {
         sources.push(...scheduleNotes(ctx, clip, trackSynth(track), { arp: track.arp, seq: track.seq }, buffers, trackDest(track), spb, time, fromBar, toBar, cutBar, fresh));
@@ -719,8 +719,9 @@ export class AudioEngine {
 
   /** Apply volumes, mute, solo and track effects. Safe to call on every project change. */
   syncMixer(project: Project) {
-    this.project = project;
-    this.mix?.apply(project);
+    // Frozen tracks sound as their render: the engine only ever sees the project as it sounds.
+    this.project = playProject(project);
+    this.mix?.apply(this.project);
   }
 
   setMasterVolume(v: number) {
@@ -746,6 +747,7 @@ export class AudioEngine {
     this.playOpts = opts;
     await this.unlock();
     this.stopAll();
+    project = playProject(project);
     this.project = project;
     this.mode = 'arrange';
     const ids = arrangementSampleIds(project);
@@ -1133,6 +1135,7 @@ export class AudioEngine {
 
   /** Render the arrangement (or the loop region) to an AudioBuffer. */
   async render(project: Project, region: { from: number; to: number }): Promise<AudioBuffer> {
+    project = playProject(project);
     const ids = arrangementSampleIds(project);
     await Promise.all([...ids].map((id) => this.loadBuffer(id)));
     const sampleRate = 44100;

@@ -409,7 +409,7 @@ export function ArrangeView() {
                     <TrackGrip name={track.name} onDrag={(dy, phase) => dragTrack(track.id, dy, phase)} />
                     <View style={[s.dot, trackKind(track) === 'midi' && s.dotMidi, trackKind(track) === 'group' && s.dotGroup, { backgroundColor: track.color, opacity: anySolo && !track.solo ? 0.3 : 1 }]} />
                     <Txt numberOfLines={1} style={s.trackName}>
-                      {track.name}
+                      {track.frozen ? `❄ ${track.name}` : track.name}
                     </Txt>
                   </View>
                   <View style={s.trackControls}>

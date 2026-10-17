@@ -6,7 +6,7 @@ import { sidechainSources } from '../lib/sidechain';
 import { djFilter, fxIsDefault, trackFx } from '../audio/fx';
 import { presetById } from '../audio/presets';
 import { C, font } from '../constants/theme';
-import { createMidiClipOnTrack, deleteSelectedTrack, duplicateSelectedTrack, importMidiToTrack } from '../lib/actions';
+import { createMidiClipOnTrack, deleteSelectedTrack, duplicateSelectedTrack, freezeSelectedTrack, importMidiToTrack, unfreezeSelectedTrack } from '../lib/actions';
 import { MAX_TRACK_NAME, TRACK_COLORS, groupMembers, groupOf, groupTracks, mapTrack, moveTrack, renameTrack, setTrackGroup, setTrackKind, trackKind, trackSynth, ungroup } from '../lib/project';
 import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import type { TrackFx } from '../types';
@@ -98,6 +98,27 @@ export function TrackPanel() {
         </View>
         <Txt style={s.note}>{`Spur ${trackIndex + 1} von ${project.tracks.length}. Mit dem Pfeil im Fenster-Kopf (⌄) siehst du die Spuren dabei im Arrangement.`}</Txt>
       </Section>
+
+      {kind !== 'group' && (
+        <Section title="Einfrieren">
+          <Txt style={s.note}>
+            {track.frozen
+              ? 'Eingefroren: die Spur spielt als fertiges Audio und braucht kaum CPU. Änderst du Clips, Instrument, Geräte oder Effekte, taut sie von selbst auf.'
+              : 'Rechnet den Klang der Spur (Instrument, Geräte, Effekte, Pump, Automation) zu Audio, das stattdessen spielt. Schont die CPU am iPhone, wenn viele Synths laufen. Nur die Lautstärke bleibt live (Pan ist eingerechnet).'}
+          </Txt>
+          <View style={s.buttons}>
+            {track.frozen ? (
+              <Btn accessibilityLabel="Spur auftauen" onPress={() => void unfreezeSelectedTrack()}>
+                ❄ Auftauen
+              </Btn>
+            ) : (
+              <Btn disabled={!track.clips.length} accessibilityLabel="Spur einfrieren" onPress={() => void freezeSelectedTrack()}>
+                ❄ Einfrieren
+              </Btn>
+            )}
+          </View>
+        </Section>
+      )}
 
       <Section title="Farbe">
         <View style={s.swatches}>

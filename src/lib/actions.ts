@@ -18,6 +18,7 @@ import { buildLiveSet, type AlsTrack } from './als/liveSet';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
 import { slicerTrack } from './sliceTrack';
+import { stopTrackRecording } from './trackRecording';
 import type { Slice } from '../audio/slicing';
 import { addClip, mapTrack, trackKind, createMidiClip, editClip, findClip, scaleClip, removeClip, removeTrack, setSlot, splitClip, toggleClipsMuted, duplicateTrack, groupTracks, ungroup, copyProject, trackForSample, uid, updateClip } from './project';
 import { pickFile, readSampleData, storeSampleAudio } from './samples';
@@ -25,6 +26,8 @@ import { errorText, getState, openProject, selectedClipIds, setClipSelection, re
 
 export async function togglePlay() {
   const { project, view, cursor } = getState();
+  // Space or Stop during a take ends the take too (it is cut and put on its track).
+  if (getState().recording) return stopTrackRecording();
   try {
     if (engine.playing) {
       engine.stop();

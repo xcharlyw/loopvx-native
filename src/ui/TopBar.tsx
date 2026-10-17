@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { APP_NAME } from '../config';
 import { C, font, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
 import { formatBarPosition, formatClock, secondsPerBar } from '../audio/timing';
 import { setCursor, togglePlay } from '../lib/actions';
+import { toggleTrackRecording } from '../lib/trackRecording';
 import { KEYS } from '../lib/project';
 import { setMetronome, setState, updateProject, useStore } from '../lib/store';
 import { toggleBrowser } from './commands';
@@ -60,6 +61,30 @@ function KeyPicker({ small }: { small: boolean }) {
   );
 }
 
+/** ● Record onto the selected track: tap to start (count-in, then the take), tap again to stop; long press for the settings. */
+function RecBtn() {
+  const recording = useStore((s) => s.recording);
+  const view = useStore((s) => s.view);
+  const [blink, setBlink] = useState(true);
+  useEffect(() => {
+    if (recording?.phase !== 'count') return;
+    const t = setInterval(() => setBlink((b) => !b), 300);
+    return () => clearInterval(t);
+  }, [recording?.phase]);
+  const phase = recording?.phase;
+  return (
+    <IconBtn
+      accessibilityLabel={phase ? 'Aufnahme beenden' : 'Aufnehmen auf Spur'}
+      accessibilityState={{ selected: !!phase }}
+      disabled={view !== 'arrange' || phase === 'saving'}
+      onPress={() => void toggleTrackRecording()}
+      onLongPress={() => setState({ panel: 'record' })}
+    >
+      <Txt style={{ color: C.danger, fontSize: phase === 'rec' ? 15 : 17, lineHeight: 18, opacity: phase === 'count' && !blink ? 0.25 : phase === 'saving' ? 0.4 : 1 }}>{phase === 'rec' ? '■' : '●'}</Txt>
+    </IconBtn>
+  );
+}
+
 export function TopBar() {
   const project = useStore((s) => s.project);
   const metronome = useStore((s) => s.metronome);
@@ -111,6 +136,7 @@ export function TopBar() {
           </IconBtn>
         )}
         <IconBtn accessibilityLabel="Play / Stop" onPress={() => void togglePlay()}>{playing ? <Stop size={16} /> : <Play size={16} />}</IconBtn>
+        <RecBtn />
         <IconBtn accessibilityLabel="Loop" onPress={() => updateProject((p) => ({ ...p, loop: { ...p.loop, enabled: !p.loop.enabled } }))}>
           <LoopIcon size={16} color={iconColor(project.loop.enabled)} />
         </IconBtn>

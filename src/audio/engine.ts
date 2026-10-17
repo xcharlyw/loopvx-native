@@ -384,6 +384,14 @@ function startKitVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
   return new SynthVoice([fade, ...sources.map((s) => ({ stop: (at?: number) => s.stop(at === undefined ? undefined : at + 0.02) }))], sources[0]);
 }
 
+export interface PlayOptions {
+  countIn?: number;
+  recording?: boolean;
+}
+
+/** A take can run this long past its start before the transport stops by itself. */
+const RECORD_MAX_BARS = 2000;
+
 /**
  * One instrument note: oscillator synth, synthesized kick, noise or the instrument's sample (re-pitched)
  * -> filter -> ADSR gain -> destination. A sample instrument without its sample stays silent (null).
@@ -721,7 +729,21 @@ export class AudioEngine {
 
   // ---------------- arrangement transport ----------------
 
-  async play(project: Project, fromBar: number) {
+  /** Options of the running arrange transport, kept so an edit while playing re-schedules it the same way (without a second count-in). */
+  private playOpts: PlayOptions = {};
+
+  /** The audio clock in seconds (0 before the first start). */
+  contextTime(): number {
+    return this.ctx?.currentTime ?? 0;
+  }
+
+  /**
+   * Start the arrangement at `fromBar`. `countIn` bars of clicks come first (always audible, the position waits at `fromBar`);
+   * `recording` keeps the transport running past the end of the arrangement and ignores the loop, so a take can be as long as it is.
+   * Returns the context time at which bar `fromBar` sounds.
+   */
+  async play(project: Project, fromBar: number, opts: PlayOptions = {}): Promise<number> {
+    this.playOpts = opts;
     await this.unlock();
     this.stopAll();
     this.project = project;
@@ -731,14 +753,42 @@ export class AudioEngine {
     this.syncMixer(project);
     const ctx = this.ctx!;
     // Stretching voices need a moment to set up on web; start a little later so they come in on time.
-    const start = ctx.currentTime + (Platform.OS === 'web' && usesStretch(project, this.samples) ? 0.4 : 0.06);
-    const end = project.loop.enabled && fromBar < project.loop.end ? project.loop.end : projectEndBars(project);
+    const base = ctx.currentTime + (Platform.OS === 'web' && usesStretch(project, this.samples) ? 0.4 : 0.06);
+    const lead = Math.max(0, opts.countIn ?? 0) * secondsPerBar(project.bpm);
+    const start = base + lead;
+    if (lead > 0) this.scheduleCountIn(base, opts.countIn!, project.bpm);
+    const end = opts.recording ? fromBar + RECORD_MAX_BARS : project.loop.enabled && fromBar < project.loop.end ? project.loop.end : projectEndBars(project);
     this.segments = [];
     this.playEnd = Math.max(fromBar + 0.25, end);
     this.queueSegment(start, fromBar, Math.min(this.playEnd, fromBar + CHUNK_BARS), true);
     this.playing = true;
     this.timer = setInterval(() => this.tick(), TICK_MS);
     this.emit();
+    return start;
+  }
+
+  /** `bars` bars of clicks (accent on every bar's first beat) from context time `time`, whatever the metronome switch says. */
+  private scheduleCountIn(time: number, bars: number, bpm: number) {
+    const ctx = this.ctx!;
+    const beat = secondsPerBar(bpm) / 4;
+    for (let i = 0; i < bars * 4; i++) {
+      const when = time + i * beat;
+      const accent = i % 4 === 0;
+      const osc = ctx.createOscillator();
+      osc.frequency.value = accent ? 1600 : 1000;
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0.0001, when);
+      env.gain.linearRampToValueAtTime(accent ? 0.6 : 0.4, when + 0.002);
+      env.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+      osc.connect(env);
+      env.connect(ctx.destination);
+      osc.start(when);
+      osc.stop(when + 0.06);
+      osc.onEnded = () => {
+        this.clicks = this.clicks.filter((c) => c !== osc);
+      };
+      this.clicks.push(osc);
+    }
   }
 
   private queueSegment(time: number, fromBar: number, toBar: number, fresh: boolean) {
@@ -821,7 +871,7 @@ export class AudioEngine {
       if (lastEnd - ctx.currentTime < LOOKAHEAD) {
         if (last.toBar < this.playEnd - 1e-9) {
           this.queueSegment(lastEnd, last.toBar, Math.min(this.playEnd, last.toBar + CHUNK_BARS), false);
-        } else if (project.loop.enabled && project.loop.end > project.loop.start) {
+        } else if (!this.playOpts.recording && project.loop.enabled && project.loop.end > project.loop.start) {
           this.playEnd = project.loop.end;
           this.queueSegment(lastEnd, project.loop.start, Math.min(project.loop.end, project.loop.start + CHUNK_BARS), true);
         } else if (ctx.currentTime >= lastEnd) {
@@ -866,7 +916,8 @@ export class AudioEngine {
       return;
     }
     const pos = this.position();
-    await this.play(project, pos);
+    // A running take keeps its transport: no second count-in, and it still ignores the loop.
+    await this.play(project, pos, { recording: this.playOpts.recording });
   }
 
   stop() {

@@ -1,4 +1,4 @@
-import { clock, concatChunks, takeName } from './recordingMath';
+import { DEFAULT_REC_SETTINGS, MAX_LATENCY_MS, clampRecSettings, clock, concatChunks, takeName } from './recordingMath';
 
 describe('concatChunks', () => {
   it('joins the blocks in order', () => {
@@ -15,5 +15,17 @@ describe('takeName and clock', () => {
     expect(clock(7.9)).toBe('0:07');
     expect(clock(125)).toBe('2:05');
     expect(clock(-3)).toBe('0:00');
+  });
+});
+
+describe('clampRecSettings', () => {
+  it('falls back to the defaults for nothing or rubbish', () => {
+    expect(clampRecSettings(undefined)).toEqual(DEFAULT_REC_SETTINGS);
+    expect(clampRecSettings({ countIn: 7 as never, latencyMs: NaN })).toEqual(DEFAULT_REC_SETTINGS);
+  });
+  it('keeps valid count-ins, rounds the latency to 5 ms and limits it', () => {
+    expect(clampRecSettings({ countIn: 0, latencyMs: 42 })).toEqual({ countIn: 0, latencyMs: 40 });
+    expect(clampRecSettings({ countIn: 2, latencyMs: -30 })).toEqual({ countIn: 2, latencyMs: 0 });
+    expect(clampRecSettings({ latencyMs: 9999 }).latencyMs).toBe(MAX_LATENCY_MS);
   });
 });

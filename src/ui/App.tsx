@@ -33,6 +33,7 @@ import { COMMANDS } from './commands';
 import { SampleDragGhost } from './dnd';
 import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
 import { SlicePanel } from './SlicePanel';
+import { RecordPanel } from './RecordPanel';
 import { useAppDims, useSmall } from './hooks';
 import { browserWidth, clampScale, fullHeight, placementFor } from './sheetLayout';
 import { useDrag, web } from './drag';
@@ -153,6 +154,7 @@ function Shell() {
               {panel === 'shortcuts' && <ShortcutsPanel />}
               {panel === 'menu' && <MenuPanel />}
               {panel === 'slice' && <SlicePanel />}
+              {panel === 'record' && <RecordPanel />}
             </View>
           </View>
         </View>

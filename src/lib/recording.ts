@@ -36,7 +36,7 @@ export async function startRecording(): Promise<Recorder> {
       await recorder.stop();
       restore();
       const samples = concatChunks(chunks);
-      return { data: encodeWav({ sampleRate: rate, channels: [samples] }), seconds: samples.length / rate };
+      return { data: encodeWav({ sampleRate: rate, channels: [samples] }), seconds: samples.length / rate, pcm: { sampleRate: rate, samples } };
     },
     cancel() {
       void recorder.stop();

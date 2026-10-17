@@ -571,6 +571,19 @@ drag (`useDrag` passes the page point) shows the ghost while over a target, and 
 `withSamplerSample` (presets.ts, tested: a sampler keeps its settings, any other instrument becomes a fresh sampler), one undo step, plays the root note.
 On a phone the Library is a panel, so drop on a track header with the Library at half size. Checked with mouse and emulated touch in Chromium; not on a real iPhone.
 
+## Recording onto a track (issue #9)
+
+● in the TopBar transport (`RecBtn`; long press, Optionen → "Aufnahme-Einstellungen …" or the command "Aufnehmen auf Spur", Alt+R, open `RecordPanel`): `startTrackRecording` / `stopTrackRecording` (`lib/trackRecording.ts`, one `toggleTrackRecording`; Space / Stop
+(`togglePlay`) end a running take too). Flow: `engine.unlock()` first (the context may only start inside the tap), then the microphone (`startRecording`, the same platform pair as the library recorder: MediaRecorder on web, AudioRecorder native, both now also return
+the mono samples as `Take.pcm`), then `engine.play(project, startBar, { countIn, recording: true })` which returns the context time at which the start bar sounds. `countIn` bars of clicks (`scheduleCountIn`, always audible, the position waits at the
+start bar); `recording` makes the transport run on (`RECORD_MAX_BARS`) and ignores the loop (`playOpts`, kept for `refresh`). The other tracks play, the metronome clicks if it is on. On stop the take is cut by `trimTake`: the time between the recorder's start and the
+start bar (count-in, the transport's start delay, measured on the audio clock, not guessed) plus the user's latency offset (`state.recSettings` `{countIn 0|1|2, latencyMs 0..400}`, kv `recSettings`, `clampRecSettings` in recordingMath.ts, tested). It is stored as a mono WAV
+in the folder "Aufnahmen" with `bpm = project.bpm` (so it follows later tempo changes like a loop) and becomes a clip at the start bar, one undo step. **Target** (`recordTarget`, takes.ts): the selected audio track, else the first audio track of category vocal,
+else a new track "Aufnahme". **Takes** (`placeTake`, pure, tested): a free spot takes the clip as it is; a clip landing on clips already there goes onto a new track right below the track and its earlier takes ("<name> Take 2", "Take 3" …, same colour,
+volume and group) and the clips it covers are muted, so the newest take plays and older ones are one tap (key 0) away. Checked in Chromium with Chrome's fake microphone: count-in phase, take length matches the time after the bar line, second take on the same
+spot makes "Vocals Take 2" and mutes the first clip. **Not checked:** the real alignment against a click on a real microphone (the latency offset is a manual setting, 0 by default), the native path (iOS audio session while playing and recording), Safari.
+No overdub into the same clip, no punch in/out, no monitoring of the microphone (use headphones).
+
 ## Recording and Library ordering
 
 `RecordButton` (Library, top) records the microphone into the library: folder "Aufnahmen", name `takeName()`, always stored as 16-bit **mono WAV**

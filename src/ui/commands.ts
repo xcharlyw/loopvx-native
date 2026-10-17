@@ -21,6 +21,7 @@ import {
 import type { KeySpec } from '../lib/keymap';
 import { addMarker } from '../lib/markers';
 import { startStemSeparation } from '../lib/stems';
+import { toggleTrackRecording } from '../lib/trackRecording';
 import { runLoadMissing } from '../lib/sync';
 import { UI_SCALES, UI_SCALE_LABEL } from '../lib/uiScale';
 import { closeWindow } from '../lib/windowActions';
@@ -161,6 +162,8 @@ export const COMMANDS: Command[] = [
   { id: 'trackDown', label: 'Nächste Spur', group: null, keys: [{ keys: ['ArrowDown'], shift: false }], run: () => selectTrack(1) },
 
   // Optionen (Live keeps transport options here)
+  { id: 'record', label: 'Aufnehmen auf Spur', group: 'Optionen', keys: [{ letter: 'r', alt: true }], run: () => void toggleTrackRecording(), enabled: arrange },
+  { id: 'recordSettings', label: 'Aufnahme-Einstellungen …', group: 'Optionen', keys: [], run: () => setState({ panel: 'record' }) },
   { id: 'play', label: 'Play / Stop', group: 'Optionen', keys: [{ keys: [' '] }], run: () => void togglePlay() },
   { id: 'home', label: 'Zum Anfang', group: 'Optionen', keys: [{ keys: ['Home'] }], run: () => setCursor(0) },
   { id: 'loop', label: 'Loop an / aus', group: 'Optionen', keys: [{ letter: 'l', mod: true, shift: true }], run: () => updateProject((p) => ({ ...p, loop: { ...p.loop, enabled: !p.loop.enabled } })) },

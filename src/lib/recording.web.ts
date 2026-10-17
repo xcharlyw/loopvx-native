@@ -48,7 +48,7 @@ export async function startRecording(): Promise<Recorder> {
       try {
         const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
         const channels = [audio.getChannelData(0).slice()];
-        return { data: encodeWav({ sampleRate: audio.sampleRate, channels }), seconds: audio.duration };
+        return { data: encodeWav({ sampleRate: audio.sampleRate, channels }), seconds: audio.duration, pcm: { sampleRate: audio.sampleRate, samples: channels[0] } };
       } finally {
         void ctx.close().catch(() => undefined);
       }

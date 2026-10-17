@@ -13,6 +13,7 @@ import { withSamplerSample } from '../audio/presets';
 import { readMidiFile, writeMidiFile } from './midi';
 import { clipNotes, exportableTracks, liveColor, midiTrackNotes, projectInfoText, readmeText, samplerFileName, samplerSample, trackFileName, wavInfo } from './abletonExport';
 import { ZipParts, joinParts } from './zipParts';
+import { startProgress } from './exportProgress';
 import { buildLiveSet, type AlsTrack } from './als/liveSet';
 import { applyGroupEdit, clipsSpan, copyClips, duplicateClips, groupEdit, pasteClips, splitClips, type ClipboardItem } from './clipgroup';
 import { consolidateGroups, mergeMidiClips, runSpan } from './consolidate';
@@ -388,17 +389,20 @@ export async function exportStems() {
     toast('Im Exportbereich liegen keine Clips.');
     return;
   }
-  toast(`Stems werden gerendert (${tracks.length} Spuren) …`);
+  const bar = startProgress('Stems-Export', tracks.length + 0.3);
   try {
-    const files: Record<string, Uint8Array> = {};
+    const zip = new ZipParts();
     for (const [i, track] of tracks.entries()) {
+      await bar.step(`Spur ${i + 1} von ${tracks.length}: ${track.name}`);
       const solo = { ...project, tracks: [{ ...track, muted: false, solo: false }] };
-      files[`${String(i + 1).padStart(2, '0')} ${fileSafe(track.name, 'Spur')}.wav`] = await renderWav(solo, region);
+      zip.add(`${String(i + 1).padStart(2, '0')} ${fileSafe(track.name, 'Spur')}.wav`, await renderWav(solo, region));
+      bar.advance(1);
     }
-    // level 0: WAV barely compresses, and storing is instant.
-    const zip = zipSync(files, { level: 0 });
-    await saveFile(zip, `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Stems.zip`, 'application/zip', 'public.zip-archive');
+    await bar.step('ZIP schreiben');
+    await saveParts(zip.finish(), `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Stems.zip`, 'application/zip', 'public.zip-archive');
+    bar.finish('Fertig: ZIP gespeichert');
   } catch (e) {
+    bar.fail();
     toast(errorText(e), 'error');
   }
 }
@@ -424,6 +428,8 @@ export async function exportForAbleton() {
   const folder = `${fileSafe(project.name, 'loopvx')} Project`;
   const setName = `${fileSafe(project.name, 'loopvx')}.als`;
   const problems: string[] = [];
+  // the work in steps: one per track, the reference mixdown (about as much as half the tracks), writing the files
+  const bar = startProgress('Ableton-Export', tracks.length + Math.max(1, tracks.length * 0.6) + 0.5);
   try {
     const zip = new ZipParts();
     const listed: { track: (typeof tracks)[number]; file: string }[] = [];
@@ -436,7 +442,7 @@ export async function exportForAbleton() {
       return renderWav({ ...project, tracks: [bare], master: undefined }, region);
     };
     for (const [i, track] of tracks.entries()) {
-      toast(`Ableton-Export: Spur ${i + 1} von ${tracks.length} „${track.name}“ …`);
+      await bar.step(`Spur ${i + 1} von ${tracks.length}: ${track.name}`);
       const base = { name: track.name, color: liveColor(i), volume: track.volume, pan: track.fx?.pan ?? 0, sends: [track.fx?.reverb ?? 0, track.fx?.delay ?? 0] as [number, number] };
       const addAudio = (file: string, wav: Uint8Array, name: string, clips: { start: number; length: number }[]) => {
         zip.add(`${folder}/Samples/Imported/${file}`, wav);
@@ -473,18 +479,22 @@ export async function exportForAbleton() {
       } catch (e) {
         problems.push(`Spur „${track.name}“ nicht exportiert (${errorText(e)}). Fehlt ein Sample, hilft Datei → „Fehlende Samples laden“.`);
       }
+      bar.advance(1);
     }
     if (!alsTracks.length) throw new Error(problems[0] ?? 'Es konnte keine Spur exportiert werden.');
-    toast('Ableton-Export: Live-Set und Referenz-Mixdown …');
+    await bar.step('Referenz-Mixdown (alle Spuren mit Effekten)');
     try {
       zip.add(`${folder}/Referenz Mixdown.wav`, await renderWav(project, region));
     } catch (e) {
       problems.push(`Referenz-Mixdown nicht gerendert (${errorText(e)}).`);
     }
+    bar.advance(Math.max(1, tracks.length * 0.6));
+    await bar.step('Live-Set und ZIP schreiben');
     zip.add(`${folder}/${setName}`, buildLiveSet({ bpm: project.bpm, tracks: alsTracks, markers: (project.markers ?? []).map((m) => ({ bar: m.bar, name: m.name })) }));
     zip.add(`${folder}/Projekt-Info.txt`, strToU8(projectInfoText(project, samples, listed, problems)));
     zip.add(`${folder}/LIES MICH.txt`, strToU8(readmeText(project, bars, folder)));
     await saveParts(zip.finish(), `${fileSafe(project.name, 'loopvx')} ${project.bpm}bpm Ableton.zip`, 'application/zip', 'public.zip-archive');
+    bar.finish(problems.length ? `Fertig, aber ${problems.length} Problem${problems.length > 1 ? 'e' : ''} (siehe Projekt-Info.txt)` : 'Fertig: ZIP gespeichert');
     toast(problems.length ? `Ableton-Paket fertig, aber ${problems.length} Problem${problems.length > 1 ? 'e' : ''}: siehe „Projekt-Info.txt“.` : 'Ableton-Paket fertig: ZIP entpacken, die .als in Live 12 öffnen (siehe „LIES MICH.txt“).', problems.length ? 'error' : undefined);
   } catch (e) {
     toast(errorText(e), 'error');

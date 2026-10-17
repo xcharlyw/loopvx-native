@@ -1,3 +1,4 @@
+import type { ExportProgress } from './exportProgress';
 import { useSyncExternalStore } from 'react';
 import { engine } from '../audio/engine';
 import { db } from '../storage/db';
@@ -39,6 +40,8 @@ export interface AppState {
   sheetScale: number;
   /** What a running stem separation is doing (shown in the Library), null when none runs. */
   stemStatus: string | null;
+  /** The progress card of a long export (0..1), null when none runs. */
+  exportProgress: ExportProgress | null;
   /** A library folder the Library should open (set after stems arrive), consumed by the Library. */
   libraryJump: string | null;
   /** Wide screens: the Library as Live's browser column on the left (independent of the open panel). */
@@ -89,6 +92,7 @@ let state: AppState = {
   sheetSize: 'full',
   sheetScale: 1,
   stemStatus: null,
+  exportProgress: null,
   libraryJump: null,
   browserOpen: false,
   selectedTrackId: null,

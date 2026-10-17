@@ -36,6 +36,7 @@ import { useAppDims, useSmall } from './hooks';
 import { browserWidth, clampScale, fullHeight, placementFor } from './sheetLayout';
 import { useDrag, web } from './drag';
 import { SheetPlace } from './Sheet';
+import { ExportProgressCard } from './ExportProgressCard';
 import { FloatingWindow } from './FloatingWindow';
 import { NoteFxPanel } from './NoteFxPanel';
 import { openWindow, refitWindows } from '../lib/windowActions';
@@ -169,6 +170,7 @@ function Shell() {
           </View>
         ))}
       </View>
+      <ExportProgressCard bottom={96 + insets.bottom} />
       <SampleDragGhost />
     </View>
   );

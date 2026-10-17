@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { View } from 'react-native';
 import Svg, { Defs, Line, LinearGradient, Path, Stop, Text as SvgText } from 'react-native-svg';
 import { C, mono } from '../../constants/theme';
@@ -9,16 +10,16 @@ import type { OscWave } from '../../types';
 // current settings (the maths lives in audio/scopes.ts and is tested against the real filter).
 
 export const GRID = '#17171b';
-const BG = '#09090b';
+const BG = '#0c0c0f';
 
 /** Frame and background shared by all scopes. */
 export function Frame({ width, height, children, id }: { width: number; height: number; children: React.ReactNode; id: string }) {
   return (
-    <View style={{ width, height, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: C.line, backgroundColor: BG }}>
+    <View style={{ width, height, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#1f1f26', backgroundColor: BG }}>
       <Svg width={width} height={height}>
         <Defs>
           <LinearGradient id={`g-${id}`} x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#c6ff3d" stopOpacity="0.28" />
+            <Stop offset="0" stopColor="#c6ff3d" stopOpacity="0.16" />
             <Stop offset="1" stopColor="#c6ff3d" stopOpacity="0.02" />
           </LinearGradient>
         </Defs>
@@ -145,21 +146,39 @@ export function WaveGlyph({ wave, color, size = 28 }: { wave: OscWave; color: st
   );
 }
 
-/** A wavetable as a stack of frames (the position axis goes up the picture), the frame at `pos` bold on top. */
+/**
+ * A wavetable as a stack of frames, drawn back to front with hidden lines (every frame fills the area below its line, so
+ * the ones behind show only above it, like the ridge view of a wavetable synth). The position axis goes up the picture;
+ * the frame at `pos` is the bold one in the accent colour.
+ */
 export function TableScope({ table, pos, width, height = 110, color = C.accent }: { table: string; pos: number; width: number; height?: number; color?: string }) {
   const n = 96;
-  const steps = 9;
+  const steps = 20;
   const pad = 6;
   const rise = height - 44;
-  const draw = (p: number, y0: number, amp: number) => line(tableFrame(table, p, n).map((v, i) => [(i / (n - 1)) * width, y0 - v * amp] as [number, number]));
+  const base = (p: number) => height - pad - 14 - p * rise;
+  const draw = (p: number, amp: number) => line(tableFrame(table, p, n).map((v, i) => [(i / (n - 1)) * width, base(p) - v * amp] as [number, number]));
+  const closed = (d: string) => `${d} L ${width} ${height} L 0 ${height} Z`;
+  const ps = Array.from({ length: steps }, (_, i) => i / (steps - 1));
+  const behind = ps.filter((p) => p > pos).reverse();
+  const front = ps.filter((p) => p <= pos).reverse();
+  const stack = (p: number) => {
+    const d = draw(p, 12);
+    return (
+      <Fragment key={p}>
+        <Path d={closed(d)} fill={BG} />
+        <Path d={d} stroke="#a9a9b6" strokeOpacity={0.22 + 0.5 * (1 - p)} strokeWidth={1} fill="none" />
+      </Fragment>
+    );
+  };
+  const active = draw(pos, 16);
   return (
     <Frame width={width} height={height} id="table">
-      {Array.from({ length: steps }, (_, i) => {
-        const p = i / (steps - 1);
-        return <Path key={i} d={draw(p, height - pad - 14 - p * rise, 12)} stroke={color} strokeOpacity={0.18 + 0.1 * p} strokeWidth={1} fill="none" />;
-      })}
-      <Path d={draw(pos, height - pad - 14 - pos * rise, 16)} stroke={color} strokeWidth={2.2} fill="none" strokeLinejoin="round" />
-      <Line x1={0} y1={height - pad - 14 - pos * rise} x2={6} y2={height - pad - 14 - pos * rise} stroke={color} strokeWidth={2} />
+      {behind.map(stack)}
+      <Path d={closed(active)} fill={BG} />
+      <Path d={active} stroke={color} strokeWidth={2.2} fill="none" strokeLinejoin="round" />
+      {front.filter((p) => p < pos).map(stack)}
+      <Line x1={0} y1={base(pos)} x2={6} y2={base(pos)} stroke={color} strokeWidth={2} />
     </Frame>
   );
 }

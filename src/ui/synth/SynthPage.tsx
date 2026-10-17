@@ -2,16 +2,20 @@ import { type ReactNode, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { MAX_MODS, MOD_SOURCES, MOD_TARGETS } from '../../audio/synth';
 import { TABLES, tableById } from '../../audio/wavetables';
-import { C, font } from '../../constants/theme';
+import { C, cond, mono } from '../../constants/theme';
 import type { ModSlot, ModSource, ModTarget, OscWave, SynthSettings } from '../../types';
 import { Chip, Txt } from '../kit';
-import { Knob, KnobRow } from './Knob';
+import { Knob as BaseKnob, KnobRow } from './Knob';
 import { EnvScope, FilterScope, LfoScope, TableScope, WaveScope } from './Scopes';
 
 // The synth page, built like Serum's main screen but with only the knobs that matter: two oscillators with a wavetable
 // each (the picture, a position knob, unison), a filter, the amp envelope and one small modulation matrix.
 
-const ACCENT_B = '#3dd6ff';
+// One accent for the whole page (the plugin skin); OSC B used to be cyan.
+const ACCENT_B = C.accent;
+
+/** Every knob of this page wears the plugin skin. */
+const Knob = (p: React.ComponentProps<typeof BaseKnob>) => <BaseKnob skin="synth" {...p} />;
 const WAVES: OscWave[] = ['sawtooth', 'square', 'triangle', 'sine'];
 const WAVE_NAMES: Record<OscWave, string> = { sawtooth: 'Saw', square: 'Square', triangle: 'Triangle', sine: 'Sine' };
 /** Everything an oscillator can play, in the order the arrows step through: the four basic waves, then the wavetables. */
@@ -33,6 +37,14 @@ const FILTERS: { type: NonNullable<SynthSettings['filterType']>; label: string }
 const ENV2 = { attack: 0.01, decay: 0.4, sustain: 0, release: 0.2 };
 const SOURCE_NAMES: Record<ModSource, string> = { lfo1: 'LFO 1', lfo2: 'LFO 2', env2: 'ENV 2' };
 const TARGET_NAMES: Record<ModTarget, string> = { cutoff: 'Cutoff', reso: 'Resonanz', pitch: 'Tonhöhe', posA: 'Wavetable A', posB: 'Wavetable B', level: 'Lautstärke', pan: 'Panorama' };
+
+type SubTab = 'osc' | 'filter' | 'amp' | 'mod';
+const SUB_TABS: { id: SubTab; label: string }[] = [
+  { id: 'osc', label: 'OSC' },
+  { id: 'filter', label: 'FILTER' },
+  { id: 'amp', label: 'AMP' },
+  { id: 'mod', label: 'MOD' },
+];
 
 interface Props {
   synth: SynthSettings;
@@ -101,6 +113,9 @@ function Osc({ title, color, table, pos, wave, unison, spread, width, on, onTogg
 /** The whole synth page. */
 export function SynthPage({ synth, width, set, setB, setMods, setMod }: Props) {
   const wide = width >= 620;
+  // On a phone the page is split in four tabs instead of one long scroll; wide panels show everything.
+  const [sub, setSub] = useState<SubTab>('osc');
+  const show = (id: SubTab) => wide || sub === id;
   const half = wide ? Math.floor((width - 10) / 2) : width;
   const inner = (w: number) => Math.max(160, w - 22); // panel padding 10 + border 1 on each side
   const b = synth.oscB;
@@ -126,6 +141,16 @@ export function SynthPage({ synth, width, set, setB, setMods, setMod }: Props) {
 
   return (
     <View style={{ gap: 10 }}>
+      {!wide && (
+        <View style={s.subBar}>
+          {SUB_TABS.map((t) => (
+            <Pressable key={t.id} accessibilityRole="tab" accessibilityLabel={`Bereich ${t.label}`} accessibilityState={{ selected: sub === t.id }} onPress={() => setSub(t.id)} style={[s.subTab, sub === t.id && s.subOn]}>
+              <Txt style={[s.subText, sub === t.id && { color: C.accentInk }]}>{t.label}</Txt>
+            </Pressable>
+          ))}
+        </View>
+      )}
+      {show('osc') && (
       <View style={wide ? s.row : undefined}>
         <View style={wide ? { width: half } : undefined}>
           <Osc title="OSC A" color={C.accent} table={synth.tableA} pos={synth.posA ?? 0} wave={synth.wave as OscWave} unison={synth.unison} spread={synth.spread} width={inner(half)} onPick={pickA} onPos={(v) => set({ posA: v })}>
@@ -159,8 +184,10 @@ export function SynthPage({ synth, width, set, setB, setMods, setMod }: Props) {
           </Osc>
         </View>
       </View>
+      )}
 
       <View style={wide ? s.row : undefined}>
+        {show('filter') && (
         <View style={wide ? { width: half } : undefined}>
           <Panel
             title="FILTER"
@@ -185,7 +212,9 @@ export function SynthPage({ synth, width, set, setB, setMods, setMod }: Props) {
             </KnobRow>
           </Panel>
         </View>
-        <View style={wide ? { width: half } : { marginTop: 10 }}>
+        )}
+        {show('amp') && (
+        <View style={wide ? { width: half } : undefined}>
           <Panel title="AMP">
             <EnvScope attack={synth.attack} decay={synth.decay} sustain={synth.sustain} release={synth.release} width={inner(half)} height={84} />
             <KnobRow>
@@ -200,8 +229,10 @@ export function SynthPage({ synth, width, set, setB, setMods, setMod }: Props) {
             </KnobRow>
           </Panel>
         </View>
+        )}
       </View>
 
+      {show('mod') && (
       <Panel
         title="MOD"
         color={ACCENT_B}
@@ -298,25 +329,30 @@ export function SynthPage({ synth, width, set, setB, setMods, setMod }: Props) {
           </>
         )}
       </Panel>
+      )}
     </View>
   );
 }
 
 const s = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10 },
-  panel: { backgroundColor: '#0f1215', borderWidth: 1, borderColor: '#1d262b', borderRadius: 10, padding: 10 },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, minHeight: 26 },
+  panel: { backgroundColor: '#121215', borderWidth: 1, borderColor: '#24242b', borderRadius: 14, padding: 14 },
+  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, minHeight: 26 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  led: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#2a3238' },
-  title: { ...font(700), fontSize: 11, letterSpacing: 1.6, color: C.text },
-  picker: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#161c21', borderRadius: 8, borderWidth: 1, borderColor: '#232d33' },
-  arrow: { paddingHorizontal: 14, paddingVertical: 9 },
+  led: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2a2a32' },
+  title: { ...cond(600), fontSize: 14, letterSpacing: 2.2, color: C.text },
+  picker: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#17171b', borderRadius: 10, borderWidth: 1, borderColor: '#24242b' },
+  arrow: { paddingHorizontal: 14, paddingVertical: 11 },
   arrowText: { color: C.muted, fontSize: 13 },
-  pickName: { flex: 1, alignItems: 'center', paddingVertical: 9 },
-  pickText: { ...font(700), fontSize: 14 },
+  pickName: { flex: 1, alignItems: 'center', paddingVertical: 11 },
+  pickText: { ...cond(700), fontSize: 15, letterSpacing: 1.2, textTransform: 'uppercase' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   chips0: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 6 },
   hint: { color: C.muted, fontSize: 11.5, lineHeight: 16, marginTop: 6 },
-  cap: { ...font(700), fontSize: 10, letterSpacing: 1.2, color: C.muted, marginTop: 12 },
-  modRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#1d262b' },
+  cap: { ...cond(600), fontSize: 12, letterSpacing: 1.6, color: C.muted, marginTop: 12 },
+  modRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#24242b' },
+  subBar: { flexDirection: 'row', gap: 6 },
+  subTab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: '#2a2a32', backgroundColor: '#121215' },
+  subOn: { backgroundColor: C.accent, borderColor: C.accent },
+  subText: { ...cond(700), fontSize: 14, letterSpacing: 1.7, color: C.muted },
 });

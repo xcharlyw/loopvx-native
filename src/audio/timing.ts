@@ -43,6 +43,16 @@ export function snapBars(bars: number, grid: number): number {
   return Math.round(bars / grid) * grid;
 }
 
+/**
+ * The step the playhead snaps to when you tap the arrangement: the finest of 1, 1/2, 1/4, 1/8, 1/16 bar whose cells are at least
+ * about 12 px wide (`zoom` = pixels per bar), so the line lands where the finger or mouse is, not on the bar line to its left.
+ */
+export function cursorGrid(zoom: number): number {
+  let step = 1;
+  while (step * zoom > 24 && step > 1 / 16) step /= 2;
+  return step;
+}
+
 /** First grid boundary at or after `time`, for a grid starting at `origin` with the given period. */
 export function nextBoundary(time: number, origin: number, period: number): number {
   if (time <= origin) return origin;

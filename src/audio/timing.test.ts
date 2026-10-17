@@ -1,4 +1,4 @@
-import {
+import { cursorGrid,
   beatsInWindow,
   clipEnvelope,
   clipFades,
@@ -194,5 +194,25 @@ describe('keys in brackets', () => {
   it('reads "(F)" and "(C#)" at the end of a name', () => {
     expect(parseSampleName('KSHMR Synth - PAJANE - Screech Mymind (F).wav').key).toBe('F');
     expect(parseSampleName('KSHMR Riser (C#) - Screech.wav').key).toBe('C#');
+  });
+});
+
+describe('cursorGrid', () => {
+  it('snaps to whole bars when they are narrow and to finer steps when zoomed in', () => {
+    expect(cursorGrid(8)).toBe(1);
+    expect(cursorGrid(24)).toBe(1);
+    expect(cursorGrid(58)).toBe(0.25);
+    expect(cursorGrid(100)).toBe(0.125);
+    expect(cursorGrid(240)).toBe(1 / 16);
+  });
+  it('puts the playhead within half a cell of the tap', () => {
+    for (const zoom of [8, 14, 30, 58, 90, 160, 240]) {
+      const step = cursorGrid(zoom);
+      for (const tap of [0.1, 3.37, 7.5, 12.93]) {
+        const snapped = Math.round(tap / step) * step;
+        expect(Math.abs(snapped - tap) * zoom).toBeLessThanOrEqual((step * zoom) / 2 + 1e-9);
+        expect(Math.abs(snapped - tap) * zoom).toBeLessThanOrEqual(12.5);
+      }
+    }
   });
 });

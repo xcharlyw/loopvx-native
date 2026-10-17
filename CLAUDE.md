@@ -429,6 +429,7 @@ them, consolidate drops their notes. Shown grey with "⊘". Measured offline: th
 
 ## Markers, clipboard, rubber band, master bus, meters
 
+- **Playhead taps** (issue #12): a tap on the ruler, a lane or a clip sets the playhead to the nearest `cursorGrid(zoom)` step (`timing.ts`, tested; 1 bar zoomed out, down to 1/16 bar zoomed in) via `snapBars`, not `Math.floor` to the bar line on the tap's left, so the lime line sits under the finger.
 - **Markers** (`project.markers`, pure `lib/markers.ts`): a strip under the ruler (`MARKER_H`); tap = jump, double tap / long press on a marker, the "✎" button next to "+ Marker" or Bearbeiten → "Marker umbenennen / löschen …" = `MarkersPanel` (rename/nudge/delete),
   long press on the empty strip or "+ Marker" in the corner = new marker. The arranger names its sections as markers (`withMarkers`).
 - **Clipboard** (`clipgroup.ts`: `copyClips`/`pasteClips`/`clipsSpan`/`clipsInRange`): Ctrl/Cmd+C/V paste at the playhead, the block's top on the selected track if every

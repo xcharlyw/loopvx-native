@@ -3,7 +3,7 @@ import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Vi
 import Svg, { Path, Rect } from 'react-native-svg';
 import { C, RULER_H, font, layout, mono } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { clipFades, dbToGain, projectEndBars, snapBars } from '../audio/timing';
+import { clipFades, cursorGrid, dbToGain, projectEndBars, snapBars } from '../audio/timing';
 import { loadSampleIntoSampler, loopSelection, placeSample, setCursor } from '../lib/actions';
 import { applyGroupEdit, clipsInRange, groupEdit } from '../lib/clipgroup';
 import { addMarker } from '../lib/markers';
@@ -260,7 +260,7 @@ export function ArrangeView() {
     setClipSelection(clip.id);
     setState({ selectedTrackId: track.id });
     // Like clicking into a clip in Ableton: the playhead jumps there, ready for Split.
-    if (!engine.playing) setCursor(Math.max(0, snapBars(clip.start + tapX(e) / zoom, grid)));
+    if (!engine.playing) setCursor(Math.max(0, snapBars(clip.start + tapX(e) / zoom, cursorGrid(zoom))));
   };
 
   const onLaneTap = (track: Track, e: GestureResponderEvent) => {
@@ -271,7 +271,8 @@ export function ArrangeView() {
       void placeSample(armed, { trackId: track.id, bar: Math.floor(bar) });
       return;
     }
-    if (!engine.playing) setCursor(Math.floor(bar));
+    // the playhead goes where the tap is (to the nearest grid step), not to the bar line on its left
+    if (!engine.playing) setCursor(snapBars(bar, cursorGrid(zoom)));
   };
 
   // Loop handles: drag start/end along the ruler, snapped to whole bars, one undo step per drag.
@@ -302,7 +303,7 @@ export function ArrangeView() {
         <View style={[s.corner, { width: headerW }]} />
         <View style={s.rulerClip}>
           <Animated.View style={{ width, height: RULER_H, transform: [{ translateX: Animated.multiply(scrollX, -1) }] }}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={(e) => setCursor(Math.floor(Math.max(0, tapX(e) / zoom)))} />
+            <Pressable style={StyleSheet.absoluteFill} onPress={(e) => setCursor(Math.max(0, snapBars(tapX(e) / zoom, cursorGrid(zoom))))} />
             {Array.from({ length: Math.ceil(totalBars / labelEvery) }, (_, i) => i * labelEvery).map((b) => (
               <View key={b} pointerEvents="none" style={[s.rulerLabel, { left: b * zoom }]}>
                 <Mono style={s.rulerText}>{b + 1}</Mono>

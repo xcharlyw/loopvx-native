@@ -163,6 +163,7 @@ export const COMMANDS: Command[] = [
 
   // Optionen (Live keeps transport options here)
   { id: 'record', label: 'Aufnehmen auf Spur', group: 'Optionen', keys: [{ letter: 'r', alt: true }], run: () => void toggleTrackRecording(), enabled: arrange },
+  { id: 'midiSettings', label: 'MIDI-Controller …', group: 'Optionen', keys: [], run: () => setState({ panel: 'midi' }) },
   { id: 'recordSettings', label: 'Aufnahme-Einstellungen …', group: 'Optionen', keys: [], run: () => setState({ panel: 'record' }) },
   { id: 'play', label: 'Play / Stop', group: 'Optionen', keys: [{ keys: [' '] }], run: () => void togglePlay() },
   { id: 'home', label: 'Zum Anfang', group: 'Optionen', keys: [{ keys: ['Home'] }], run: () => setCursor(0) },

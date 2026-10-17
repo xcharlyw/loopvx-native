@@ -1014,6 +1014,45 @@ export class AudioEngine {
     return new Map([...this.sessionVoices].map(([id, v]) => [id, v.scene]));
   }
 
+  // ---------------- live playing (MIDI controller) ----------------
+
+  /** Keys held on a controller: pitch -> the voice playing. */
+  private live = new Map<number, Voice>();
+
+  /**
+   * A key pressed on a controller: plays the track's instrument through the track's effect strip, as long as the key is held
+   * for synths and sustained samples (drums, one-shot samples and slicer pads play out). Silent until the page has been tapped once.
+   */
+  async liveNoteOn(project: Project, track: Track, pitch: number, velocity: number) {
+    let ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') {
+      try {
+        ctx = await this.unlock();
+      } catch {
+        return; // no tap yet: the browser does not let a MIDI message start the sound
+      }
+    }
+    const synth = trackSynth(track);
+    if (synth.wave === 'sample' && synth.sampleId) await this.loadBuffer(synth.sampleId).catch(() => undefined);
+    if (!this.playing || this.project?.id !== project.id) this.syncMixer(project);
+    this.liveNoteOff(pitch);
+    const sustains = isOscWave(synth.wave) || (synth.wave === 'sample' && !synth.oneShot);
+    const voice = startSynthVoice(ctx, synth, pitch, voicePeak(synth, velocity), ctx.currentTime + 0.005, sustains ? 60 : 0.3, this.trackGain(track), this.buffers, project.bpm);
+    if (voice && sustains) this.live.set(pitch, voice);
+  }
+
+  /** The key was released: the held voice ends (with a short fade). Notes that play out on their own are left alone. */
+  liveNoteOff(pitch: number) {
+    const voice = this.live.get(pitch);
+    if (!voice || !this.ctx) return;
+    this.live.delete(pitch);
+    voice.stop(this.ctx.currentTime);
+  }
+
+  liveAllOff() {
+    for (const pitch of [...this.live.keys()]) this.liveNoteOff(pitch);
+  }
+
   // ---------------- preview ----------------
 
   /** Play one synth note now (piano roll taps). */

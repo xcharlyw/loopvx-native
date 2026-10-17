@@ -584,6 +584,18 @@ volume and group) and the clips it covers are muted, so the newest take plays an
 spot makes "Vocals Take 2" and mutes the first clip. **Not checked:** the real alignment against a click on a real microphone (the latency offset is a manual setting, 0 by default), the native path (iOS audio session while playing and recording), Safari.
 No overdub into the same clip, no punch in/out, no monitoring of the microphone (use headphones).
 
+## MIDI controller (Web MIDI, issue #9)
+
+Optionen → "MIDI-Controller …" (panel `midi`, `MidiPanel`): switch the input on (`enableMidi`, asks the browser; remembered in kv `midiEnabled`, reconnected by `bootMidi` at start). Platform pair `midiAccess.ts` (native: unsupported, throws) /
+`midiAccess.web.ts` (`navigator.requestMIDIAccess`, listens to every input, `onstatechange` re-attaches): **Chrome / Edge / Opera on desktop and Android only; Safari and everything on iOS have no Web MIDI**, so Karl's iPhone cannot use it until a native MIDI module exists.
+Pure `lib/midiIn.ts` (tested): `parseMidiMessage` (note on/off, velocity-0 note on = off, CC), `NoteRecorder`, `placeMidiTake`, the CC map (`CcMap`, `DEFAULT_CC_MAP`: 7 volume, 10 pan, 74 filter, 71 drive, 91 reverb, 93 delay, 75 pump; `learnCc` keeps it one-to-one,
+`cleanCcMap`, `applyCc` maps 0..1 onto the parameter's range with a dead zone for filter and pan; kv `ccMap`, `state.ccMap`). `lib/midiControl.ts` wires it: **notes** play the selected MIDI track through `engine.liveNoteOn/Off` (its instrument and its whole effect strip; synths and sustained
+samples are held until the key goes up with a short fade, drums, one-shot samples and slicer pads play out and ignore the note off; silent until the page was tapped once, the browser does not let a MIDI message start audio); **knobs** move the selected track's parameter
+(`updateProject` with `reschedule: false, merge: true`, one undo step per burst), "Lernen" on a row assigns the next CC that arrives. **Recording**: with a MIDI track selected the ● button records the played notes (`startMidiTake` in trackRecording.ts: the same count-in and
+`recording` transport as an audio take, notes before the start bar and the count-in are ignored, positions come from `engine.position()` minus the latency offset, `quantize` in `recSettings` snaps to 1/16); `placeMidiTake` makes a clip of whole bars or, when a clip starts at the same bar,
+overdubs into it. Checked in Chromium with a fake `requestMIDIAccess` keyboard: a held key sounds (peak 0.17) and is silent after the note off, CC 74/7 set filter -1 / volume 1.5, learning CC 21 for Reverb works, a take with count-in gives notes at 0.0625 and 0.5625 in a 2-bar clip.
+**Not checked with real hardware** (Push, Launchpad, a USB keyboard), no sustain pedal (CC 64), pitch bend, aftertouch, no MIDI output (pad lights), no clock sync.
+
 ## Recording and Library ordering
 
 `RecordButton` (Library, top) records the microphone into the library: folder "Aufnahmen", name `takeName()`, always stored as 16-bit **mono WAV**

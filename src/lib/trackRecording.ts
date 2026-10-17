@@ -1,4 +1,7 @@
 import { engine } from '../audio/engine';
+import { secondsPerBar } from '../audio/timing';
+import { beginNoteTake, endNoteTake, midiConnected } from './midiControl';
+import { placeMidiTake } from './midiIn';
 import { sampleLengthBars } from '../audio/timing';
 import { encodeWav } from '../audio/wav';
 import type { Sample } from '../types';
@@ -8,10 +11,13 @@ import type { Recorder } from './recordingTypes';
 import { storeSampleAudio } from './samples';
 import { errorText, getState, setSamples, setState, toast, updateProject } from './store';
 import { placeTake, recordTarget, recordingTrack, trimTake } from './takes';
-import { uid } from './project';
+import { trackKind, uid } from './project';
 
-/** The running take: the recorder and where it lines up with the transport (audio clock seconds). */
-let active: { rec: Recorder; recordStarted: number; barStart: number; startBar: number; trackId: string | null; timer: ReturnType<typeof setTimeout> | null } | null = null;
+/** The running take: the recorder and where it lines up with the transport (audio clock seconds); a MIDI take has no recorder, the notes come from midiControl. */
+let active:
+  | { kind: 'audio'; rec: Recorder; recordStarted: number; barStart: number; startBar: number; trackId: string | null; timer: ReturnType<typeof setTimeout> | null }
+  | { kind: 'midi'; startBar: number; trackId: string; timer: ReturnType<typeof setTimeout> | null }
+  | null = null;
 
 /**
  * Record the microphone onto the selected audio track (or the vocals track, or a new one) from the playhead, in time with the
@@ -24,6 +30,8 @@ export async function startTrackRecording() {
   if (!recordingSupported()) return toast('Dieser Browser kann nicht aufnehmen.', 'error');
   const { project, cursor, recSettings, selectedTrackId } = state;
   const startBar = Math.max(0, Math.floor(cursor));
+  const selected = project.tracks.find((t) => t.id === selectedTrackId);
+  if (selected && trackKind(selected) === 'midi') return startMidiTake(selected.id, selected.name, startBar);
   const { trackId } = recordTarget(project, selectedTrackId);
   let rec: Recorder | null = null;
   try {
@@ -33,14 +41,9 @@ export async function startTrackRecording() {
     const recordStarted = engine.contextTime();
     const barStart = await engine.play(project, startBar, { countIn: recSettings.countIn, recording: true });
     const wait = Math.max(0, (barStart - engine.contextTime()) * 1000);
-    active = { rec, recordStarted, barStart, startBar, trackId, timer: null };
+    active = { kind: 'audio', rec, recordStarted, barStart, startBar, trackId, timer: null };
     setState({ recording: { phase: recSettings.countIn > 0 ? 'count' : 'rec', trackId, startBar, startedAt: Date.now() } });
-    if (recSettings.countIn > 0) {
-      active.timer = setTimeout(() => {
-        const r = getState().recording;
-        if (r?.phase === 'count') setState({ recording: { ...r, phase: 'rec', startedAt: Date.now() } });
-      }, wait);
-    }
+    if (recSettings.countIn > 0) active.timer = countInTimer(wait);
     const name = trackId ? project.tracks.find((t) => t.id === trackId)?.name : undefined;
     toast(`Aufnahme ab Takt ${startBar + 1} auf ${name ? `„${name}“` : 'einer neuen Spur'}${recSettings.countIn ? `, erst ${recSettings.countIn} Takt${recSettings.countIn > 1 ? 'e' : ''} Einzähler` : ''}.`);
   } catch (e) {
@@ -52,11 +55,60 @@ export async function startTrackRecording() {
   }
 }
 
+/** After `wait` ms the count-in is over: the button turns from "counting" to "recording". */
+const countInTimer = (wait: number) =>
+  setTimeout(() => {
+    const r = getState().recording;
+    if (r?.phase === 'count') setState({ recording: { ...r, phase: 'rec', startedAt: Date.now() } });
+  }, wait);
+
+/** Record the notes played on a MIDI controller into the selected MIDI track: the same count-in and transport as an audio take. */
+async function startMidiTake(trackId: string, name: string, startBar: number) {
+  const { project, recSettings } = getState();
+  if (!midiConnected()) return toast('Kein MIDI-Gerät verbunden. Schalte unter „MIDI-Controller …“ im Menü (Optionen) den Eingang ein; das geht in Chrome am PC oder auf Android.', 'error');
+  try {
+    await engine.unlock();
+    const barStart = await engine.play(project, startBar, { countIn: recSettings.countIn, recording: true });
+    beginNoteTake(trackId, startBar, barStart, recSettings.latencyMs / 1000 / secondsPerBar(project.bpm));
+    active = { kind: 'midi', startBar, trackId, timer: recSettings.countIn > 0 ? countInTimer(Math.max(0, (barStart - engine.contextTime()) * 1000)) : null };
+    setState({ recording: { phase: recSettings.countIn > 0 ? 'count' : 'rec', trackId, startBar, startedAt: Date.now() } });
+    toast(`Noten aufnehmen ab Takt ${startBar + 1} auf „${name}“${recSettings.countIn ? `, erst ${recSettings.countIn} Takt${recSettings.countIn > 1 ? 'e' : ''} Einzähler` : ''}. Spiel los.`);
+  } catch (e) {
+    engine.stop();
+    endNoteTake(0, false);
+    active = null;
+    setState({ recording: null });
+    toast(errorText(e), 'error');
+  }
+}
+
+/** Stop a MIDI take: the played notes become a clip (or join the clip that starts at the same bar). */
+function finishMidiTake(a: { startBar: number; trackId: string; timer: ReturnType<typeof setTimeout> | null }) {
+  if (a.timer) clearTimeout(a.timer);
+  const endBar = engine.position();
+  engine.stop();
+  engine.liveAllOff();
+  const { recSettings } = getState();
+  const took = endNoteTake(endBar, recSettings.quantize);
+  setState({ recording: null });
+  if (!took?.notes.length) return toast('Es wurden keine Noten gespielt.');
+  const length = Math.max(1, Math.ceil(endBar - a.startBar - 1e-6));
+  let clipId = '';
+  updateProject((p) => {
+    const r = placeMidiTake(p, a.trackId, took.notes, a.startBar, length, uid());
+    clipId = r.clipId;
+    return r.project;
+  });
+  setState({ selectedTrackId: a.trackId, selectedClipId: clipId || null });
+  toast(`${took.notes.length} Note${took.notes.length === 1 ? '' : 'n'} aufgenommen, Takt ${a.startBar + 1}–${a.startBar + length}${recSettings.quantize ? ' (auf 1/16 gerastet)' : ''}.`);
+}
+
 /** Stop the take, cut it to the grid and put it on the track as a clip (a take track when it lands on existing clips). */
 export async function stopTrackRecording() {
   const a = active;
   if (!a) return;
   active = null;
+  if (a.kind === 'midi') return finishMidiTake(a);
   if (a.timer) clearTimeout(a.timer);
   engine.stop();
   setState({ recording: { phase: 'saving', trackId: a.trackId, startBar: a.startBar, startedAt: Date.now() } });

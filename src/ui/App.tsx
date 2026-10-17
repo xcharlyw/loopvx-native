@@ -34,6 +34,8 @@ import { SampleDragGhost } from './dnd';
 import { MENU_BAR_H, MenuBar, MenuPanel, ShortcutsPanel } from './MenuBar';
 import { SlicePanel } from './SlicePanel';
 import { RecordPanel } from './RecordPanel';
+import { MidiPanel } from './MidiPanel';
+import { bootMidi } from '../lib/midiControl';
 import { useAppDims, useSmall } from './hooks';
 import { browserWidth, clampScale, fullHeight, placementFor } from './sheetLayout';
 import { useDrag, web } from './drag';
@@ -155,6 +157,7 @@ function Shell() {
               {panel === 'menu' && <MenuPanel />}
               {panel === 'slice' && <SlicePanel />}
               {panel === 'record' && <RecordPanel />}
+              {panel === 'midi' && <MidiPanel />}
             </View>
           </View>
         </View>
@@ -245,6 +248,7 @@ export function App() {
     // getSession restores the login (on web it also finishes a Google sign-in that just redirected
     // back with ?code=), then Drive sync starts.
     void Promise.all([boot(), getSession()]).then(startSync);
+    void bootMidi();
   }, []);
 
   return (

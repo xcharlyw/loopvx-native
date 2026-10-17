@@ -6,13 +6,14 @@ import type { Project, Sample } from '../types';
 import { History } from './history';
 import { createProject, isProject, repairProject } from './project';
 import { clampUiScale } from './uiScale';
+import { DEFAULT_CC_MAP, cleanCcMap, type CcMap, type CcTarget } from './midiIn';
 import { DEFAULT_REC_SETTINGS, clampRecSettings, type RecSettings } from './recordingMath';
 import type { WinRect } from './windows';
 
 export type View = 'arrange' | 'session';
 /** Size of the open panel: full, half (docked below, the arrangement stays usable) or only its title bar. */
 export type SheetSize = 'full' | 'half' | 'bar';
-export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'notefx' | 'automation' | 'arranger' | 'markers' | 'shortcuts' | 'menu' | 'slice' | 'record';
+export type Panel = 'none' | 'library' | 'mixer' | 'projects' | 'clip' | 'track' | 'export' | 'piano' | 'instrument' | 'devices' | 'notefx' | 'automation' | 'arranger' | 'markers' | 'shortcuts' | 'menu' | 'slice' | 'record' | 'midi';
 
 export interface Toast {
   id: number;
@@ -84,6 +85,10 @@ export interface AppState {
   recording: { phase: 'count' | 'rec' | 'saving'; trackId: string | null; startBar: number; startedAt: number } | null;
   /** Count-in bars (0 = none) and the device latency in ms the take is moved earlier by; a per-device preference. */
   recSettings: RecSettings;
+  /** MIDI controller: whether the browser can do it, whether it is switched on, the connected inputs, the last thing heard and the CC being learned. */
+  midi: { supported: boolean; enabled: boolean; inputs: string[]; last: string; learn: CcTarget | null };
+  /** Controller knob (CC number) -> parameter of the selected track; a per-device preference. */
+  ccMap: CcMap;
   /** Audition level in dB (Library / Drive browser), a per-device preference like the metronome. */
   previewDb: number;
   /** Size of the whole interface, 1 / 0.9 / 0.8 / 0.7 (web zoom), a per-device preference. */
@@ -124,6 +129,8 @@ let state: AppState = {
   metronome: false,
   recording: null,
   recSettings: DEFAULT_REC_SETTINGS,
+  midi: { supported: false, enabled: false, inputs: [], last: '', learn: null },
+  ccMap: { ...DEFAULT_CC_MAP },
   previewDb: 0,
   uiScale: 1,
 };
@@ -343,6 +350,11 @@ export function setRecSettings(patch: Partial<RecSettings>) {
   void db.setKv('recSettings', next);
 }
 
+export function setCcMap(map: CcMap) {
+  setState({ ccMap: map });
+  void db.setKv('ccMap', map);
+}
+
 export function setUiScale(v: number) {
   const scale = clampUiScale(v);
   setState({ uiScale: scale });
@@ -375,7 +387,7 @@ export function errorText(e: unknown): string {
 export const START_BLANK = '__start-blank__';
 
 export async function boot() {
-  const [samples, projects, lastId, metronome, previewDb, folders, uiScale, recSettings] = await Promise.all([
+  const [samples, projects, lastId, metronome, previewDb, folders, uiScale, recSettings, ccMap] = await Promise.all([
     db.getSamples(),
     db.getProjects(),
     db.getKv<string>('lastProjectId'),
@@ -384,9 +396,10 @@ export async function boot() {
     db.getKv<string[]>('folders'),
     db.getKv<number>('uiScale'),
     db.getKv<Partial<RecSettings>>('recSettings'),
+    db.getKv<unknown>('ccMap'),
   ]);
   if (Array.isArray(folders)) setState({ folders });
-  setState({ uiScale: clampUiScale(uiScale), recSettings: clampRecSettings(recSettings) });
+  setState({ uiScale: clampUiScale(uiScale), recSettings: clampRecSettings(recSettings), ccMap: cleanCcMap(ccMap) });
   if (metronome) setMetronome(true);
   if (typeof previewDb === 'number' && Number.isFinite(previewDb)) setPreviewDb(previewDb);
   setSamples(samples);

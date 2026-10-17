@@ -24,8 +24,10 @@ describe('clampRecSettings', () => {
     expect(clampRecSettings({ countIn: 7 as never, latencyMs: NaN })).toEqual(DEFAULT_REC_SETTINGS);
   });
   it('keeps valid count-ins, rounds the latency to 5 ms and limits it', () => {
-    expect(clampRecSettings({ countIn: 0, latencyMs: 42 })).toEqual({ countIn: 0, latencyMs: 40 });
-    expect(clampRecSettings({ countIn: 2, latencyMs: -30 })).toEqual({ countIn: 2, latencyMs: 0 });
+    expect(clampRecSettings({ countIn: 0, latencyMs: 42 })).toEqual({ countIn: 0, latencyMs: 40, quantize: true });
+    expect(clampRecSettings({ countIn: 2, latencyMs: -30 })).toEqual({ countIn: 2, latencyMs: 0, quantize: true });
     expect(clampRecSettings({ latencyMs: 9999 }).latencyMs).toBe(MAX_LATENCY_MS);
+    expect(clampRecSettings({ quantize: false }).quantize).toBe(false);
+    expect(clampRecSettings({ quantize: 'x' as never }).quantize).toBe(true);
   });
 });

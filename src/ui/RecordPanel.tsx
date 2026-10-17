@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import { C, mono } from '../constants/theme';
 import { MAX_LATENCY_MS } from '../lib/recordingMath';
+import { trackKind } from '../lib/project';
 import { recordTarget } from '../lib/takes';
 import { setRecSettings, setState, useStore } from '../lib/store';
 import { startTrackRecording } from '../lib/trackRecording';
@@ -15,12 +16,18 @@ export function RecordPanel() {
   const cursor = useStore((st) => st.cursor);
   const target = recordTarget(project, selectedTrackId).trackId;
   const name = target ? project.tracks.find((t) => t.id === target)?.name : undefined;
+  const selected = project.tracks.find((t) => t.id === selectedTrackId);
+  const midiTrack = selected && trackKind(selected) === 'midi' ? selected.name : null;
   const step = (d: number) => setRecSettings({ latencyMs: settings.latencyMs + d });
 
   return (
     <Sheet title="Aufnahme">
       <Section title="Ziel">
-        <Txt style={s.note}>{`Aufnahme ab Takt ${Math.floor(cursor) + 1} auf ${name ? `„${name}“` : 'eine neue Spur „Aufnahme“'}. Wähle vorher eine Audio-Spur aus, um eine andere zu nehmen.`}</Txt>
+        <Txt style={s.note}>
+          {midiTrack
+            ? `Noten aufnehmen ab Takt ${Math.floor(cursor) + 1} auf „${midiTrack}“ (MIDI-Controller nötig).`
+            : `Mikrofon-Aufnahme ab Takt ${Math.floor(cursor) + 1} auf ${name ? `„${name}“` : 'eine neue Spur „Aufnahme“'}. Wähle vorher eine andere Audio-Spur aus, um sie zu nehmen; eine MIDI-Spur nimmt Noten vom Controller auf.`}
+        </Txt>
       </Section>
 
       <Section title="Einzähler">
@@ -48,6 +55,15 @@ export function RecordPanel() {
           </Chip>
         </View>
         <Txt style={s.note}>{`Mikrofon und Lautsprecher brauchen Zeit: eine Aufnahme liegt sonst etwas hinter dem Takt. Kommt sie zu spät, erhöhe den Wert (bis ${MAX_LATENCY_MS} ms); mit Kopfhörern per Kabel reichen meist 30 bis 80 ms, Bluetooth braucht deutlich mehr. Probiere es mit dem Einzähler: zähl mit und schau, ob der erste Schlag auf der Taktlinie sitzt.`}</Txt>
+      </Section>
+
+      <Section title="MIDI-Noten">
+        <View style={s.chips}>
+          <Chip variant={settings.quantize ? 'on' : 'ghost'} accessibilityLabel="Noten auf 1/16 runden" onPress={() => setRecSettings({ quantize: !settings.quantize })}>
+            Auf 1/16 runden
+          </Chip>
+        </View>
+        <Txt style={s.note}>Ist eine MIDI-Spur ausgewählt, nimmt ● die Noten auf, die du am MIDI-Controller spielst (Menü → MIDI-Controller). Beginnt die Aufnahme auf dem Takt eines vorhandenen Clips, kommen die Noten in diesen Clip dazu: so baust du ein Pattern Schicht für Schicht auf.</Txt>
       </Section>
 
       <View style={s.buttons}>

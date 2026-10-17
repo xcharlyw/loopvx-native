@@ -41,3 +41,8 @@ export const font = (weight: Weight = 400): TextStyle => ({ fontFamily: INTER[we
 export const mono = (weight: 400 | 500 = 400): TextStyle => ({
   fontFamily: weight === 500 ? 'JetBrainsMono_500Medium' : 'JetBrainsMono_400Regular',
 });
+
+/** The condensed face of the synth skin (panel titles, knob labels, tabs). */
+export const cond = (weight: 600 | 700 = 600): TextStyle => ({
+  fontFamily: weight === 700 ? 'BarlowCondensed_700Bold' : 'BarlowCondensed_600SemiBold',
+});

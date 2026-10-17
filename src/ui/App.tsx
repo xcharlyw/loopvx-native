@@ -1,4 +1,5 @@
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
+import { BarlowCondensed_600SemiBold, BarlowCondensed_700Bold } from '@expo-google-fonts/barlow-condensed';
 import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { useFonts } from 'expo-font';
 import { useEffect, useRef, useState } from 'react';
@@ -236,6 +237,8 @@ export function App() {
     Inter_700Bold,
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
+    BarlowCondensed_600SemiBold,
+    BarlowCondensed_700Bold,
   });
 
   useShortcuts();

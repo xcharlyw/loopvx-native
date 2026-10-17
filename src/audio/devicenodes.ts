@@ -68,7 +68,8 @@ export function setParam(ctx: BaseAudioContext, param: Param, v: number, mode: b
     else param.setValueAtTime(v, env.at);
     return;
   }
-  if (env) param.setTargetAtTime(v, ctx.currentTime, TIME_CONSTANT);
+  // Glide only while playing; a render (and a device just built) jumps, or the defaults would leak into the first ~50 ms.
+  if (env.smooth) param.setTargetAtTime(v, ctx.currentTime, TIME_CONSTANT);
   else param.setValueAtTime(v, 0);
 }
 export type { Param as DeviceParam };

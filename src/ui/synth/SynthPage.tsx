@@ -185,6 +185,7 @@ export function SynthPage({ synth, width, set, setB, setMods, setMod }: Props) {
     <Osc panelW={grow ? oscW : undefined} title="OSC A" table={synth.tableA} pos={synth.posA ?? 0} posRing={rings.posA} wave={synth.wave as OscWave} unison={synth.unison} spread={synth.spread} width={inner(oscW)} height={scopeH} onPick={pickA} onPos={(v) => set({ posA: v })}>
       <Knob label="Unison" value={synth.unison ?? 1} min={1} max={7} step={1} reset={1} format={(v) => String(Math.round(v))} onChange={(v) => set({ unison: v, spread: v > 1 && !synth.spread ? 20 : synth.spread })} />
       <Knob label="Detune" value={synth.spread ?? 0} min={0} max={100} step={1} reset={0} format={CT} onChange={(v) => set({ spread: v })} />
+      <Knob label="Breite" value={synth.width ?? 0} min={0} max={1} reset={0} format={(v) => ((synth.unison ?? 1) > 1 ? PCT(v) : 'mono')} onChange={(v) => set({ width: Math.round(v * 100) / 100 })} />
     </Osc>
   );
   const oscB = (

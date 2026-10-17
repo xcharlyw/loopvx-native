@@ -298,9 +298,25 @@ position is modulated by a crossfade of two frames** (pos and pos+amount, `morph
 first posA / posB slot is used. Measured offline in Chromium: Fold position 0 → 1 raises the zero-crossing rate 230 → 1711 Hz, an LFO on the cutoff moves the level over time (0.087 → 0.059),
 ENV 2 → position opens the sound at the note start (385 vs 230 Hz), pan LFO swings the left channel (0.04 ↔ 0.11). UI (`ui/synth/SynthPage.tsx`, Karl: "like Serum 2, but simple, few knobs"): for the Synth instrument the Sound panel is **one page** (tabs SYNTH / FX), sections with a Serum-like head (LED, title): OSC A and OSC B (◀ name ▶ through the four basic waves and the wavetables, tap the name for the list, the picture (`TableScope` stack or `WaveScope`), knobs Pos / Unison / Detune, B: LED switch, Oktave, Level), FILTER (LP/HP/BP, 24 dB, picture, Cutoff / Reso / Env), AMP (ADSR, Sub, Noise) and MOD (the matrix rows: tap source / target to cycle, Betrag knob, ✕; LFO 1 rate + shape + cutoff depth; LFO 2 and ENV 2 settings appear once a routing uses them). Side by side on wide panels (>= 620 px), stacked on a phone. Picking a wavetable on a sound with a dull filter (cutoff < 6 kHz) opens the cutoff to 9 kHz: the table's colour is in the upper harmonics, so every table sounded alike behind a closed filter. Not heard on a phone; native `createPeriodicWave` is untested (web only).
 
+## Hard Techno presets, stereo unison, preset effects
+
+Karl: "good hard techno presets that really sound like it: Reese bass, screeches, rave lead, like the Raveyard sound". Category **Hard Techno** (first in `PRESET_CATEGORIES`,
+pink in the browser), 14 presets `ht-*`: Raveyard / Dark Phase / Clipped / Wobble Reese, Raveyard / Siren / Metal / Vox Screech, Acid Scream, Raveyard Lead, Neo Rave Stab, Neo
+Hoover, Hard Square Lead, Rave Pluck. They are built like a Serum patch with its FX page:
+- **Stereo unison**: `SynthSettings.width` (0..1, default 0 = mono as before; knob "Breite" at OSC A). `planVoice` gives each unison copy a `pan` (detuned down = left, up = right,
+  the middle copy centred; oscillator B mirrored), the engine sends each side through one StereoPanner into the filter, which then runs in stereo (tested).
+- **Preset effects**: `SoundPreset.devices` (type + params) go to the front of the track's device chain marked `Device.preset` (a "SOUND" tag on the card); the next sound or
+  instrument replaces them (`withPresetDevices`), the user's own devices stay and are never pushed out of a full chain; `copyDevices` makes copies the target's own (tested).
+- **Levels** were matched by offline renders in Chromium through the real engine (notes C2/C3/C4 at 150 BPM, a held bar): RMS -17..-23 dBFS for held sounds, peaks -4..-11 dBFS,
+  stereo correlation 0.1 (Raveyard Lead) .. 0.8 (mono-ish reeses: 0.7..0.8), the old presets are mono (1.0). The last saturator's `out` trims each preset (test: drive + out <= 12).
+- **Bug found on the way** (`setParam` in devicenodes.ts): it tested `if (env)` (always true) instead of `env.smooth`, so every device parameter glided from its default even in
+  a render: an offline export with a note at its very start had ~50 ms of the devices at their defaults (a saturator at 0 dB out: +15 dB burst). Fixed and tested
+  (`devicenodes.test.ts`); a device just built (`DeviceBay.sync`, `rebuild` returns the fresh ids) also jumps instead of gliding, so loading a preset while playing does not burst.
+**Not heard** by anyone yet: the sound design is from synthesis knowledge and measurements, not from listening against Raveyard records.
+
 ## 40 genre presets, arpeggiator and step sequencer, plugin windows
 
-**Presets** (`presets.ts`, now 77): next to the first set there are Reese (Dark, Wide, Growl, Neuro, Sub, Rave), Hoover (Classic with the env→pitch dive, Mentasm sync, Gabber, Soft), Screech (Sync, Fold,
+**Presets** (`presets.ts`, now 84 with the Hard Techno set): next to the first set there are Reese (Dark, Wide, Growl, Neuro, Sub, Rave), Hoover (Classic with the env→pitch dive, Mentasm sync, Gabber, Soft), Screech (Sync, Fold,
 Acid, Dirty, High), Trance Leads (Classic, Uplifting, Pluck, Hard, Soft, Voice), Stabs (Hoover, Minor, Hard, FM, Organ, Detuned), Plucks (Sine, Saw, Square, Pizzicato, Kalimba, Glass), Bass (Long Rumble,
 Wobble, FM, Sub Boom) and Pads (Glass, Ocean, Choir). They use the wavetables and the mod matrix where that makes the sound (`presets.test.ts` checks the families and the sane ranges).
 

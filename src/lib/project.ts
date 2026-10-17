@@ -129,7 +129,8 @@ export function copyDevices(project: Project, fromId: string, toId: string, mode
   if (fromId === toId) return project;
   const from = fromId === MASTER_ID ? (project.master?.devices ?? []) : (project.tracks.find((t) => t.id === fromId)?.devices ?? []);
   if (!from.length) return project;
-  const copies = from.map((d) => ({ ...d, params: { ...d.params }, id: uid() }));
+  // A copied chain belongs to the target as the user's own devices, so loading a sound there does not replace them.
+  const copies = from.map(({ preset: _p, ...d }) => ({ ...d, params: { ...d.params }, id: uid() }));
   const next = mapDevices(project, toId, (list) => (mode === 'replace' ? copies : [...list, ...copies].slice(0, MAX_DEVICES)));
   // The automation of the copied devices' knobs comes along, pointing at the copies (the master has no automation).
   const source = fromId === MASTER_ID ? undefined : project.tracks.find((t) => t.id === fromId);

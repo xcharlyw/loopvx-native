@@ -11,6 +11,8 @@ export interface OscPart {
   table?: { id: string; pos: number };
   /** Which oscillator it belongs to (for the position modulation). */
   osc?: 'A' | 'B';
+  /** Stereo position -1..1 of a unison copy (0 = centre; only with `width`). */
+  pan?: number;
 }
 
 /** One LFO of a voice: shape and speed in Hz. */
@@ -84,6 +86,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 export function planVoice(s: SynthSettings, pitch: number, bpm: number): VoicePlan {
   const n = clamp(Math.round(s.unison ?? 1), 1, 7);
   const spread = Math.max(0, s.spread ?? 0);
+  const width = n > 1 ? clamp(s.width ?? 0, 0, 1) : 0;
   const b = s.oscB && s.oscB.level > 0 ? s.oscB : null;
   const bLevel = b ? clamp(b.level, 0, 1) : 0;
   const tableA = tableById(s.tableA);
@@ -93,11 +96,14 @@ export function planVoice(s: SynthSettings, pitch: number, bpm: number): VoicePl
   const oscs: OscPart[] = [];
   for (let i = 0; i < n; i++) {
     const off = n > 1 ? (i / (n - 1) - 0.5) * spread : 0;
-    const a: OscPart = { wave: s.wave as OscWave, freq: midiToHz(pitch) * cents(off), gain: norm, osc: 'A' };
+    // Stereo unison: the copies detuned down sit left, the ones detuned up right, the middle one (odd counts) in the centre.
+    const pan = width > 0 && Math.abs(i / (n - 1) - 0.5) > 1e-9 ? Math.sign(i / (n - 1) - 0.5) * width : 0;
+    const a: OscPart = { wave: s.wave as OscWave, freq: midiToHz(pitch) * cents(off), gain: norm, osc: 'A', ...(pan ? { pan } : {}) };
     if (tableA) a.table = { id: tableA.id, pos: snapPos(s.posA ?? 0) };
     oscs.push(a);
     if (b) {
-      const part: OscPart = { wave: b.wave, freq: midiToHz(pitch + clamp(Math.round(b.octave), -3, 3) * 12) * cents(off + b.detune), gain: norm * bLevel, osc: 'B' };
+      // Oscillator B mirrors the sides, so the two oscillators' beating spreads across the stereo field (a wide Reese).
+      const part: OscPart = { wave: b.wave, freq: midiToHz(pitch + clamp(Math.round(b.octave), -3, 3) * 12) * cents(off + b.detune), gain: norm * bLevel, osc: 'B', ...(pan ? { pan: -pan } : {}) };
       if (tableB) part.table = { id: tableB.id, pos: snapPos(b.pos ?? 0) };
       oscs.push(part);
     }

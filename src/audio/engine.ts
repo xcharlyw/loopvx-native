@@ -224,7 +224,23 @@ function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
     for (const m of slots.filter((x) => x.target === 'pan')) route(m.source, pan.pan, m.amount);
   } else amp.connect(dest);
   const oscNodes: OscillatorNode[] = [];
-  const addOsc = (wave: OscWave, freq: number, gain: number, table?: PeriodicWave): GainNode => {
+  // Stereo unison: one panner per side (copies on the same side share it), feeding the filter, which then runs in stereo.
+  const sides = new Map<number, AudioNode>();
+  const busFor = (pan?: number): AudioNode => {
+    if (!pan) return mix;
+    let bus = sides.get(pan);
+    if (!bus) {
+      const g = ctx.createGain();
+      const p = ctx.createStereoPanner();
+      p.pan.value = pan;
+      g.connect(p);
+      p.connect(filters[0]);
+      sides.set(pan, g);
+      bus = g;
+    }
+    return bus;
+  };
+  const addOsc = (wave: OscWave, freq: number, gain: number, table?: PeriodicWave, pan?: number): GainNode => {
     const o = ctx.createOscillator();
     if (table) o.setPeriodicWave(table);
     else o.type = wave;
@@ -232,7 +248,7 @@ function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
     const g = ctx.createGain();
     g.gain.value = gain;
     o.connect(g);
-    g.connect(mix);
+    g.connect(busFor(pan));
     o.start(when);
     o.stop(end);
     parts.push(o);
@@ -245,7 +261,7 @@ function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
     const { lo, hi } = morphRange(part.table!.pos, slot.amount);
     const toHigh = slot.amount >= 0; // the source value 1 sits at pos + amount: the high frame for a positive amount, the low one for a negative
     const fade = (frame: number, towardSource: boolean) => {
-      const g = addOsc(part.wave, part.freq, part.gain, tableWave(ctx, part.table!.id, frame));
+      const g = addOsc(part.wave, part.freq, part.gain, tableWave(ctx, part.table!.id, frame), part.pan);
       const fadeGain = ctx.createGain();
       // gain = source value (towardSource) or 1 - source value, with the bipolar LFO mapped to 0..1 around 0.5
       const bi = isBipolar(slot.source);
@@ -264,7 +280,7 @@ function startOscVoice(ctx: AnyContext, synth: SynthSettings, pitch: number, lev
     const target = o.osc === 'B' ? 'posB' : 'posA';
     const slot = o.table ? slots.find((m) => m.target === target) : undefined;
     if (o.table && slot) addMorph(o, slot);
-    else addOsc(o.wave, o.freq, o.gain, o.table ? tableWave(ctx, o.table.id, o.table.pos) : undefined);
+    else addOsc(o.wave, o.freq, o.gain, o.table ? tableWave(ctx, o.table.id, o.table.pos) : undefined, o.pan);
   }
   if (plan.sub) addOsc('sine', plan.sub.freq, plan.sub.gain);
   if (plan.noise > 0) {

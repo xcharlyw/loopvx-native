@@ -140,3 +140,51 @@ describe('withInstrumentKind', () => {
     expect(instrumentKind('square')).toBe('synth');
   });
 });
+
+describe('preset effects (devices)', () => {
+  const track = (): Track => ({ ...createProject().tracks[0], devices: [{ id: 'own', type: 'eq', on: true, params: { hp: 80 } }] });
+  const withFx = presetById('ht-screech')!;
+  it('puts the preset’s devices in front of the user’s own, marked as the sound’s', () => {
+    const t = applyPreset(track(), withFx);
+    expect(t.devices!.map((d) => d.type)).toEqual([...withFx.devices!.map((d) => d.type), 'eq']);
+    expect(t.devices!.slice(0, -1).every((d) => d.preset)).toBe(true);
+    expect(t.devices!.at(-1)).toEqual({ id: 'own', type: 'eq', on: true, params: { hp: 80 } });
+  });
+  it('replaces the previous sound’s devices, keeps the user’s', () => {
+    const t = applyPreset(applyPreset(track(), withFx), presetById('ht-reese')!);
+    expect(t.devices!.filter((d) => d.preset).map((d) => d.type)).toEqual(presetById('ht-reese')!.devices!.map((d) => d.type));
+    expect(t.devices!.filter((d) => !d.preset).map((d) => d.id)).toEqual(['own']);
+    // a sound without effects, or another instrument, takes the sound's devices away
+    expect(applyPreset(t, presetById('reese')!).devices).toEqual([track().devices![0]]);
+    expect(withInstrumentKind(t, 'sample').devices!.map((d) => d.id)).toEqual(['own']);
+  });
+  it('never pushes the user’s devices out of a full chain', () => {
+    const full: Track = { ...track(), devices: Array.from({ length: 7 }, (_, i) => ({ id: `u${i}`, type: 'eq' as const, on: true, params: {} })) };
+    const t = applyPreset(full, withFx);
+    expect(t.devices).toHaveLength(8);
+    expect(t.devices!.filter((d) => !d.preset)).toHaveLength(7);
+  });
+});
+
+describe('Hard Techno presets', () => {
+  const ht = PRESETS.filter((p) => p.category === 'Hard Techno');
+  it('cover Reese basses, screeches, rave leads and a hoover', () => {
+    const names = ht.map((p) => p.name).join(' ');
+    for (const word of ['Reese', 'Screech', 'Lead', 'Hoover', 'Stab']) expect(names).toContain(word);
+    expect(ht.length).toBeGreaterThanOrEqual(12);
+  });
+  it('each brings a saturator in its own effects, and wide unison where it has copies', () => {
+    for (const p of ht) {
+      expect(p.devices?.some((d) => d.type === 'sat')).toBe(true);
+      if ((p.synth.unison ?? 1) > 1) expect(p.synth.width ?? 0).toBeGreaterThan(0);
+    }
+  });
+  it('turn the saturator back down after driving it (levels were matched by renders)', () => {
+    for (const p of ht) {
+      const sats = p.devices!.filter((d) => d.type === 'sat');
+      const last = sats[sats.length - 1].params!;
+      expect(last.out ?? 0).toBeLessThanOrEqual(1);
+      expect((last.drive ?? 9) + (last.out ?? 0)).toBeLessThanOrEqual(12);
+    }
+  });
+});

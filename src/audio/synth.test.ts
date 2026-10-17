@@ -215,3 +215,23 @@ describe('slicePlan (slicer instrument)', () => {
     expect(slicePlan({}, 36, 2, 140)).toBeNull();
   });
 });
+
+describe('stereo unison (width)', () => {
+  const base = { wave: 'sawtooth' as const, cutoff: 1000, resonance: 1, attack: 0.01, decay: 0.1, sustain: 1, release: 0.1 };
+  it('stays mono by default (old sounds unchanged)', () => {
+    expect(planVoice({ ...base, unison: 3, spread: 20 }, 48, 150).oscs.every((o) => !o.pan)).toBe(true);
+  });
+  it('puts the copies detuned down left, up right, the middle one centred', () => {
+    const v = planVoice({ ...base, unison: 3, spread: 20, width: 0.8 }, 48, 150);
+    expect(v.oscs.map((o) => o.pan ?? 0)).toEqual([-0.8, 0, 0.8]);
+    expect(v.oscs[0].freq).toBeLessThan(v.oscs[2].freq);
+  });
+  it('mirrors oscillator B, so the beating of the two spreads across the field', () => {
+    const v = planVoice({ ...base, unison: 2, spread: 20, width: 1, oscB: { wave: 'sawtooth', octave: 0, detune: 12, level: 1 } }, 48, 150);
+    expect(v.oscs.map((o) => `${o.osc}${o.pan}`)).toEqual(['A-1', 'B1', 'A1', 'B-1']);
+  });
+  it('has nothing to spread with a single voice, and clamps the width', () => {
+    expect(planVoice({ ...base, unison: 1, width: 1 }, 48, 150).oscs[0].pan).toBeUndefined();
+    expect(planVoice({ ...base, unison: 2, spread: 10, width: 5 }, 48, 150).oscs.map((o) => o.pan)).toEqual([-1, 1]);
+  });
+});

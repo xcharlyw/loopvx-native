@@ -100,6 +100,8 @@ export interface SynthSettings {
   /** Unison: 1..7 detuned copies of each oscillator, spread over `spread` cents in total. */
   unison?: number;
   spread?: number;
+  /** Stereo width of the unison copies, 0..1 (default 0 = mono): the detuned-down ones go left, the detuned-up ones right. */
+  width?: number;
   /** Sine one octave below (0..1) and white noise (0..1). */
   sub?: number;
   noise?: number;
@@ -206,6 +208,8 @@ export interface Device {
   on: boolean;
   /** Values by parameter key; missing keys use the device's defaults (see `audio/devices.ts`). */
   params: Record<string, number>;
+  /** Came with the instrument's sound preset (its FX section): loading another sound replaces it, the user's own devices stay. */
+  preset?: boolean;
 }
 
 export interface Clip {

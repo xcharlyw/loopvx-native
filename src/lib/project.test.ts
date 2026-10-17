@@ -652,3 +652,14 @@ describe('freezing a track', () => {
     });
   });
 });
+
+describe('copyDevices and sound presets', () => {
+  it('makes copied devices the target’s own (a sound loaded there does not take them away)', () => {
+    const p0 = createProject();
+    const [a, b] = p0.tracks;
+    const p1 = { ...p0, tracks: [{ ...a, devices: [{ id: 'x', type: 'sat' as const, on: true, params: {}, preset: true }] }, b, ...p0.tracks.slice(2)] };
+    const copied = copyDevices(p1, a.id, b.id, 'append').tracks.find((t) => t.id === b.id)!.devices!;
+    expect(copied).toHaveLength(1);
+    expect(copied[0].preset).toBeUndefined();
+  });
+});

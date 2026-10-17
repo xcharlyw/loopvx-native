@@ -87,8 +87,9 @@ export class DeviceBay {
   sync(devices: Device[] | undefined, bpm: number, smooth: boolean) {
     const list = devices ?? [];
     const order = list.map((d) => `${d.id}:${d.type}`).join(',');
-    if (order !== this.order) this.rebuild(list);
-    list.forEach((d, i) => this.slots[i]?.update(d, bpm, smooth));
+    const fresh = order !== this.order ? this.rebuild(list) : new Set<string>();
+    // A device that was just built jumps to its settings: gliding from its defaults (0 dB out, 9 dB drive ...) would let a burst through.
+    list.forEach((d, i) => this.slots[i]?.update(d, bpm, smooth && !fresh.has(d.id)));
   }
 
   /** The slot of a device, for automation. */
@@ -110,9 +111,11 @@ export class DeviceBay {
     for (const s of this.slots) s.resetAutomation(devices?.find((d) => d.id === s.id), bpm);
   }
 
-  private rebuild(list: Device[]) {
+  /** Rewires the chain for `list`; returns the ids of the devices built just now. */
+  private rebuild(list: Device[]): Set<string> {
     const old = new Map(this.slots.map((s) => [`${s.id}:${s.type}`, s]));
     const next: Slot[] = [];
+    const built = new Set<string>();
     for (const d of list) {
       const key = `${d.id}:${d.type}`;
       const reused = old.get(key);
@@ -122,7 +125,10 @@ export class DeviceBay {
         continue;
       }
       const node = buildDevice(this.ctx, d.type);
-      if (node) next.push(new Slot(this.ctx, d.id, d.type, node));
+      if (node) {
+        next.push(new Slot(this.ctx, d.id, d.type, node));
+        built.add(d.id);
+      }
     }
     for (const gone of old.values()) gone.dispose();
     // Re-wire the chain: the survivors keep their insides.
@@ -136,5 +142,6 @@ export class DeviceBay {
     prev.connect(this.output);
     this.slots = next;
     this.order = list.map((d) => `${d.id}:${d.type}`).join(',');
+    return built;
   }
 }

@@ -438,9 +438,16 @@ function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index,
           <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ${isFolded ? 'ausklappen' : 'einklappen'}`} accessibilityState={{ expanded: !isFolded }} onPress={onToggle} style={[s.titleBox, compact && { minHeight: 24 }]}>
             {!compact && <Txt style={s.chevron}>{isFolded ? '▸' : '▾'}</Txt>}
             <View style={{ flex: 1 }}>
-              <Txt numberOfLines={1} style={s.cardTitle}>
-                {def.label.toUpperCase()}
-              </Txt>
+              <View style={s.titleLine}>
+                <Txt numberOfLines={1} style={s.cardTitle}>
+                  {def.label.toUpperCase()}
+                </Txt>
+                {device.preset && (
+                  <View style={s.soundTag} accessibilityLabel="Gehört zum Sound-Preset: wechselt mit dem nächsten Sound">
+                    <Txt style={s.soundTagText}>SOUND</Txt>
+                  </View>
+                )}
+              </View>
               {isFolded && (
                 <Txt numberOfLines={1} style={s.summary}>
                   {current && current.id !== 'default' ? current.name : deviceSummary(device)}
@@ -569,6 +576,9 @@ const s = StyleSheet.create({
   stripBody: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' },
   // Turned on its side: a 220 px line rotated about its centre, which sits in the middle of the strip, the text starting at the top.
   stripText: { ...font(700), fontSize: 10, letterSpacing: 1.4, color: C.accent, position: 'absolute', top: 112, left: -93, width: 220, textAlign: 'right', transform: [{ rotate: '-90deg' }] },
+  titleLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  soundTag: { paddingHorizontal: 4, height: 13, borderRadius: 3, borderWidth: 1, borderColor: '#5b6b3a', justifyContent: 'center' },
+  soundTagText: { ...font(700), fontSize: 7.5, letterSpacing: 1, color: '#9fbf55' },
   moving: { zIndex: 5, shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
   slotOver: { borderLeftWidth: 3, borderLeftColor: C.accent },
   markLeft: { borderLeftWidth: 3, borderLeftColor: C.accent },

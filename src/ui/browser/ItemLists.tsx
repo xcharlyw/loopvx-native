@@ -24,7 +24,7 @@ interface ListProps {
   autoPreview: boolean;
 }
 
-const CATEGORY_COLOR: Record<string, string> = { Bass: '#ff5a36', Lead: '#3dd6ff', Pad: '#b48cff', 'Pluck & Stab': '#ffc53d', Drums: '#ff8a3d' };
+const CATEGORY_COLOR: Record<string, string> = { 'Hard Techno': '#ff3d6e', Bass: '#ff5a36', Lead: '#3dd6ff', Pad: '#b48cff', 'Pluck & Stab': '#ffc53d', Drums: '#ff8a3d' };
 
 export const hearSound = (p: SoundPreset) => void engine.previewNote(p.synth, p.note);
 

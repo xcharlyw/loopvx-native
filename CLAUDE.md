@@ -116,7 +116,7 @@ The panels are no longer in a `Modal` but in an overlay inside `Shell` (`App.tsx
 "Fenster verkleinern" / "Fenster vergrößern"; in bar mode the title reopens it and the body is `display: none` (stays mounted, so an open Drive folder or a plan survives). Sizes in
 pure `sheetLayout.ts` (tested): half = 42 % of the screen height (240..440 px), width 560 max, on the right on wide screens. The Android back button closes the panel (`BackHandler`).
 **Flexible height**: the arrows step full → 67 % → half → title bar (`stepSheet`), and a docked sheet has a **grip** on its top edge (`Shell`, `useDrag`) to drag it to any height: `state.sheetScale` (1 = full size; below 1 a full-size panel docks at that fraction of its full height, `fullHeight`: the window, or the detail view's share on a wide screen; `clampScale` snaps > 0.96 to 1, min 0.25). Checked in Chromium (phone viewport): 67 % step, drag down shrinks it. **Live layout on wide screens** (web, above the 720 px breakpoint, `menuBar` in `Shell`): the Library is not a panel but Live's **browser column** on the left (`state.browserOpen`,
-`browserWidth`, toggled by `toggleBrowser` = ⌥⌘B / the TopBar "Library" pill; a `panel: 'library'` from anywhere is redirected to it). It renders `LibraryPanel` inside
+`browserWidth` (drag its right edge, `state.browserW`, kv `browserW`), toggled by `toggleBrowser` = ⌥⌘B / the TopBar "Library" pill; a `panel: 'library'` from anywhere is redirected to it). It renders `LibraryPanel` inside
 `SheetPlace` (`Sheet.tsx` context: no size arrows, its ✕ closes the column). The **detail panels** (`DETAIL_PANELS`: clip, piano, devices, instrument, automation, mixer) dock at
 the bottom across the width right of the browser (`placementFor`: full = 46 %, half = 32 % of the height, bar), so the arrangement stays above them; the other panels
 (mixer, export, projects, track …) keep the right side sheet. Phones are unchanged.
@@ -136,12 +136,45 @@ needs no download. **Not heard on a phone**; very large WAVs are downloaded comp
 
 ## Library audition (tempo and level)
 
-▶ in the Library runs `auditionSample` (actions.ts): a sample without a tempo (not a vocal, longer than 1.2 s) is measured first (`detectSampleTempo`, same confidence
+A tap on a sample row (with the browser's 🎧 preview switch on) or the preview strip runs `auditionSample` (actions.ts): a sample without a tempo (not a vocal, longer than 1.2 s) is measured first (`detectSampleTempo`, same confidence
 gate as the import) and a confident result is **stored on the sample** (toast "Tempo erkannt"), then `engine.preview` plays it warped to the project tempo and, while the
 song runs, from the next bar (`planPreview`). Detected tempos go through `snapTempo` (tempo.ts, tested): within 0.35 BPM of a whole number, or within 1 % when the
 sample is then whole bars, they become whole BPM (149.82 → 150), otherwise a loop drifts against the song; the Drive preview uses it too. `PreviewLevel` (Library and
 Drive browser): a knob for the audition level (`previewDb`, -24..+6 dB, kv `previewDb`, a per-device preference; `engine.setPreviewDb` changes the playing preview)
 and "Wie Spur: <track>", which sets it to the fader level of the track the sample would land on (`trackForSample`), plus the now-playing line (tempo → project tempo).
+
+## Browser (Library) = Ableton Live 12's browser
+
+`LibraryPanel` is a browser, phone sheet and desktop column alike (Karl: "design and workflow, plugins and library like Ableton 12"): search field on top (Cmd/Ctrl+F
+focuses it, `focusBrowserSearch`), a sidebar of **Kategorien** (Samples, Sounds, Drums, Audio-Effekte, MIDI-Effekte) and **Orte** (Google Drive, Splice, Aufnahmen = record +
+upload, Stems = stem separation + the split tunes) when the panel is ≥ 390 px wide, else a row of tabs (`BROWSER_CATS`, `state.browserCat`, `openBrowserAt(cat)` in commands.ts);
+the content list; and the **preview strip** at the bottom (`browser/PreviewStrip.tsx`: waveform of the selected sample, 🎧 = audition on tap, level knob, "＋ <where it goes>").
+Model and search in pure `lib/browser.ts` (tested): `searchWords`/`matchesAll` (every word somewhere, any order), `sampleMatches` (name, folder, category, key, tempo, loop/one-shot),
+`soundGroups` (instrument presets, Drums apart), `fxGroups` (devices by group with their presets, the user's own first; a preset name match lists only that preset), `midiFxGroups`,
+`midiTarget`/`fxTarget`, `stepSelection`, `shortKey` ("F minor" → "Fm"). Rows (`browser/Row.tsx`, ids `s:` sample, `f:` folder, `p:` sound, `d:<type>[:<preset>]` effect, `a:`/`q:` arp/seq):
+tap = select (+ audition), double tap / Enter / ＋ = load, drag = carry. Loading (`lib/browserActions.ts`): a sample goes on its track at the playhead (phone: the sheet closes, the desktop
+column stays), a sound onto the selected MIDI track or a new MIDI track named after it (`loadSound`), an effect to the end of the selected track's chain (`addDeviceFrom`, optional preset and
+index), a MIDI effect onto the MIDI track (`applyMidiFx`). **Keys** (web, `browser/keys.ts`): after a pointer down inside the browser, ↑/↓ move (and audition), → opens a folder / a device's
+presets, ← goes back, Enter loads; taken in the **capture phase**, because RN-web gives a clicked row focus (even with `focusable={false}`, that is only tabIndex -1) and Enter would press it.
+Each list hands its rows to the keys with `useNav` (`browser/nav.ts`). The sample list (`browser/SampleList.tsx`) keeps the tag chips (category, project tempo, key), a column header that sorts
+(Name / Neu / BPM / Tonart), folders (compact `FolderBar`: crumbs, "Auswählen", ⋯ = new folder, Pfade kürzen, Duplikate, Fehlende laden). Checked in Chromium (desktop and iPhone 13
+viewport with touch): upload, arrows + Enter insert, search "hats 150", sound + effect onto new/selected tracks.
+
+**Drag and drop** (`dnd.tsx`): the payload is a sample, a `sound` (preset) or a `device` (type + preset); `useDropTarget(id, { sample, librarySample, sound, device })` takes only the kinds it has
+handlers for (others do not light up). `librarySample` = a sample from the browser only (an audio track header places it at the playhead); a clip dragged in the arrangement carries
+`fromClip`, so dragging a clip over an audio header still moves the clip. Targets: track headers (audio: sample; MIDI: sample → sampler, sound; all: effect), the "+ Audio / + MIDI" row
+(sample or sound → a new track), the device chain's end ("Effekte hierher ziehen") and each device card (insert in front of it), the instrument card / source slot / Sound window (sound,
+sample).
+
+## Device view (Live 12 style)
+
+Docked device chain on wide screens (`DevicePanel` chain mode): all cards **one height** (`alignItems: 'stretch'`), title bar = grip ⋮⋮ (drag left/right to reorder: `reorderTarget`
+on the card widths, the target slot gets a lime edge, `moveDevice` on release, one undo step), power LED, name, ✕; a **folded** device is a 34 px strip with its name on its side
+(`FOLD_W`, also the folded Arp/Seq cards via `CardFrame`); knobs wrap in one block (the EQ's section rows only in the stacked phone card); the chain ends in the drop zone, whose "+" (and
+"+ Gerät") opens the browser on Audio-Effekte (web), else the device list. **User presets** (Live's save button): 💾 on a card names and stores the device's settings
+(`lib/userPresets.ts`, tested: same name of the same device replaces, `userPresetOf`, `cleanUserPresets`; kv `devicePresets`, `state.devicePresets`); they lead the card's ◀ ▶ / list (★, ✕
+deletes) and the browser's Audio-Effekte ("Eigenes Preset", "Löschen" on the selected row). Per device, not synced to Drive. Rotated strip labels: RN-web's `numberOfLines` caps a Text at
+its parent's width, so they use a nowrap web style instead.
 
 ## Duplicates
 

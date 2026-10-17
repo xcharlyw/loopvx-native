@@ -9,7 +9,7 @@ import { engine } from '../audio/engine';
 import { preparePageAudio } from '../audio/pageAudio';
 import { C } from '../constants/theme';
 import { matchesKey } from '../lib/keymap';
-import { boot, setState, useStore } from '../lib/store';
+import { boot, getState, setBrowserW, setState, useStore } from '../lib/store';
 import { getSession } from '../lib/supabase';
 import { startSync } from '../lib/sync';
 import { ArrangeView } from './ArrangeView';
@@ -48,6 +48,8 @@ import { openWindow, refitWindows } from '../lib/windowActions';
 import { isFloatPanel, type WinId } from '../lib/windows';
 import type { ReactNode } from 'react';
 
+const getStateBrowserW = () => getState().browserW;
+
 const BROWSER_PLACE = { column: true, onClose: () => setState({ browserOpen: false }) };
 
 const WINDOW_PANELS: Record<WinId, ReactNode> = { instrument: <InstrumentPanel />, devices: <DevicePanel />, notefx: <NoteFxPanel /> };
@@ -70,7 +72,19 @@ function Shell() {
   const open = panel !== 'none' && !floated;
   const browserOpen = useStore((st) => st.browserOpen);
   const browser = menuBar && browserOpen;
-  const browserW = browser ? browserWidth(width) : 0;
+  const wantedW = useStore((st) => st.browserW);
+  const browserW = browser ? browserWidth(width, wantedW) : 0;
+  // The browser's right edge: drag it to make the column wider or narrower (remembered on this device).
+  const edgeStart = useRef(0);
+  const edge = useDrag('start', browser, (dx, _dy, phase) => {
+    if (phase === 'cancel') return;
+    if (edgeStart.current === 0) edgeStart.current = browserW;
+    setState({ browserW: browserWidth(width, edgeStart.current + dx) });
+    if (phase === 'end') {
+      setBrowserW(getStateBrowserW());
+      edgeStart.current = 0;
+    }
+  });
   const layout = placementFor(panel, sheetSize, { width: width - browserW, height }, menuBar, sheetScale);
   const docked = open && layout.docked;
   // The handle on a docked sheet's top edge: drag up or down to make it as tall as you need (kept as a fraction of its full height).
@@ -119,6 +133,7 @@ function Shell() {
             <SheetPlace.Provider value={BROWSER_PLACE}>
               <LibraryPanel />
             </SheetPlace.Provider>
+            <View {...edge} accessibilityLabel="Browserbreite ziehen" style={[s.edge, web({ touchAction: 'none', cursor: 'ew-resize' })]} />
           </View>
         )}
         <View style={[s.main, docked && { marginBottom: layout.height }]}>
@@ -272,6 +287,7 @@ const s = StyleSheet.create({
   main: { flex: 1, minHeight: 0, minWidth: 0 },
   row: { flex: 1, flexDirection: 'row', minHeight: 0 },
   browser: { backgroundColor: C.bg2, borderRightWidth: 1, borderRightColor: C.line },
+  edge: { position: 'absolute', top: 0, bottom: 0, right: -4, width: 8, zIndex: 25 },
   overlay: { position: 'absolute', zIndex: 30 },
   modalRow: { flex: 1, flexDirection: 'row' },
   dockRow: { flex: 1, flexDirection: 'row' },

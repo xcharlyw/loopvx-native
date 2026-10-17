@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View, type TextStyle } from 'react-native';
 import { echoSeconds } from '../audio/devicemath';
 import { DEVICE_DEFS, deviceSummary, GROUP_LABELS, GROUP_ORDER, MAX_DEVICES, deviceParams, formatParam, type ParamDef } from '../audio/devices';
 import { DEVICE_PRESETS, presetOf, presetParams } from '../audio/devicepresets';
@@ -8,10 +8,15 @@ import { C, font, mono } from '../constants/theme';
 import { MASTER_ID, addDevice, copyDevices, moveDevice, removeDevice, trackKind, trackSynth, updateDevice } from '../lib/project';
 import { getState, setState, toast, updateProject, useStore } from '../lib/store';
 import { loadSampleIntoSampler } from '../lib/actions';
+import { addDeviceFrom, deleteDevicePreset, loadSound, saveDevicePreset } from '../lib/browserActions';
+import { reorderTarget } from '../lib/trackReorder';
+import { freePresetName, userPresetOf, type UserDevicePreset } from '../lib/userPresets';
 import type { Device, DeviceType, Track, TrackKind } from '../types';
 import { Close } from './icons';
-import { Btn, Chip, Txt } from './kit';
-import { useSampleDropTarget } from './dnd';
+import { Chip, Txt } from './kit';
+import { useDropTarget } from './dnd';
+import { useDrag, web } from './drag';
+import { openBrowserAt } from './commands';
 import { Sheet } from './Sheet';
 import { PluginFrame, SKIN } from './skin';
 import { SpliceSearch } from './SpliceSearch';
@@ -53,6 +58,9 @@ const SCOPE_FILTER: FilterKind[] = ['lowpass', 'highpass', 'bandpass'];
  * moved and removed; everything happens on the running mix without restarting playback.
  */
 const CARD_W = CARD_W_FX;
+/** A folded device in the chain is a slim strip with its name on its side (Live). */
+const FOLD_W = 34;
+const GAP = 8;
 
 export function DevicePanel() {
   const forMaster = useStore((st) => st.devicesFor === 'master');
@@ -67,6 +75,8 @@ export function DevicePanel() {
   const [replace, setReplace] = useState(false);
   const allTracks = useStore((st) => st.project.tracks);
   const [folded, setFoldedState] = useState<ReadonlySet<string>>(persistedFolded);
+  // A device dragged by its grip along the chain: where it is and how far it moved (it lands on release).
+  const [moving, setMoving] = useState<{ id: string; dx: number } | null>(null);
   const setFolded = (next: Set<string>) => {
     persistedFolded = next;
     setFoldedState(next);
@@ -105,6 +115,20 @@ export function DevicePanel() {
     setCopying(false);
   };
   const allFolded = devices.length > 0 && devices.every((d) => folded.has(d.id));
+  const widths = devices.map((d) => (folded.has(d.id) ? FOLD_W : CARD_W_FX) + GAP);
+  const movingFrom = moving ? devices.findIndex((d) => d.id === moving.id) : -1;
+  const movingTo = moving && movingFrom >= 0 ? reorderTarget(widths, movingFrom, moving.dx) : -1;
+  const drag = (id: string, dx: number, phase: 'move' | 'end' | 'cancel') => {
+    if (phase === 'cancel') return setMoving(null);
+    if (phase === 'move') return setMoving({ id, dx });
+    const from = devices.findIndex((d) => d.id === id);
+    const to = reorderTarget(widths, from, dx);
+    setMoving(null);
+    if (from >= 0 && to !== from) updateProject((p) => moveDevice(p, trackId, id, to - from), { reschedule: false });
+  };
+  // "+ Gerät": on a wide web screen the browser opens on its Audio-Effekte (Live's way: pick there, or drag into the chain).
+  const browse = Platform.OS === 'web' && chain;
+  const plus = () => (browse ? openBrowserAt('fx') : setAdding(!adding));
 
   const change = (id: string, patch: { on?: boolean; params?: Record<string, number> }) => updateProject((p) => updateDevice(p, trackId, id, patch), { reschedule: false });
   const add = (type: DeviceType) => {
@@ -125,7 +149,7 @@ export function DevicePanel() {
 
         {chain && (
           <View style={s.toolbar}>
-            <Chip variant={adding ? 'on' : 'ghost'} onPress={() => setAdding(!adding)} textStyle={{ fontSize: 11 }} accessibilityLabel="Gerät hinzufügen">
+            <Chip variant={adding ? 'on' : 'ghost'} onPress={plus} textStyle={{ fontSize: 11 }} accessibilityLabel="Gerät hinzufügen">
               + Gerät
             </Chip>
             {devices.length > 0 && (
@@ -187,19 +211,25 @@ export function DevicePanel() {
           )}
           {chain && !forMaster && kind === 'audio' && (
             <View style={{ width: 150 }}>
-              <Source track={track} kind={kind} />
+              <Source track={track} kind={kind} fill />
             </View>
           )}
-          {devices.map((d, i) => (
-            <View key={d.id} style={chain ? { width: folded.has(d.id) ? 170 : CARD_W_FX } : { alignSelf: 'stretch' }}>
-              <DeviceCard compact={chain} track={track} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
-            </View>
-          ))}
+          {devices.map((d, i) => {
+            const isMoving = moving?.id === d.id;
+            // The slot the dragged device would land in shows a lime edge on the side it would go to.
+            const mark = moving && !isMoving && i === movingTo ? (movingTo > movingFrom ? s.markRight : s.markLeft) : null;
+            return (
+              <View key={d.id} style={[chain ? { width: folded.has(d.id) ? FOLD_W : CARD_W_FX } : { alignSelf: 'stretch' }, isMoving && s.moving, isMoving && { transform: [{ translateX: moving.dx }] }, mark]}>
+                <DeviceCard compact={chain} track={track} device={d} folded={folded.has(d.id)} onToggle={() => toggle(d.id)} index={i} count={devices.length} bpm={bpm} width={inner} onChange={(patch) => change(d.id, patch)} onMove={(delta) => updateProject((p) => moveDevice(p, trackId, d.id, delta), { reschedule: false })} onDrag={(dx, phase) => drag(d.id, dx, phase)} onRemove={() => updateProject((p) => removeDevice(p, trackId, d.id), { reschedule: false })} />
+              </View>
+            );
+          })}
           {chain && adding && (
             <View style={{ width: 260 }}>
               <PickList forMaster={forMaster} onPick={add} onCancel={() => setAdding(false)} />
             </View>
           )}
+          {chain && <ChainDrop trackId={trackId} empty={!devices.length} onPlus={plus} />}
         </ScrollView>
 
         {!chain && devices.length === 0 && <Txt style={[s.note, { marginBottom: 10 }]}>Noch keine Effekte. Füge Geräte hinzu: EQ, Compressor, Saturator, Echo, Reverb ...</Txt>}
@@ -208,9 +238,7 @@ export function DevicePanel() {
           (adding ? (
             <PickList forMaster={forMaster} onPick={add} onCancel={() => setAdding(false)} />
           ) : (
-            <Btn kind="primary" accessibilityLabel="Gerät hinzufügen" onPress={() => setAdding(true)}>
-              + Gerät hinzufügen
-            </Btn>
+            <ChainDrop trackId={trackId} empty={!devices.length} onPlus={() => setAdding(true)} wide />
           ))}
         {!chain && <Txt style={[s.note, { marginTop: 12 }]}>
           {forMaster
@@ -243,9 +271,25 @@ function PickList({ forMaster, onPick, onCancel }: { forMaster: boolean; onPick:
   );
 }
 
+/**
+ * The end of the chain, like Live's "Drop Audio Effects Here": an effect dragged from the browser lands here (at the end), and "+" opens
+ * the browser's Audio-Effekte (web, wide) or the list of devices.
+ */
+function ChainDrop({ trackId, empty, onPlus, wide }: { trackId: string; empty: boolean; onPlus: () => void; wide?: boolean }) {
+  const drop = useDropTarget(`chain:${trackId}`, { device: (p) => addDeviceFrom(p.device, { presetId: p.presetId, trackId }) });
+  return (
+    <View ref={drop.ref} style={[wide ? s.dropWide : s.drop, drop.dragging && s.dropLive, drop.over && s.dropOver]}>
+      <Pressable accessibilityLabel="Gerät hinzufügen" onPress={onPlus} style={s.dropPlus}>
+        <Txt style={s.dropPlusText}>+</Txt>
+      </Pressable>
+      <Txt style={s.dropText}>{drop.over ? 'Loslassen: Effekt hier einfügen' : empty ? 'Audio-Effekte hierher ziehen oder + tippen' : 'Effekte hierher ziehen'}</Txt>
+    </View>
+  );
+}
+
 /** The first slot of the chain: what makes the sound (the instrument or the audio clips). */
-function Source({ track, kind }: { track: Track; kind: TrackKind }) {
-  const drop = useSampleDropTarget(`source:${track.id}`, (p) => kind === 'midi' && loadSampleIntoSampler(track.id, p.sampleId));
+function Source({ track, kind, fill }: { track: Track; kind: TrackKind; /** In the chain: as tall as the devices. */ fill?: boolean }) {
+  const drop = useDropTarget(`source:${track.id}`, kind === 'midi' ? { sample: (p) => loadSampleIntoSampler(track.id, p.sampleId), sound: (p) => loadSound(p.presetId, track.id) } : {});
   if (kind === 'group') {
     return (
       <View style={s.source}>
@@ -258,7 +302,7 @@ function Source({ track, kind }: { track: Track; kind: TrackKind }) {
   }
   if (kind === 'audio') {
     return (
-      <View style={s.source}>
+      <View style={[s.source, fill && s.sourceFill]}>
         <View style={{ flex: 1 }}>
           <Txt style={s.sourceName}>Audio-Clips</Txt>
           <Txt style={s.sourceSub}>{`${track.clips.length} ${track.clips.length === 1 ? 'Clip' : 'Clips'} auf dieser Spur`}</Txt>
@@ -275,7 +319,7 @@ function Source({ track, kind }: { track: Track; kind: TrackKind }) {
       <Pressable accessibilityLabel="Instrument öffnen" onPress={() => setState({ panel: 'instrument' })} style={[s.source, { borderColor: C.accent }, drop.dragging && { borderStyle: 'dashed' }, drop.over && { backgroundColor: 'rgba(198,255,61,0.12)' }]}>
         <View style={{ flex: 1 }}>
           <Txt style={[s.sourceName, { color: C.accent }]}>{name}</Txt>
-          <Txt style={s.sourceSub}>{drop.dragging ? (drop.over ? 'Loslassen: Sample in den Sampler' : 'Sample hierher ziehen') : `Instrument · ${type}`}</Txt>
+          <Txt style={s.sourceSub}>{drop.dragging ? (drop.over ? 'Loslassen: hier laden' : 'Sample oder Sound hierher ziehen') : `Instrument · ${type}`}</Txt>
         </View>
         <Txt style={s.open}>Öffnen ›</Txt>
       </Pressable>
@@ -283,42 +327,81 @@ function Source({ track, kind }: { track: Track; kind: TrackKind }) {
   );
 }
 
-function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onRemove }: { compact?: boolean; track: Track; device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onRemove: () => void }) {
+function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index, count, bpm, width, onChange, onMove, onDrag, onRemove }: { compact?: boolean; track: Track; device: Device; folded: boolean; onToggle: () => void; index: number; count: number; bpm: number; width: number; onChange: (p: { on?: boolean; params?: Record<string, number> }) => void; onMove: (delta: number) => void; onDrag: (dx: number, phase: 'move' | 'end' | 'cancel') => void; onRemove: () => void }) {
   const [listOpen, setListOpen] = useState(false);
+  const [naming, setNaming] = useState<string | null>(null);
+  const userPresets = useStore((st) => st.devicePresets);
+  // An effect dragged from the browser onto a card goes in front of it (Live inserts where you drop).
+  const drop = useDropTarget(`devslot:${track.id}:${device.id}`, { device: (p) => addDeviceFrom(p.device, { presetId: p.presetId, trackId: track.id, index }) });
+  const grip = useDrag('start', !!compact, (dx, _dy, phase) => onDrag(dx, phase));
   const def = DEVICE_DEFS[device.type];
   if (!def) return null;
   const p = deviceParams(device);
-  const presets = DEVICE_PRESETS[device.type];
-  const current = presetOf(device);
+  const own = userPresets.filter((x) => x.type === device.type);
+  const presets: (UserDevicePreset | (typeof DEVICE_PRESETS)[DeviceType][number])[] = [...own, ...DEVICE_PRESETS[device.type]];
+  const mine = userPresetOf(own, device);
+  const current = mine ?? presetOf(device);
   const pick = (i: number) => {
     const next = presets[(i + presets.length) % presets.length];
-    onChange({ params: presetParams(device.type, next) });
+    onChange({ params: 'user' in next ? deviceParams({ type: device.type, params: next.params }) : presetParams(device.type, next) });
   };
   const at = current ? presets.indexOf(current) : -1;
   const set = (key: string, v: number) => onChange({ params: { [key]: v } });
   const dim = !device.on;
-  const rows = LAYOUT[device.type] ?? [{ keys: def.params.map((x) => x.key) }];
+  // In the chain all knobs wrap in one block (Live's devices keep one height); the stacked card groups them under titles.
+  const rows = (!compact && LAYOUT[device.type]) || [{ keys: def.params.map((x) => x.key) }];
   const byKey = new Map(def.params.map((x) => [x.key, x]));
+  const save = () => {
+    if (naming === null) return;
+    saveDevicePreset(device, naming);
+    setNaming(null);
+  };
+  const power =
+    device.type !== 'splice' &&
+    (compact ? (
+      <Pressable accessibilityLabel={`${def.label} ${device.on ? 'ausschalten' : 'einschalten'}`} onPress={() => onChange({ on: !device.on })} hitSlop={8} style={{ paddingHorizontal: 2 }}>
+        <View style={[s.led, device.on && s.ledOn]} />
+      </Pressable>
+    ) : (
+      <Chip variant={device.on ? 'on' : 'ghost'} onPress={() => onChange({ on: !device.on })} textStyle={{ fontSize: 11 }}>
+        {device.on ? 'AN' : 'AUS'}
+      </Chip>
+    ));
+
+  // Folded in the chain: a slim strip, power on top, the name on its side, tap to open (Live's folded device).
+  if (compact && isFolded) {
+    return (
+      <View ref={drop.ref} style={[s.fill, dim && { opacity: 0.55 }, drop.over && s.slotOver]}>
+        <PluginFrame style={[s.fill, s.strip]} radius={8}>
+          {power}
+          <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ausklappen`} onPress={onToggle} style={s.stripBody}>
+            <Txt style={[s.stripText, NOWRAP]}>
+              {`${def.label.toUpperCase()}${current && current.id !== 'default' ? ` · ${current.name}` : ''}`}
+            </Txt>
+          </Pressable>
+          <View {...grip} accessibilityLabel={`${def.label} verschieben`} style={[s.gripV, web({ touchAction: 'none', cursor: 'grab' })]}>
+            <Txt style={s.gripText}>⋮⋮</Txt>
+          </View>
+        </PluginFrame>
+      </View>
+    );
+  }
 
   const header = (
     <View style={s.controls}>
-      {device.type !== 'splice' && (compact ? (
-        <Pressable accessibilityLabel={`${def.label} ${device.on ? 'ausschalten' : 'einschalten'}`} onPress={() => onChange({ on: !device.on })} hitSlop={8} style={{ paddingHorizontal: 4 }}>
-          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: device.on ? C.accent : '#2a3238' }} />
-        </Pressable>
-      ) : (
-        <Chip variant={device.on ? 'on' : 'ghost'} onPress={() => onChange({ on: !device.on })} textStyle={{ fontSize: 11 }}>
-          {device.on ? 'AN' : 'AUS'}
-        </Chip>
-      ))}
-      <Pressable accessibilityLabel={`${def.label} nach vorne`} disabled={index === 0} onPress={() => onMove(-1)} style={[s.small, index === 0 && s.disabled]}>
-        <Txt style={s.smallText}>▲</Txt>
-      </Pressable>
-      <Pressable accessibilityLabel={`${def.label} nach hinten`} disabled={index === count - 1} onPress={() => onMove(1)} style={[s.small, index === count - 1 && s.disabled]}>
-        <Txt style={s.smallText}>▼</Txt>
-      </Pressable>
-      <Pressable accessibilityLabel={`${def.label} entfernen`} onPress={onRemove} style={s.small}>
-        <Close size={14} />
+      {!compact && power}
+      {!compact && (
+        <>
+          <Pressable accessibilityLabel={`${def.label} nach vorne`} disabled={index === 0} onPress={() => onMove(-1)} style={[s.small, index === 0 && s.disabled]}>
+            <Txt style={s.smallText}>▲</Txt>
+          </Pressable>
+          <Pressable accessibilityLabel={`${def.label} nach hinten`} disabled={index === count - 1} onPress={() => onMove(1)} style={[s.small, index === count - 1 && s.disabled]}>
+            <Txt style={s.smallText}>▼</Txt>
+          </Pressable>
+        </>
+      )}
+      <Pressable accessibilityLabel={`${def.label} entfernen`} onPress={onRemove} style={compact ? s.tiny : s.small}>
+        <Close size={compact ? 11 : 14} />
       </Pressable>
     </View>
   );
@@ -331,7 +414,7 @@ function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index,
           <Txt style={s.cap}>{def.label.toUpperCase()}</Txt>
           <View style={s.chips}>
             {def.options!.map((o, i) => (
-              <Chip key={o} variant={Math.round(p[def.key]) === i ? 'on' : 'ghost'} onPress={() => set(def.key, i)} textStyle={{ fontSize: 12 }}>
+              <Chip key={o} variant={Math.round(p[def.key]) === i ? 'on' : 'ghost'} onPress={() => set(def.key, i)} textStyle={{ fontSize: compact ? 11 : 12 }} style={compact ? s.chipC : undefined}>
                 {o}
               </Chip>
             ))}
@@ -343,13 +426,21 @@ function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index,
   };
 
   return (
-    <View style={dim && { opacity: 0.55 }}>
-      <PluginFrame style={compact ? s.cardC : s.card} radius={compact ? 8 : 12}>
-        <View style={[s.cardHead, compact && { minHeight: 26 }]}>
-          <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ${isFolded ? 'ausklappen' : 'einklappen'}`} accessibilityState={{ expanded: !isFolded }} onPress={onToggle} style={s.titleBox}>
-            <Txt style={s.chevron}>{isFolded ? '▸' : '▾'}</Txt>
+    <View ref={drop.ref} style={[compact && s.fill, dim && { opacity: 0.55 }, drop.over && s.slotOver]}>
+      <PluginFrame style={[compact ? s.cardC : s.card, compact && s.fill]} radius={compact ? 8 : 12}>
+        <View style={[s.cardHead, compact && s.cardHeadC]}>
+          {compact && (
+            <View {...grip} accessibilityLabel={`${def.label} verschieben`} style={[s.grip, web({ touchAction: 'none', cursor: 'grab' })]}>
+              <Txt style={s.gripText}>⋮⋮</Txt>
+            </View>
+          )}
+          {compact && power}
+          <Pressable accessibilityRole="button" accessibilityLabel={`${def.label} ${isFolded ? 'ausklappen' : 'einklappen'}`} accessibilityState={{ expanded: !isFolded }} onPress={onToggle} style={[s.titleBox, compact && { minHeight: 24 }]}>
+            {!compact && <Txt style={s.chevron}>{isFolded ? '▸' : '▾'}</Txt>}
             <View style={{ flex: 1 }}>
-              <Txt style={s.cardTitle}>{def.label.toUpperCase()}</Txt>
+              <Txt numberOfLines={1} style={s.cardTitle}>
+                {def.label.toUpperCase()}
+              </Txt>
               {isFolded && (
                 <Txt numberOfLines={1} style={s.summary}>
                   {current && current.id !== 'default' ? current.name : deviceSummary(device)}
@@ -366,31 +457,44 @@ function DeviceCard({ compact, track, device, folded: isFolded, onToggle, index,
         )}
         {!isFolded && device.type !== 'splice' && (
           <>
-            <View style={s.presetRow}>
-              <Pressable accessibilityLabel={`${def.label} vorheriges Preset`} onPress={() => pick(at < 0 ? presets.length - 1 : at - 1)} style={s.small}>
+            <View style={[s.presetRow, compact && { marginBottom: 6, gap: 4 }]}>
+              <Pressable accessibilityLabel={`${def.label} vorheriges Preset`} onPress={() => pick(at < 0 ? presets.length - 1 : at - 1)} style={compact ? s.tiny : s.small}>
                 <Txt style={s.smallText}>◀</Txt>
               </Pressable>
-              <Pressable accessibilityLabel={`${def.label} Presets`} onPress={() => setListOpen((v) => !v)} style={s.presetName}>
+              <Pressable accessibilityLabel={`${def.label} Presets`} onPress={() => setListOpen((v) => !v)} style={[s.presetName, compact && { height: 24 }]}>
                 <Txt numberOfLines={1} style={[s.presetText, !current && { color: C.muted }]}>
-                  {current ? current.name : 'Eigene Einstellung'}
+                  {current ? `${mine ? '★ ' : ''}${current.name}` : 'Eigene Einstellung'}
                 </Txt>
               </Pressable>
-              <Pressable accessibilityLabel={`${def.label} nächstes Preset`} onPress={() => pick(at + 1)} style={s.small}>
+              <Pressable accessibilityLabel={`${def.label} nächstes Preset`} onPress={() => pick(at + 1)} style={compact ? s.tiny : s.small}>
                 <Txt style={s.smallText}>▶</Txt>
               </Pressable>
+              <Pressable accessibilityLabel={`${def.label} als Preset speichern`} onPress={() => setNaming(naming === null ? (mine?.name ?? freePresetName(userPresets, device.type, def.label)) : null)} style={[compact ? s.tiny : s.small, naming !== null && s.saveOn]}>
+                <Txt style={[s.smallText, naming !== null && { color: C.accentInk }]}>💾</Txt>
+              </Pressable>
             </View>
+            {naming !== null && (
+              <View style={[s.presetRow, { marginTop: -2 }]}>
+                <TextInput style={s.nameInput} autoFocus value={naming} onChangeText={setNaming} onSubmitEditing={save} selectTextOnFocus placeholder="Name des Presets" placeholderTextColor={C.dim} accessibilityLabel="Name des Presets" />
+                <Chip variant="on" onPress={save} textStyle={{ fontSize: 11 }}>
+                  Speichern
+                </Chip>
+              </View>
+            )}
             {listOpen && (
               <View style={s.presetList}>
-                {presets.map((preset, i) => (
-                  <Chip
-                    key={preset.id}
-                    variant={current?.id === preset.id ? 'on' : 'ghost'}
-                    onPress={() => {
-                      pick(i);
-                      setListOpen(false);
-                    }}
-                    textStyle={{ fontSize: 12 }}
-                  >
+                {own.map((preset) => (
+                  <View key={preset.id} style={s.ownChip}>
+                    <Chip variant={mine?.id === preset.id ? 'on' : 'ghost'} onPress={() => (pick(presets.indexOf(preset)), setListOpen(false))} textStyle={{ fontSize: 12 }}>
+                      {`★ ${preset.name}`}
+                    </Chip>
+                    <Pressable accessibilityLabel={`Preset ${preset.name} löschen`} onPress={() => deleteDevicePreset(preset.id)} hitSlop={6} style={s.ownDel}>
+                      <Close size={10} />
+                    </Pressable>
+                  </View>
+                ))}
+                {DEVICE_PRESETS[device.type].map((preset) => (
+                  <Chip key={preset.id} variant={!mine && current?.id === preset.id ? 'on' : 'ghost'} onPress={() => (pick(presets.indexOf(preset)), setListOpen(false))} textStyle={{ fontSize: 12 }}>
                     {preset.name}
                   </Chip>
                 ))}
@@ -439,6 +543,9 @@ function Scope({ device, p, bpm, width, compact }: { device: Device; p: Record<s
   }
 }
 
+/** One line at its own width (RN-web's numberOfLines would cap it at the narrow strip's width). */
+const NOWRAP = web({ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }) as TextStyle;
+
 const s = StyleSheet.create({
   sub: { ...font(400), fontSize: 12, color: C.muted, marginBottom: 10 },
   presetRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
@@ -449,7 +556,35 @@ const s = StyleSheet.create({
   card: { padding: 12, marginBottom: 10 },
   cardC: { padding: 8 },
   toolbar: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 6 },
-  chain: { gap: 8, alignItems: 'flex-start', paddingBottom: 6 },
+  chain: { gap: GAP, alignItems: 'stretch', paddingBottom: 6 },
+  fill: { flexGrow: 1 },
+  led: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2a3238', borderWidth: 1, borderColor: '#3a4248' },
+  ledOn: { backgroundColor: C.accent, borderColor: C.accent, shadowColor: C.accent, shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
+  cardHeadC: { minHeight: 26, gap: 6, marginBottom: 4 },
+  grip: { width: 14, height: 24, alignItems: 'center', justifyContent: 'center' },
+  gripV: { height: 24, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  gripText: { fontSize: 10, color: C.dim, letterSpacing: -1 },
+  tiny: { minWidth: 24, height: 22, borderRadius: 5, borderWidth: 1, borderColor: '#3a3a42', backgroundColor: '#1c1c21', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  strip: { paddingVertical: 8, alignItems: 'center', gap: 8 },
+  stripBody: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'flex-start', overflow: 'hidden' },
+  // Turned on its side: a 220 px line rotated about its centre, which sits in the middle of the strip, the text starting at the top.
+  stripText: { ...font(700), fontSize: 10, letterSpacing: 1.4, color: C.accent, position: 'absolute', top: 112, left: -93, width: 220, textAlign: 'right', transform: [{ rotate: '-90deg' }] },
+  moving: { zIndex: 5, shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } },
+  slotOver: { borderLeftWidth: 3, borderLeftColor: C.accent },
+  markLeft: { borderLeftWidth: 3, borderLeftColor: C.accent },
+  markRight: { borderRightWidth: 3, borderRightColor: C.accent },
+  saveOn: { backgroundColor: C.accent, borderColor: C.accent },
+  nameInput: { flex: 1, height: 28, borderRadius: 5, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, paddingHorizontal: 8, color: C.text, ...font(400), fontSize: 12, outlineWidth: 0 },
+  ownChip: { flexDirection: 'row', alignItems: 'center' },
+  ownDel: { width: 18, height: 18, marginLeft: -6, borderRadius: 9, backgroundColor: '#2a2a31', alignItems: 'center', justifyContent: 'center' },
+  chipC: { height: 24, paddingHorizontal: 9 },
+  drop: { width: 150, minHeight: 120, borderRadius: 8, borderWidth: 1, borderStyle: 'dashed', borderColor: C.line, alignItems: 'center', justifyContent: 'flex-start', gap: 8, padding: 10, paddingTop: 36 },
+  dropWide: { minHeight: 64, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, marginTop: 4 },
+  dropLive: { borderColor: C.accent },
+  dropOver: { backgroundColor: 'rgba(198,255,61,0.12)' },
+  dropPlus: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  dropPlusText: { ...font(700), fontSize: 18, color: C.accentInk, lineHeight: 20 },
+  dropText: { ...font(500), fontSize: 11, color: C.muted, textAlign: 'center', flexShrink: 1 },
   stack: { flexDirection: 'column', width: '100%' },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 36 },
   titleBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 },
@@ -458,6 +593,7 @@ const s = StyleSheet.create({
   summary: { ...font(400), fontSize: 11.5, color: C.text, marginTop: 2 },
   note: { color: C.muted, fontSize: 12, lineHeight: 17 },
   cap: { ...font(700), fontSize: 10, letterSpacing: 1.4, color: C.muted, marginBottom: 4 },
+  sourceFill: { flexGrow: 1, marginBottom: 0, alignItems: 'flex-start', borderRadius: 8 },
   source: { flexDirection: 'row', alignItems: 'center', backgroundColor: SKIN.panelBottom, borderWidth: 1, borderColor: SKIN.edge, borderRadius: 12, padding: 12, marginBottom: 10 },
   sourceName: { ...font(700), fontSize: 15 },
   sourceSub: { ...font(400), fontSize: 11, color: C.muted, marginTop: 2 },

@@ -34,9 +34,15 @@ describe('placement on a wide screen (Live layout)', () => {
     expect(placementFor('piano', 'full', { width: 390, height: 800 }, false)).toEqual({ docked: false, width: 390, detail: false });
   });
   it('sizes the browser column', () => {
-    expect(browserWidth(1400)).toBe(336);
-    expect(browserWidth(800)).toBe(260);
-    expect(browserWidth(3000)).toBe(340);
+    expect(browserWidth(1400)).toBe(406);
+    expect(browserWidth(800)).toBe(280);
+    expect(browserWidth(3000)).toBe(440);
+  });
+  it('keeps a dragged browser width within its limits', () => {
+    expect(browserWidth(1400, 500)).toBe(500);
+    expect(browserWidth(1400, 100)).toBe(260);
+    expect(browserWidth(1400, 900)).toBe(600);
+    expect(browserWidth(900, 520)).toBe(450);
   });
 });
 

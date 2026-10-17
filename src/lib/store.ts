@@ -9,6 +9,8 @@ import { clampUiScale } from './uiScale';
 import { DEFAULT_CC_MAP, cleanCcMap, type CcMap, type CcTarget } from './midiIn';
 import { DEFAULT_REC_SETTINGS, clampRecSettings, type RecSettings } from './recordingMath';
 import type { WinRect } from './windows';
+import type { BrowserCat } from './browser';
+import { cleanUserPresets, type UserDevicePreset } from './userPresets';
 
 export type View = 'arrange' | 'session';
 /** Size of the open panel: full, half (docked below, the arrangement stays usable) or only its title bar. */
@@ -48,6 +50,12 @@ export interface AppState {
   libraryJump: string | null;
   /** Wide screens: the Library as Live's browser column on the left (independent of the open panel). */
   browserOpen: boolean;
+  /** The browser's category or place (sidebar of the Library). */
+  browserCat: BrowserCat;
+  /** Wide screens: the browser column's width as the user dragged it (null = the default for the window), a per-device preference. */
+  browserW: number | null;
+  /** The user's own device presets (the save button of a device card), a per-device preference. */
+  devicePresets: UserDevicePreset[];
   selectedTrackId: string | null;
   selectedClipId: string | null;
   /** More clips selected together with `selectedClipId` (multi-selection: Shift/Cmd/Ctrl-click, or the multi-select mode on touch). */
@@ -107,6 +115,9 @@ let state: AppState = {
   exportProgress: null,
   libraryJump: null,
   browserOpen: false,
+  browserCat: 'samples',
+  browserW: null,
+  devicePresets: [],
   selectedTrackId: null,
   selectedClipId: null,
   extraClipIds: [],
@@ -364,6 +375,16 @@ export function setUiScale(v: number) {
   void db.setKv('uiScale', scale);
 }
 
+export function setBrowserW(w: number | null) {
+  setState({ browserW: w });
+  void db.setKv('browserW', w);
+}
+
+export function setDevicePresets(list: UserDevicePreset[]) {
+  setState({ devicePresets: list });
+  void db.setKv('devicePresets', list);
+}
+
 export function setPreviewDb(level: number) {
   const v = Math.max(-24, Math.min(6, Math.round(level * 2) / 2));
   engine.setPreviewDb(v);
@@ -390,7 +411,7 @@ export function errorText(e: unknown): string {
 export const START_BLANK = '__start-blank__';
 
 export async function boot() {
-  const [samples, projects, lastId, metronome, previewDb, folders, uiScale, recSettings, ccMap] = await Promise.all([
+  const [samples, projects, lastId, metronome, previewDb, folders, uiScale, recSettings, ccMap, browserW, devicePresets] = await Promise.all([
     db.getSamples(),
     db.getProjects(),
     db.getKv<string>('lastProjectId'),
@@ -400,9 +421,11 @@ export async function boot() {
     db.getKv<number>('uiScale'),
     db.getKv<Partial<RecSettings>>('recSettings'),
     db.getKv<unknown>('ccMap'),
+    db.getKv<number>('browserW'),
+    db.getKv<unknown>('devicePresets'),
   ]);
   if (Array.isArray(folders)) setState({ folders });
-  setState({ uiScale: clampUiScale(uiScale), recSettings: clampRecSettings(recSettings), ccMap: cleanCcMap(ccMap) });
+  setState({ uiScale: clampUiScale(uiScale), recSettings: clampRecSettings(recSettings), ccMap: cleanCcMap(ccMap), devicePresets: cleanUserPresets(devicePresets), browserW: typeof browserW === 'number' && Number.isFinite(browserW) ? browserW : null });
   if (metronome) setMetronome(true);
   if (typeof previewDb === 'number' && Number.isFinite(previewDb)) setPreviewDb(previewDb);
   setSamples(samples);

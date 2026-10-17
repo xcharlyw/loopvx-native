@@ -32,6 +32,8 @@ import { createMidiTrack, createProject, createTrack, findClip, quantizeNotes, u
 import { flushSave, getState, openProject, redo, setMetronome, setState, setUiScale, toast, undo, updateProject, type AppState, type Panel } from '../lib/store';
 import { db } from '../storage/db';
 import { MAX_ZOOM, MIN_ZOOM } from './ArrangeView';
+import { focusBrowserSearch } from './LibraryPanel';
+import type { BrowserCat } from '../lib/browser';
 
 // Every action of the app in one place, Ableton Live 12 style: the menu bar, the shortcut handler and the shortcut list all
 // read this table, so a shortcut shown in a menu is the one that works. Shortcuts are Live's own; where a browser keeps a key
@@ -69,6 +71,19 @@ const wideScreen = () => Platform.OS === 'web' && typeof window !== 'undefined' 
 export function toggleBrowser() {
   if (wideScreen()) setState((st) => ({ browserOpen: !st.browserOpen, panel: st.panel === 'library' ? 'none' : st.panel }));
   else toggle('library');
+}
+
+/** Opens the browser (the column on a wide screen, the Library panel on a phone) at a category, e.g. Audio-Effekte for "+ Gerät". */
+export function openBrowserAt(cat: BrowserCat) {
+  if (wideScreen()) setState((st) => ({ browserOpen: true, browserCat: cat, panel: st.panel === 'library' ? 'none' : st.panel }));
+  else setState({ panel: 'library', browserCat: cat });
+}
+
+/** Cmd/Ctrl+F like Live: the browser opens and its search field takes the typing. */
+function searchBrowser() {
+  if (wideScreen()) setState({ browserOpen: true });
+  else setState({ panel: 'library' });
+  setTimeout(focusBrowserSearch, 60);
 }
 
 function addTrack(midi: boolean) {
@@ -153,6 +168,7 @@ export const COMMANDS: Command[] = [
   // Ansicht
   { id: 'view', label: 'Session / Arrangement umschalten', group: 'Ansicht', keys: [{ keys: ['Tab'], shift: false }], run: () => { engine.stop(); setState((st) => ({ view: st.view === 'arrange' ? 'session' : 'arrange', armedSampleId: null })); } },
   { id: 'browser', label: 'Browser (Library)', group: 'Ansicht', separator: true, keys: [{ letter: 'b', mod: true, alt: true }], run: toggleBrowser },
+  { id: 'browserSearch', label: 'Im Browser suchen', group: 'Ansicht', keys: [{ letter: 'f', mod: true }], run: searchBrowser },
   { id: 'mixer', label: 'Mixer', group: 'Ansicht', keys: [{ letter: 'm', mod: true, alt: true }], run: () => toggle('mixer') },
   { id: 'devices', label: 'Geräte der Spur', group: 'Ansicht', keys: [{ letter: 'l', mod: true, alt: true }], run: () => selectedTrack() && togglePlugin('devices', { devicesFor: 'track' }), enabled: () => !!selectedTrack() },
   { id: 'instrument', label: 'Sound der Spur (Synth)', group: 'Ansicht', run: () => selectedTrack() && togglePlugin('instrument'), enabled: () => !!selectedTrack() },

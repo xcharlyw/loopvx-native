@@ -9,6 +9,7 @@ import { getState, removeSamples, setFolders, toast, upsertSamples, useStore } f
 import { runLoadMissing } from '../lib/sync';
 import { confirmDestructive } from './confirm';
 import { Btn, Chip, Txt } from './kit';
+import { rowDomId } from './browser/keys';
 
 /** Make a folder (it exists empty until samples are put in); the one place that checks names and duplicates. Returns its path, or null with a toast. */
 export function addFolder(parent: string, name: string): string | null {
@@ -27,9 +28,10 @@ export function addFolder(parent: string, name: string): string | null {
   return path;
 }
 
-/** Where you are: "Alle › Loops › Kicks", each part tappable, plus the buttons for new folder and selecting. */
+/** Where you are: "Library › Loops › Kicks", each part tappable, "Auswählen", and ⋯ for the folder tools (new folder, duplicates …). */
 export function FolderBar({ path, setPath, selecting, onSelecting }: { path: string; setPath: (p: string) => void; selecting: boolean; onSelecting: (on: boolean) => void }) {
   const [naming, setNaming] = useState<string | null>(null);
+  const [tools, setTools] = useState(false);
   const parts = path ? path.split('/') : [];
   const samples = useStore((st) => st.samples);
   const extra = useStore((st) => st.folders);
@@ -75,36 +77,49 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
     }
   };
   return (
-    <View style={{ gap: 8, marginBottom: 6 }}>
-      <View style={s.crumbs}>
-        <Chip variant={path === '' ? 'on' : 'ghost'} onPress={() => setPath('')} textStyle={{ fontSize: 12 }}>
-          Hauptebene
-        </Chip>
-        {parts.map((p, i) => (
-          <Chip key={i} variant={i === parts.length - 1 ? 'on' : 'ghost'} onPress={() => setPath(parts.slice(0, i + 1).join('/'))} textStyle={{ fontSize: 12 }}>
-            {p}
-          </Chip>
-        ))}
+    <View style={s.bar}>
+      <View style={s.crumbRow}>
+        <View style={s.crumbs}>
+          <Pressable accessibilityLabel="Hauptebene" onPress={() => setPath('')} hitSlop={4}>
+            <Txt style={[s.crumb, path === '' && s.crumbOn]}>Library</Txt>
+          </Pressable>
+          {parts.map((p, i) => (
+            <View key={i} style={s.crumbPart}>
+              <Txt style={s.crumbSep}>›</Txt>
+              <Pressable accessibilityLabel={`Ordner ${p}`} onPress={() => setPath(parts.slice(0, i + 1).join('/'))} hitSlop={4}>
+                <Txt numberOfLines={1} style={[s.crumb, i === parts.length - 1 && s.crumbOn]}>
+                  {p}
+                </Txt>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+        <View style={{ flex: 1 }} />
+        <Pressable accessibilityLabel={selecting ? 'Auswahl beenden' : 'Samples auswählen'} onPress={() => onSelecting(!selecting)} style={[s.tool, selecting && s.toolOn]}>
+          <Txt style={[s.toolText, selecting && { color: C.accentInk }]}>{selecting ? 'Fertig' : 'Auswählen'}</Txt>
+        </Pressable>
+        <Pressable accessibilityLabel="Ordner-Werkzeuge" onPress={() => setTools(!tools)} style={[s.tool, tools && s.toolOn]}>
+          <Txt style={[s.toolText, tools && { color: C.accentInk }]}>⋯</Txt>
+        </Pressable>
       </View>
-      <View style={s.crumbs}>
-        <Btn small accessibilityLabel="Neuer Ordner" onPress={() => setNaming(naming === null ? freeName(allFolders(getState().samples, getState().folders), path) : null)}>
-          + Neuer Ordner
-        </Btn>
-        {nested && (
-          <Btn small accessibilityLabel="Alle Ordnerpfade kürzen" onPress={() => void flatten()}>
-            Pfade kürzen
+      {tools && (
+        <View style={s.crumbs}>
+          <Btn small accessibilityLabel="Neuer Ordner" onPress={() => setNaming(naming === null ? freeName(allFolders(getState().samples, getState().folders), path) : null)}>
+            + Neuer Ordner
           </Btn>
-        )}
-        <Btn small accessibilityLabel="Duplikate suchen" onPress={() => void dedupe()}>
-          Duplikate
-        </Btn>
-        <Btn small accessibilityLabel="Fehlende Samples laden" onPress={() => void runLoadMissing()}>
-          Fehlende laden
-        </Btn>
-        <Btn small accessibilityLabel={selecting ? 'Auswahl beenden' : 'Samples auswählen'} onPress={() => onSelecting(!selecting)}>
-          {selecting ? 'Fertig' : 'Auswählen'}
-        </Btn>
-      </View>
+          {nested && (
+            <Btn small accessibilityLabel="Alle Ordnerpfade kürzen" onPress={() => void flatten()}>
+              Pfade kürzen
+            </Btn>
+          )}
+          <Btn small accessibilityLabel="Duplikate suchen" onPress={() => void dedupe()}>
+            Duplikate
+          </Btn>
+          <Btn small accessibilityLabel="Fehlende Samples laden" onPress={() => void runLoadMissing()}>
+            Fehlende laden
+          </Btn>
+        </View>
+      )}
       {naming !== null && (
         <View style={s.crumbs}>
           <TextInput style={s.input} autoFocus value={naming} onChangeText={setNaming} onSubmitEditing={create} selectTextOnFocus placeholder="Ordnername" placeholderTextColor={C.dim} accessibilityLabel="Ordnername" />
@@ -118,7 +133,7 @@ export function FolderBar({ path, setPath, selecting, onSelecting }: { path: str
 }
 
 /** The folders directly inside the current one, with their sample counts and a small menu (rename, take apart). */
-export function FolderRows({ path, setPath }: { path: string; setPath: (p: string) => void }) {
+export function FolderRows({ path, setPath, selected }: { path: string; setPath: (p: string) => void; /** The folder the browser's arrow keys are on. */ selected?: string | null }) {
   const samples = useStore((st) => st.samples);
   const extra = useStore((st) => st.folders);
   const [menu, setMenu] = useState<string | null>(null);
@@ -182,7 +197,7 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
       {folders.map((f) => {
         const { total } = countIn(samples, f);
         return (
-          <View key={f} style={s.folder}>
+          <View key={f} nativeID={rowDomId(`f:${f}`)} style={[s.folder, selected === f && s.folderOn]}>
             <View style={s.folderMain}>
               {renaming?.path === f ? (
                 <>
@@ -195,6 +210,7 @@ export function FolderRows({ path, setPath }: { path: string; setPath: (p: strin
                 <>
                   <Pressable accessibilityLabel={`Ordner ${nameOf(f)} öffnen`} style={s.folderOpen} onPress={() => setPath(f)}>
                     <Txt style={s.chevron}>▸</Txt>
+                    <Txt style={s.folderIcon}>▤</Txt>
                     <Txt numberOfLines={1} style={s.folderName}>
                       {nameOf(f)}
                     </Txt>
@@ -278,16 +294,27 @@ export function FolderPicker({ count, title, exclude, onPick, onClose }: { count
 }
 
 const s = StyleSheet.create({
-  crumbs: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  crumbs: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flexShrink: 1, minWidth: 0 },
+  bar: { gap: 6, paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: C.lineSoft },
+  crumbRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  crumbPart: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1, minWidth: 0 },
+  crumb: { ...font(600), fontSize: 12, color: C.muted },
+  crumbOn: { color: C.text },
+  crumbSep: { fontSize: 12, color: C.dim },
+  tool: { height: 24, minWidth: 28, paddingHorizontal: 8, borderRadius: 5, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  toolOn: { backgroundColor: C.accent, borderColor: C.accent },
+  toolText: { ...font(600), fontSize: 11, color: C.text },
   input: { height: 34, minWidth: 160, flexGrow: 1, borderRadius: 8, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, paddingHorizontal: 10, color: C.text, ...font(400), fontSize: 14, outlineWidth: 0 },
-  folder: { borderBottomWidth: 1, borderBottomColor: C.lineSoft, paddingVertical: 4, gap: 6 },
+  folder: { borderBottomWidth: 1, borderBottomColor: C.lineSoft, paddingVertical: 1, paddingHorizontal: 8, gap: 6 },
+  folderOn: { backgroundColor: 'rgba(198,255,61,0.08)' },
   folderMain: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  folderOpen: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40, minWidth: 0 },
-  chevron: { color: C.accent, fontSize: 14, width: 14 },
-  folderName: { ...font(600), fontSize: 14, flex: 1, minWidth: 0 },
-  count: { ...mono(), fontSize: 11, color: C.muted },
-  more: { width: 36, height: 36, borderRadius: 8, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
-  moreText: { fontSize: 16, color: C.text },
+  folderOpen: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32, minWidth: 0 },
+  chevron: { color: C.dim, fontSize: 11, width: 10 },
+  folderIcon: { color: '#d8b45a', fontSize: 12 },
+  folderName: { ...font(500), fontSize: 12.5, flex: 1, minWidth: 0 },
+  count: { ...mono(), fontSize: 10.5, color: C.muted },
+  more: { width: 26, height: 24, borderRadius: 5, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  moreText: { fontSize: 13, color: C.text },
   picker: { gap: 8, padding: 10, borderWidth: 1, borderColor: C.accent, borderRadius: 12, backgroundColor: '#111114', marginBottom: 8 },
   pickerTitle: { ...font(700), fontSize: 13 },
 });

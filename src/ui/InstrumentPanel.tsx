@@ -10,17 +10,18 @@ import { SamplerPanel } from './SamplerPanel';
 import { Sheet } from './Sheet';
 import { SynthPanel } from './SynthPanel';
 import { Txt } from './kit';
-import { useSampleDropTarget } from './dnd';
+import { useDropTarget } from './dnd';
+import { loadSound } from '../lib/browserActions';
 
 /**
  * The sound of the selected track. Each instrument has its own panel in the same plugin skin: the synth (`SynthPanel`), the sampler
  * (`SamplerPanel`) and the drum instruments (`DrumPanel`); which one a track has is chosen in the track sheet ("Instrument").
- * A sample dropped on the window makes the track a sampler.
+ * A sample dropped on the window makes the track a sampler, a sound from the browser replaces the instrument.
  */
 export function InstrumentPanel() {
   const track = useStore((st) => st.project.tracks.find((t) => t.id === st.selectedTrackId));
   const [width, setWidth] = useState(330);
-  const drop = useSampleDropTarget('instrument', (p) => track && loadSampleIntoSampler(track.id, p.sampleId));
+  const drop = useDropTarget('instrument', { sample: (p) => track && loadSampleIntoSampler(track.id, p.sampleId), sound: (p) => track && loadSound(p.presetId, track.id) });
   if (!track) {
     return (
       <Sheet title="Sound">
@@ -32,7 +33,7 @@ export function InstrumentPanel() {
   return (
     <Sheet title={kind === 'synth' ? 'Synth' : kind === 'sample' ? 'Sampler' : 'Drums'}>
       <View ref={drop.ref} onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={drop.dragging ? [s.dropZone, drop.over && s.dropOver] : undefined}>
-        {drop.dragging && <Txt style={[s.dropHint, drop.over && { color: C.accent }]}>{drop.over ? 'Loslassen: Sample in den Sampler' : 'Hierher ziehen: Sample in den Sampler'}</Txt>}
+        {drop.dragging && <Txt style={[s.dropHint, drop.over && { color: C.accent }]}>{drop.over ? 'Loslassen: hier laden' : 'Hierher ziehen: Sample in den Sampler, Sound als Instrument'}</Txt>}
         {kind === 'synth' ? <SynthPanel width={width} /> : kind === 'sample' ? <SamplerPanel width={width} /> : <DrumPanel width={width} />}
       </View>
     </Sheet>

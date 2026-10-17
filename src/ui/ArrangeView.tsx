@@ -20,7 +20,8 @@ import { Plus } from './icons';
 import { Mono, MsButton, Txt } from './kit';
 import { tapX } from './events';
 import { useDrag, web, type DragPhase, type DragPoint } from './drag';
-import { cancelSampleDrag, endSampleDrag, overDropTarget, startSampleDrag, useSampleDropTarget } from './dnd';
+import { cancelSampleDrag, endSampleDrag, overDropTarget, startSampleDrag, useDropTarget } from './dnd';
+import { addDeviceFrom, loadSound } from '../lib/browserActions';
 import { Waveform } from './Waveform';
 
 const ADD_ROW_H = 44;
@@ -218,11 +219,11 @@ export function ArrangeView() {
     // An audio clip carried onto a drop target (the sampler) hands it its sample instead of moving.
     const sample = mode === 'move' && !clip.notes && at ? sampleById.get(clip.sampleId) : undefined;
     if (sample && at && phase === 'move') {
-      if (overDropTarget(at.x, at.y)) startSampleDrag({ sampleId: sample.id, name: sample.name }, at.x, at.y);
+      if (overDropTarget(at.x, at.y)) startSampleDrag({ sampleId: sample.id, name: sample.name, fromClip: true }, at.x, at.y);
       else cancelSampleDrag();
     }
     if (sample && at && phase === 'end' && overDropTarget(at.x, at.y)) {
-      startSampleDrag({ sampleId: sample.id, name: sample.name }, at.x, at.y);
+      startSampleDrag({ sampleId: sample.id, name: sample.name, fromClip: true }, at.x, at.y);
       endSampleDrag();
       setDrag(null);
       dragEndedAt.current = Date.now();
@@ -462,7 +463,7 @@ export function ArrangeView() {
                 </Fragment>
               );
             })}
-            <View style={[s.trackHeader, { height: ADD_ROW_H, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+            <AddRowDrop style={[s.trackHeader, { height: ADD_ROW_H, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
               <Pressable
                 style={s.addTrack}
                 accessibilityLabel="Audio-Spur hinzufügen"
@@ -479,7 +480,7 @@ export function ArrangeView() {
                 <Plus size={12} color={C.accent} />
                 <Txt style={[s.addTrackText, { color: C.accent }]}>MIDI</Txt>
               </Pressable>
-            </View>
+            </AddRowDrop>
           </View>
 
           <Animated.ScrollView
@@ -576,13 +577,49 @@ function TrackGrip({ name, onDrag }: { name: string; onDrag: (dy: number, phase:
   );
 }
 
-/** A MIDI track's header takes a dragged sample into its sampler (Ableton: a sample dropped on a MIDI track makes a Simpler). */
+/**
+ * A track header as a drop target, like Live: a sample from the browser lands on an audio track at the playhead (a MIDI track loads it
+ * into its sampler), a sound replaces a MIDI track's instrument, an audio effect goes to the end of the track's chain.
+ */
 function HeaderDrop({ track, children }: { track: Track; children: ReactNode }) {
-  const midi = trackKind(track) === 'midi';
-  const drop = useSampleDropTarget(`header:${track.id}`, (p) => midi && loadSampleIntoSampler(track.id, p.sampleId));
+  const kind = trackKind(track);
+  const drop = useDropTarget(`header:${track.id}`, {
+    sample: kind === 'midi' ? (p) => loadSampleIntoSampler(track.id, p.sampleId) : undefined,
+    librarySample: kind === 'audio' ? (p) => dropSample(p.sampleId, track.id) : undefined,
+    sound: kind === 'midi' ? (p) => loadSound(p.presetId, track.id) : undefined,
+    device: (p) => addDeviceFrom(p.device, { presetId: p.presetId, trackId: track.id }),
+  });
   return (
-    <View ref={drop.ref} style={drop.dragging && midi ? [s.headerDrop, drop.over && s.headerDropOver] : undefined}>
+    <View ref={drop.ref} style={drop.dragging ? [s.headerDrop, drop.over && s.headerDropOver] : undefined}>
       {children}
+    </View>
+  );
+}
+
+const dropSample = (sampleId: string, trackId: string) => {
+  const sample = getState().samples.find((x) => x.id === sampleId);
+  if (sample) void placeSample(sample, { trackId });
+};
+
+/** The "+ Audio / + MIDI" row as a drop target: a sample or a sound dropped there gets a new track of its own (Live's empty area). */
+function AddRowDrop({ children, style }: { children: ReactNode; style: object }) {
+  const drop = useDropTarget('header:new', {
+    librarySample: (p) => {
+      const sample = getState().samples.find((x) => x.id === p.sampleId);
+      if (!sample) return;
+      const track = createTrack(sample.category, getState().project.sceneCount);
+      updateProject((pr) => ({ ...pr, tracks: [...pr.tracks, track] }), { reschedule: false });
+      void placeSample(sample, { trackId: track.id });
+    },
+    sound: (p) => {
+      const track = createMidiTrack(getState().project.sceneCount, p.name);
+      updateProject((pr) => ({ ...pr, tracks: [...pr.tracks, track] }), { reschedule: false });
+      loadSound(p.presetId, track.id);
+    },
+  });
+  return (
+    <View ref={drop.ref} style={[style, drop.dragging && s.headerDrop, drop.over && s.headerDropOver]}>
+      {drop.dragging ? <Txt style={s.addTrackText}>Hier ablegen: neue Spur</Txt> : children}
     </View>
   );
 }

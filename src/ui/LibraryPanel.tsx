@@ -1,103 +1,238 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { C, font, mono } from '../constants/theme';
+import { C, font } from '../constants/theme';
 import { engine } from '../audio/engine';
-import { auditionSample, autoDetectTempos, downloadSample, placeSample, type AuditionInfo } from '../lib/actions';
-import { moveSamples, prettyPath, normPath, samplesIn } from '../lib/folders';
-import { SORT_LABELS, keysFit, sortSamples, type SortBy } from '../lib/libraryFilter';
-import { CATEGORY_COLORS, CATEGORY_LABELS, KEYS } from '../lib/project';
-import { deleteSample, importSamplesFromDevice } from '../lib/samples';
+import { auditionSample, autoDetectTempos, placeSample, type AuditionInfo } from '../lib/actions';
+import { BROWSER_CATS, SEARCHABLE, searchWords, stepSelection, type BrowserCat } from '../lib/browser';
+import { allFolders, childFolders, countIn, nameOf } from '../lib/folders';
+import { importSamplesFromDevice } from '../lib/samples';
 import { startStemSeparation } from '../lib/stems';
-import { errorText, getState, removeSamples, setSamples, setState, toast, upsertSample, upsertSamples, useStore } from '../lib/store';
-import { db } from '../storage/db';
-import type { Sample, SampleCategory } from '../types';
+import { errorText, getState, setSamples, setState, toast, useStore } from '../lib/store';
+import type { Sample } from '../types';
 import { DriveImport } from './DriveImport';
 import { SpliceSearch } from './SpliceSearch';
 import { useEngine } from './hooks';
-import { Check, Play, Plus, Stop, Upload } from './icons';
-import { FolderBar, FolderPicker, FolderRows } from './LibraryFolders';
-import { confirmDestructive } from './confirm';
+import { Close, Upload } from './icons';
 import { RecordButton } from './RecordButton';
-import { PreviewLevel, previewStyles } from './PreviewLevel';
-import { Btn, Chip, IconBtn, Section, Txt } from './kit';
-import { Sheet } from './Sheet';
-import { sampleDragJustEnded, useSampleDragSource } from './dnd';
-import { web } from './drag';
+import { Btn, Txt } from './kit';
+import { Sheet, SheetPlace } from './Sheet';
+import { FxList, MidiFxList, SoundList } from './browser/ItemLists';
+import { PreviewStrip } from './browser/PreviewStrip';
+import { BrowserRow, GroupTitle, browserStyles } from './browser/Row';
+import { SampleList } from './browser/SampleList';
+import { revealRow, useBrowserKeys } from './browser/keys';
+import type { NavList } from './browser/nav';
 
-const FILTERS: (SampleCategory | 'all')[] = ['all', 'kick', 'top', 'synth', 'vocal', 'other'];
+// The Library as Ableton Live 12's browser: a search field, the categories (Samples, Sounds, Drums, Audio-Effekte, MIDI-Effekte) and
+// places (Google Drive, Splice, Aufnahmen, Stems) in a sidebar (tabs on a narrow panel), the content list, and the preview strip.
+// A tap selects and auditions, a double tap / Enter / ＋ loads, and anything can be dragged onto a track, the sampler or the device chain.
+
+/** Wide enough for the sidebar next to the list. */
+const SIDEBAR_FROM = 390;
+const SIDEBAR_W = 136;
+
+let keptAutoPreview = true;
+let keptSel: string | null = null;
+let keptPath = '';
+let focusSearch: (() => void) | null = null;
+/** Where takes and uploads from this device land. */
+const OWN_FOLDERS = ['Aufnahmen', 'Uploads'];
+
+/** Puts the cursor into the browser's search field (Cmd/Ctrl+F); the browser must be open. */
+export const focusBrowserSearch = () => focusSearch?.();
 
 export function LibraryPanel() {
-  const samples = useStore((st) => st.samples);
-  const project = useStore((st) => st.project);
+  const cat = useStore((st) => st.browserCat);
   const view = useStore((st) => st.view);
-  const [filter, setFilter] = useState<SampleCategory | 'all'>('all');
+  const jump = useStore((st) => st.libraryJump);
+  const place = useContext(SheetPlace);
+  const [width, setWidth] = useState(0);
   const [query, setQuery] = useState('');
-  const [tempoMatch, setTempoMatch] = useState(false);
-  const [keyMatch, setKeyMatch] = useState(false);
-  const [sortBy, setSortBy] = useState<SortBy>('name');
-  const [editing, setEditing] = useState<string | null>(null);
+  const [sel, setSelState] = useState<string | null>(keptSel);
+  const [path, setPathState] = useState(keptPath);
+  const [autoPreview, setAutoPreviewState] = useState(keptAutoPreview);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [heard, setHeard] = useState<({ id: string } & AuditionInfo) | null>(null);
   const previewing = useEngine(() => engine.isPreviewing());
-  const playingSample = previewing && previewId ? samples.find((x) => x.id === previewId) : undefined;
-  const [path, setPath] = useState('');
-  const [selecting, setSelecting] = useState(false);
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [picking, setPicking] = useState(false);
-  const stemStatus = useStore((st) => st.stemStatus);
-  const jump = useStore((st) => st.libraryJump);
+  const nav = useRef<NavList | null>(null);
+  const search = useRef<TextInput>(null);
+  const setSel = (id: string | null) => {
+    keptSel = id;
+    setSelState(id);
+  };
+  const setPath = (p: string) => {
+    keptPath = p;
+    setPathState(p);
+  };
+  const setAutoPreview = (on: boolean) => {
+    keptAutoPreview = on;
+    setAutoPreviewState(on);
+  };
+  const setCat = (c: BrowserCat) => {
+    setState({ browserCat: c });
+    setSel(null);
+  };
+
+  useEffect(() => {
+    focusSearch = () => search.current?.focus();
+    return () => {
+      focusSearch = null;
+    };
+  }, []);
+
   // After a stem separation the Library opens the stems' folder.
   useEffect(() => {
     if (!jump) return;
     setQuery('');
-    setFilter('all');
+    setState({ browserCat: 'samples', libraryJump: null });
     setPath(jump);
-    setState({ libraryJump: null });
   }, [jump]);
-  // Without a search or filter the library is browsed folder by folder; with one, all folders are searched at once.
-  const browsing = !query.trim() && filter === 'all' && !tempoMatch && !keyMatch;
 
-  const list = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (browsing) return sortSamples(samplesIn(samples, path), sortBy);
-    return sortSamples(
-      samples
-        .filter((x) => filter === 'all' || x.category === filter)
-        .filter((x) => !q || x.name.toLowerCase().includes(q) || (x.folder ?? '').toLowerCase().includes(q))
-        .filter((x) => !tempoMatch || !x.bpm || Math.abs(x.bpm - project.bpm) <= 2)
-        .filter((x) => !keyMatch || keysFit(x.key, project.key)),
-      sortBy,
-    );
-  }, [samples, filter, query, tempoMatch, keyMatch, sortBy, project.bpm, project.key, browsing, path]);
-
-  const toggle = (id: string) =>
-    setSelected((cur) => {
-      const next = new Set(cur);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
-  const stopSelecting = () => {
-    setSelecting(false);
-    setSelected(new Set());
-    setPicking(false);
-  };
-  const moveTo = async (folder: string) => {
-    const changed = moveSamples(samples, selected, folder);
-    await upsertSamples(changed);
-    toast(changed.length ? `${changed.length} Sample(s) nach „${folder ? prettyPath(folder) : 'Hauptebene'}“ verschoben` : 'Die Samples liegen dort schon.');
-    stopSelecting();
+  const audition = async (x: Sample, restart = false) => {
+    if (!restart && previewing && previewId === x.id) {
+      engine.stopPreview();
+      setPreviewId(null);
+      return;
+    }
+    try {
+      setPreviewId(x.id);
+      setHeard(null);
+      const info = await auditionSample(x);
+      setHeard({ id: x.id, ...info });
+      if (info.detected) toast(`Tempo erkannt: ${info.bpm} BPM, läuft auf ${getState().project.bpm} BPM`);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
   };
 
-  const removeSelected = async () => {
-    const doomed = samples.filter((x) => selected.has(x.id));
-    if (!doomed.length) return;
-    const ok = await confirmDestructive(`${doomed.length} Sample(s) löschen?`, 'Sie werden auch aus deinem Drive-Ordner LOOPVX entfernt (Papierkorb). Clips in Projekten, die diese Samples nutzen, werden stumm. Deine Originale in Drive bleiben unberührt.', 'Löschen');
-    if (!ok) return;
-    await removeSamples(doomed, deleteSample);
-    toast(`${doomed.length} Sample(s) gelöscht`);
-    stopSelecting();
+  const insert = (x: Sample) => {
+    if (view === 'session') {
+      setState({ armedSampleId: x.id, ...(place.column ? {} : { panel: 'none' as const }) });
+      toast('Tippe jetzt auf einen leeren Slot');
+      return;
+    }
+    void placeSample(x);
+    // The browser column stays (Live); the phone sheet gets out of the way so the new clip is seen.
+    if (!place.column) setState({ panel: 'none' });
   };
 
+  const activate = (id: string) => nav.current?.activate(id);
+
+  const root = useBrowserKeys((key) => {
+    const list = nav.current;
+    if (!list) return false;
+    if (key === 'up' || key === 'down') {
+      const next = stepSelection(list.ids, sel, key === 'down' ? 1 : -1);
+      if (next) {
+        (list.pick ?? setSel)(next);
+        requestAnimationFrame(() => revealRow(next));
+      }
+      return true;
+    }
+    if (key === 'enter') {
+      if (sel) list.activate(sel);
+      return !!sel;
+    }
+    if (key === 'right') return !!sel && !!list.open?.(sel);
+    return !!list.back?.(sel);
+  });
+
+  const words = SEARCHABLE.has(cat) ? searchWords(query) : [];
+  const sidebar = width >= SIDEBAR_FROM;
+  const label = BROWSER_CATS.find((c) => c.id === cat)?.label ?? '';
+  const common = { words, sel, setSel, nav, autoPreview };
+
+  const content = (() => {
+    switch (cat) {
+      case 'samples':
+        return <SampleList {...common} path={path} setPath={setPath} audition={(x, r) => void audition(x, r)} insert={insert} />;
+      case 'sounds':
+        return <SoundList {...common} drums={false} />;
+      case 'drums':
+        return <SoundList {...common} drums />;
+      case 'fx':
+        return <FxList {...common} />;
+      case 'midifx':
+        return <MidiFxList {...common} />;
+      case 'drive':
+        return (
+          <View style={s.place}>
+            <Txt style={s.note}>Samples direkt aus deinem Google Drive vorhören und einfügen, oder ganze Ordner importieren.</Txt>
+            <DriveImport />
+          </View>
+        );
+      case 'splice':
+        return (
+          <View style={s.place}>
+            <SpliceSearch />
+          </View>
+        );
+      case 'record':
+        return <RecordPlace open={(p) => (setCat('samples'), setPath(p))} />;
+      case 'stems':
+        return <StemsPlace open={(p) => (setCat('samples'), setPath(p))} />;
+    }
+  })();
+
+  return (
+    <Sheet title="Browser" scroll={false}>
+      <View ref={root} style={s.root} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        <View style={s.searchRow}>
+          <TextInput
+            ref={search}
+            style={[s.search, !SEARCHABLE.has(cat) && { opacity: 0.45 }]}
+            editable={SEARCHABLE.has(cat)}
+            placeholder={SEARCHABLE.has(cat) ? `Suchen in ${label} …` : `${label} hat eine eigene Suche`}
+            placeholderTextColor={C.dim}
+            value={SEARCHABLE.has(cat) ? query : ''}
+            onChangeText={setQuery}
+            accessibilityLabel="Im Browser suchen"
+          />
+          {!!query && SEARCHABLE.has(cat) && (
+            <Pressable accessibilityLabel="Suche löschen" onPress={() => setQuery('')} style={s.clear} hitSlop={6}>
+              <Close size={12} />
+            </Pressable>
+          )}
+        </View>
+        <View style={[s.body, !sidebar && { flexDirection: 'column' }]}>
+          {sidebar ? (
+            <ScrollView style={s.sidebar} contentContainerStyle={{ paddingVertical: 4 }}>
+              {(['Kategorien', 'Orte'] as const).map((g) => (
+                <View key={g}>
+                  <GroupTitle>{g}</GroupTitle>
+                  {BROWSER_CATS.filter((c) => c.group === g).map((c) => (
+                    <Pressable key={c.id} accessibilityRole="tab" accessibilityLabel={c.label} accessibilityState={{ selected: cat === c.id }} onPress={() => setCat(c.id)} style={[s.side, cat === c.id && s.sideOn]}>
+                      <Txt style={[s.sideIcon, cat === c.id && { color: C.accent }]}>{c.icon}</Txt>
+                      <Txt numberOfLines={1} style={[s.sideText, cat === c.id && { color: C.text }]}>
+                        {c.label}
+                      </Txt>
+                    </Pressable>
+                  ))}
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tabsScroll} contentContainerStyle={s.tabs}>
+              {BROWSER_CATS.map((c) => (
+                <Pressable key={c.id} accessibilityRole="tab" accessibilityLabel={c.label} accessibilityState={{ selected: cat === c.id }} onPress={() => setCat(c.id)} style={[s.tab, cat === c.id && s.tabOn]}>
+                  <Txt style={[s.tabText, cat === c.id && { color: C.accentInk }]}>{`${c.icon} ${c.label}`}</Txt>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+          <ScrollView style={s.content} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 12 }}>
+            {content}
+          </ScrollView>
+        </View>
+        <PreviewStrip sel={sel} autoPreview={autoPreview} setAutoPreview={setAutoPreview} previewId={previewId} heardBpm={heard} audition={(x) => void audition(x)} activate={activate} />
+      </View>
+    </Sheet>
+  );
+}
+
+/** Orte › Aufnahmen: record the microphone or upload files from this device; both land in the library (folders Aufnahmen / Uploads). */
+function RecordPlace({ open }: { open: (path: string) => void }) {
+  const samples = useStore((st) => st.samples);
   const upload = async () => {
     try {
       const added = await importSamplesFromDevice();
@@ -110,261 +245,66 @@ export function LibraryPanel() {
       toast(errorText(e), 'error');
     }
   };
-
-  const togglePreview = async (x: Sample) => {
-    if (previewing && previewId === x.id) {
-      engine.stopPreview();
-      setPreviewId(null);
-      return;
-    }
-    try {
-      setPreviewId(x.id);
-      setHeard(null);
-      const info = await auditionSample(x);
-      setHeard({ id: x.id, ...info });
-      if (info.detected) toast(`Tempo erkannt: ${info.bpm} BPM, läuft auf ${project.bpm} BPM`);
-    } catch (e) {
-      toast(errorText(e), 'error');
-    }
-  };
-
-  const add = (x: Sample) => {
-    if (view === 'session') {
-      setState({ armedSampleId: x.id, panel: 'none' });
-      toast('Tippe jetzt auf einen leeren Slot');
-      return;
-    }
-    void placeSample(x);
-    setState({ panel: 'none' });
-  };
-
   return (
-    <Sheet title="Library">
-      <Section title="Stems trennen">
-        <Txt style={s.note}>Einen fertigen Tune hochladen: die KI trennt ihn in Drums, Bass, Synth + FX, Keys, Gitarre und Vocal. Die Stems landen hier im Ordner „Stems Export / Name des Tunes“.</Txt>
-        <View style={[s.row, { marginTop: 10 }]}>
-          <Btn small kind="primary" disabled={stemStatus !== null} accessibilityLabel="Tune in Stems trennen" onPress={() => void startStemSeparation()}>
-            {stemStatus ? 'Läuft …' : 'Tune hochladen und trennen'}
-          </Btn>
-        </View>
-        {stemStatus && <Txt style={[s.note, { marginTop: 8, color: C.accent }]}>{stemStatus}</Txt>}
-      </Section>
-
-      <Section title="Google Drive">
-        <Txt style={s.note}>Samples direkt aus deinem Google Drive vorhören und einfügen, oder vom Gerät hochladen.</Txt>
-        <View style={[s.row, { marginTop: 10 }]}>
-          <Btn small onPress={() => void upload()}>
-            <Upload size={14} />
-            Vom Gerät hochladen
-          </Btn>
-          <RecordButton />
-        </View>
-        <View style={{ marginTop: 10 }}>
-          <DriveImport />
-        </View>
-      </Section>
-
-      <Section title="Splice">
-        <SpliceSearch />
-      </Section>
-
-      <TextInput style={s.search} placeholder="Suchen …" placeholderTextColor={C.dim} value={query} onChangeText={setQuery} />
-      <ScrollView horizontal style={s.filtersScroll} contentContainerStyle={s.filters}>
-        {FILTERS.map((f) => (
-          <Chip key={f} variant={filter === f ? 'on' : 'ghost'} onPress={() => setFilter(f)}>
-            {f === 'all' ? 'Alle' : CATEGORY_LABELS[f]}
-          </Chip>
-        ))}
-        <Chip variant={tempoMatch ? 'on' : 'ghost'} onPress={() => setTempoMatch(!tempoMatch)}>
-          {`${project.bpm} BPM`}
-        </Chip>
-        <Chip variant={keyMatch ? 'on' : 'ghost'} accessibilityLabel="Nur passende Tonarten" onPress={() => setKeyMatch(!keyMatch)}>
-          {`Passt zu ${project.key}`}
-        </Chip>
-      </ScrollView>
-      <ScrollView horizontal style={s.filtersScroll} contentContainerStyle={s.filters}>
-        <Txt style={s.note}>Sortieren:</Txt>
-        {(Object.keys(SORT_LABELS) as SortBy[]).map((k) => (
-          <Chip key={k} variant={sortBy === k ? 'on' : 'ghost'} accessibilityLabel={`Sortieren nach ${SORT_LABELS[k]}`} onPress={() => setSortBy(k)} textStyle={{ fontSize: 12 }}>
-            {SORT_LABELS[k]}
-          </Chip>
-        ))}
-      </ScrollView>
-
-      {browsing && <FolderBar path={path} setPath={setPath} selecting={selecting} onSelecting={(on) => (on ? setSelecting(true) : stopSelecting())} />}
-      {selecting && (
-        <View style={[s.row, { marginBottom: 8 }]}>
-          <Txt style={s.note}>{`${selected.size} ausgewählt`}</Txt>
-          <Chip onPress={() => setSelected(new Set(list.map((x) => x.id)))} textStyle={{ fontSize: 12 }}>
-            Alle hier
-          </Chip>
-          <Chip onPress={() => setSelected(new Set())} textStyle={{ fontSize: 12 }}>
-            Keine
-          </Chip>
-          <Btn small kind="primary" disabled={!selected.size} accessibilityLabel="Ausgewählte verschieben" onPress={() => setPicking(true)}>
-            Verschieben …
-          </Btn>
-          <Btn small disabled={!selected.size} accessibilityLabel="Ausgewählte löschen" onPress={() => void removeSelected()}>
-            <Txt style={{ color: C.danger }}>Löschen</Txt>
-          </Btn>
-        </View>
-      )}
-      {picking && <FolderPicker count={selected.size} onPick={(f) => void moveTo(f)} onClose={() => setPicking(false)} />}
-      {browsing && <FolderRows path={path} setPath={setPath} />}
-
-      <PreviewLevel category={playingSample?.category}>
-        {previewing && playingSample ? (
-          <Txt numberOfLines={2} style={previewStyles.playing}>
-            {`▶ ${playingSample.name.replace(/\.[a-z0-9]+$/i, '')} · ${playingSample.bpm ? `${heard?.id === playingSample.id && heard.detected ? '~' : ''}${playingSample.bpm} → ${project.bpm} BPM` : 'ohne Tempo: Originaltempo'}${engine.playing ? ' · im Takt zum Song' : ''}`}
-          </Txt>
-        ) : (
-          <Txt style={s.muted}>▶ spielt ein Sample im Projekttempo, im Takt zum laufenden Song.</Txt>
-        )}
-      </PreviewLevel>
-      {list.length === 0 && !browsing && <Txt style={[s.muted, { marginVertical: 14 }]}>Keine Samples gefunden.</Txt>}
-      {list.length === 0 && browsing && !samples.length && <Txt style={[s.muted, { marginVertical: 14 }]}>Noch keine Samples. Lade welche hoch oder importiere sie aus Drive oder Splice.</Txt>}
-
-      {list.map((x) => (
-        <View key={x.id} style={s.sample}>
-          <View style={s.sampleMain}>
-            {selecting && (
-              <Pressable accessibilityLabel={`${x.name} auswählen`} accessibilityState={{ checked: selected.has(x.id) }} onPress={() => toggle(x.id)} style={[s.check, selected.has(x.id) && s.checkOn]}>
-                {selected.has(x.id) && <Check size={12} color={C.accentInk} />}
-              </Pressable>
-            )}
-            <IconBtn onPress={() => void togglePreview(x)} accessibilityLabel="Vorhören">
-              {previewing && previewId === x.id ? <Stop size={14} /> : <Play size={14} />}
-            </IconBtn>
-            <DragName sample={x} disabled={selecting} onPress={() => (selecting ? toggle(x.id) : setEditing(editing === x.id ? null : x.id))}>
-              <Txt numberOfLines={1} style={{ fontSize: 13 }}>
-                {x.name.replace(/\.[a-z0-9]+$/i, '')}
-              </Txt>
-              <Txt numberOfLines={1} style={s.meta}>
-                <Txt style={[s.meta, { color: CATEGORY_COLORS[x.category] }]}>●</Txt> {x.bpm ? `${x.bpm} BPM` : 'One-Shot'}
-                {x.key ? ` · ${x.key}` : ''}
-                {!browsing && x.folder ? ` · ${prettyPath(normPath(x.folder))}` : ''}
-              </Txt>
-            </DragName>
-            <Btn small onPress={() => add(x)} accessibilityLabel="Hinzufügen">
-              <Plus size={14} />
-            </Btn>
-          </View>
-          {editing === x.id && !selecting && (
-            <SampleEditor
-              sample={x}
-              onDone={() => setEditing(null)}
-              onMove={() => {
-                setEditing(null);
-                setSelecting(true);
-                setSelected(new Set([x.id]));
-                setPicking(true);
-              }}
-            />
-          )}
-        </View>
-      ))}
-    </Sheet>
+    <View style={s.place}>
+      <Txt style={s.note}>Mit dem Mikrofon aufnehmen (Ordner „Aufnahmen“) oder Dateien von diesem Gerät in die Library laden (Ordner „Uploads“).</Txt>
+      <View style={s.wrap}>
+        <RecordButton />
+        <Btn small onPress={() => void upload()}>
+          <Upload size={14} />
+          Vom Gerät hochladen
+        </Btn>
+      </View>
+      {OWN_FOLDERS.map((f) => {
+        const n = countIn(samples, f).total;
+        return n > 0 ? <BrowserRow key={f} id={`f:${f}`} title={f} sub={`${n} Datei(en)`} glyph="▤" color="#d8b45a" selected={false} onSelect={() => open(f)} /> : null;
+      })}
+    </View>
   );
 }
 
-function SampleEditor({ sample, onDone, onMove }: { sample: Sample; onDone: () => void; onMove: () => void }) {
-  const [bpm, setBpm] = useState(sample.bpm ? String(sample.bpm) : '');
-  const [key, setKey] = useState(sample.key ?? '');
-  const [category, setCategory] = useState<SampleCategory>(sample.category);
-  const categories = Object.keys(CATEGORY_LABELS) as SampleCategory[];
-  const keys = ['', ...KEYS, ...(key && !KEYS.includes(key) ? [key] : [])];
-
-  const save = async () => {
-    const v = Number(bpm.replace(',', '.'));
-    await upsertSample({ ...sample, bpm: v >= 40 && v <= 250 ? v : undefined, key: key || undefined, category });
-    onDone();
-  };
-  const remove = async () => {
-    await deleteSample(sample);
-    await db.deleteSample(sample.id);
-    setSamples(getState().samples.filter((x) => x.id !== sample.id));
-    onDone();
-  };
-  const cycle = <T,>(list: T[], current: T) => list[(list.indexOf(current) + 1) % list.length];
-
+/** Orte › Stems: split a finished tune into stems (ElevenLabs), and the tunes already split. */
+function StemsPlace({ open }: { open: (path: string) => void }) {
+  const samples = useStore((st) => st.samples);
+  const extra = useStore((st) => st.folders);
+  const status = useStore((st) => st.stemStatus);
+  const tunes = childFolders(allFolders(samples, extra), 'Stems Export');
   return (
-    <View style={s.edit}>
-      <TextInput style={[s.field, s.fieldInput]} inputMode="decimal" placeholder="BPM" placeholderTextColor={C.dim} value={bpm} onChangeText={setBpm} />
-      <Pressable style={s.field} onPress={() => setKey(cycle(keys, key))}>
-        <Txt numberOfLines={1} style={s.fieldText}>
-          {key || 'Tonart'}
-        </Txt>
-      </Pressable>
-      <Pressable style={s.field} onPress={() => setCategory(cycle(categories, category))}>
-        <Txt numberOfLines={1} style={s.fieldText}>
-          {CATEGORY_LABELS[category]}
-        </Txt>
-      </Pressable>
-      <Btn small style={s.cell} accessibilityLabel="Sample in Ordner verschieben" onPress={onMove}>
-        In Ordner
-      </Btn>
-      <Btn small kind="danger" style={s.cell} onPress={() => void remove()}>
-        Entfernen
-      </Btn>
-      <Btn small style={s.cell} onPress={() => void downloadSample(sample)}>
-        Download
-      </Btn>
-      <Btn small kind="primary" style={s.cell} onPress={() => void save()}>
-        <Check size={14} color={C.accentInk} />
-        Speichern
-      </Btn>
+    <View style={s.place}>
+      <Txt style={s.note}>Einen fertigen Tune hochladen: die KI trennt ihn in Drums, Bass, Synth + FX, Keys, Gitarre und Vocal. Die Stems landen im Ordner „Stems Export / Name des Tunes“.</Txt>
+      <View style={s.wrap}>
+        <Btn small kind="primary" disabled={status !== null} accessibilityLabel="Tune in Stems trennen" onPress={() => void startStemSeparation()}>
+          {status ? 'Läuft …' : 'Tune hochladen und trennen'}
+        </Btn>
+      </View>
+      {status && <Txt style={[s.note, { color: C.accent }]}>{status}</Txt>}
+      {tunes.length > 0 && <GroupTitle>Getrennte Tunes</GroupTitle>}
+      {tunes.map((f) => (
+        <BrowserRow key={f} id={`f:${f}`} title={nameOf(f)} sub={`${countIn(samples, f).total} Stems`} glyph="▤" color="#d8b45a" selected={false} onSelect={() => open(f)} />
+      ))}
+      {!tunes.length && !status && <Txt style={browserStyles.empty}>Noch keine getrennten Tunes.</Txt>}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  note: { color: C.muted, fontSize: 13 },
-  muted: { color: C.muted },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  search: {
-    height: 38,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: C.line,
-    backgroundColor: C.panel,
-    paddingHorizontal: 12,
-    marginBottom: 8,
-    color: C.text,
-    ...font(400),
-    fontSize: 14,
-    outlineWidth: 0,
-  },
-  filtersScroll: { flexGrow: 0 },
-  filters: { gap: 6, paddingBottom: 8 },
-  sample: { borderBottomWidth: 1, borderBottomColor: C.lineSoft },
-  sampleMain: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  sampleName: { flex: 1, minWidth: 0 },
-  meta: { ...mono(), fontSize: 11, color: C.muted },
-  edit: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 10 },
-  field: {
-    flexBasis: '31%',
-    flexGrow: 1,
-    height: 34,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: C.line,
-    backgroundColor: C.panel2,
-    paddingHorizontal: 8,
-    justifyContent: 'center',
-  },
-  fieldInput: { color: C.text, ...font(400), fontSize: 14, outlineWidth: 0 },
-  fieldText: { fontSize: 14 },
-  cell: { flexBasis: '31%', flexGrow: 1 },
-  check: { width: 22, height: 22, borderRadius: 6, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
-  checkOn: { backgroundColor: C.accent, borderColor: C.accent },
+  root: { flex: 1, minHeight: 0 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingBottom: 6 },
+  search: { flex: 1, height: 32, borderRadius: 6, borderWidth: 1, borderColor: C.line, backgroundColor: C.panel, paddingLeft: 10, paddingRight: 28, color: C.text, ...font(400), fontSize: 13, outlineWidth: 0 },
+  clear: { position: 'absolute', right: 18, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
+  body: { flex: 1, minHeight: 0, flexDirection: 'row', borderTopWidth: 1, borderTopColor: C.line },
+  sidebar: { width: SIDEBAR_W, flexGrow: 0, borderRightWidth: 1, borderRightColor: C.line, backgroundColor: C.bg },
+  side: { flexDirection: 'row', alignItems: 'center', gap: 7, height: 28, paddingHorizontal: 10, marginHorizontal: 4, borderRadius: 5 },
+  sideOn: { backgroundColor: C.panel2 },
+  sideIcon: { width: 12, textAlign: 'center', fontSize: 11, color: C.dim },
+  sideText: { ...font(500), fontSize: 12, color: C.muted, flex: 1 },
+  tabsScroll: { flexGrow: 0, borderBottomWidth: 1, borderBottomColor: C.line },
+  tabs: { gap: 5, paddingHorizontal: 8, paddingVertical: 6 },
+  tab: { height: 26, paddingHorizontal: 10, borderRadius: 13, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  tabOn: { backgroundColor: C.accent, borderColor: C.accent },
+  tabText: { ...font(600), fontSize: 11.5, color: C.text },
+  content: { flex: 1, minWidth: 0, minHeight: 0 },
+  place: { padding: 10, gap: 10 },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  note: { ...font(400), fontSize: 12, color: C.muted, lineHeight: 17 },
 });
-
-/** A sample's name in the list, and the handle to drag it into the sampler (web: mouse drag, or hold then drag on touch). */
-function DragName({ sample, disabled, onPress, children }: { sample: Sample; disabled: boolean; onPress: () => void; children: ReactNode }) {
-  const ref = useSampleDragSource(disabled ? null : { sampleId: sample.id, name: sample.name });
-  return (
-    <View ref={ref} style={[s.sampleName, web({ WebkitTouchCallout: 'none', userSelect: 'none', cursor: 'grab' })]}>
-      <Pressable onPress={() => !sampleDragJustEnded() && onPress()}>{children}</Pressable>
-    </View>
-  );
-}

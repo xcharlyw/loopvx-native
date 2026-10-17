@@ -62,5 +62,12 @@ export function fullHeight(panel: string, win: { height: number }, wide: boolean
   return Math.round(win.height * (panel === 'mixer' ? 0.62 : 0.46));
 }
 
-/** Width of the browser column (Library) on the left of a wide screen. */
-export const browserWidth = (winWidth: number) => Math.max(260, Math.min(340, Math.round(winWidth * 0.24)));
+/** Narrowest and widest the browser column can be dragged (the widest also leaves half the window to the arrangement). */
+export const BROWSER_MIN = 260;
+const BROWSER_MAX = 600;
+
+/** Width of the browser column (Library) on the left of a wide screen: the width the user dragged it to, else a default for the window. */
+export function browserWidth(winWidth: number, wanted?: number | null): number {
+  if (wanted == null) return Math.max(280, Math.min(440, Math.round(winWidth * 0.29)));
+  return Math.round(Math.max(BROWSER_MIN, Math.min(BROWSER_MAX, Math.round(winWidth * 0.5), wanted)));
+}

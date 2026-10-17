@@ -21,7 +21,8 @@ export interface FloatingPlace {
 }
 export const SheetPlace = createContext<{ column: boolean; onClose: () => void; floating?: FloatingPlace }>({ column: false, onClose: () => setState({ panel: 'none' }) });
 
-export function Sheet({ title, children, compact }: { title: string; children: ReactNode; compact?: boolean }) {
+/** `scroll={false}`: the body is a plain box that fills the sheet, for panels that lay out their own scrolling parts (the browser). */
+export function Sheet({ title, children, compact, scroll = true }: { title: string; children: ReactNode; compact?: boolean; scroll?: boolean }) {
   const place = useContext(SheetPlace);
   const stored = useStore((st) => st.sheetSize);
   const scale = useStore((st) => st.sheetScale);
@@ -64,9 +65,13 @@ export function Sheet({ title, children, compact }: { title: string; children: R
           <Close />
         </IconBtn>
       </View>
-      <ScrollView style={[{ flex: 1 }, size === 'bar' && { display: 'none' }]} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-        {children}
-      </ScrollView>
+      {scroll ? (
+        <ScrollView style={[{ flex: 1 }, size === 'bar' && { display: 'none' }]} contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
+          {children}
+        </ScrollView>
+      ) : (
+        <View style={[s.fixed, size === 'bar' && { display: 'none' }]}>{children}</View>
+      )}
     </>
   );
 }
@@ -77,4 +82,5 @@ const s = StyleSheet.create({
   headCompact: { paddingTop: 6, paddingBottom: 4, paddingHorizontal: 12 },
   title: { ...font(700), fontSize: 15 },
   body: { paddingHorizontal: 14, paddingBottom: 20 },
+  fixed: { flex: 1, minHeight: 0 },
 });

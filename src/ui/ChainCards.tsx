@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type TextStyle } from 'react-native';
 import { ARP_RATES, rateLabel, SEQ_STEPS } from '../audio/notefx';
 import { ARP_PRESETS, arpPresetById, SEQ_PRESETS, seqPresetById } from '../audio/notefxPresets';
 import { applyPreset, presetById, PRESETS } from '../audio/presets';
@@ -8,6 +8,10 @@ import { applyArpPreset, applySeqPreset, arpOf, seqOf, setArp, setSeq, setSeqSte
 import { mapTrack, trackSynth } from '../lib/project';
 import { updateProject } from '../lib/store';
 import { openWindow } from '../lib/windowActions';
+import { loadSampleIntoSampler } from '../lib/actions';
+import { loadSound } from '../lib/browserActions';
+import { useDropTarget } from './dnd';
+import { web } from './drag';
 import type { ArpPattern, OscWave, Track } from '../types';
 import { Txt } from './kit';
 import { PluginFrame, SKIN } from './skin';
@@ -21,6 +25,8 @@ import { SynthSettingsFields } from './synth/synthFields';
 
 export const CARD_W_SYNTH = 330;
 export const CARD_W_FX = 250;
+/** Width of a folded card (a strip). */
+export const FOLDED_W = 34;
 const KS = 36; // knob size
 const KW = 50; // knob cell width
 const PCT = (v: number) => `${Math.round(v * 100)}%`;
@@ -33,17 +39,32 @@ const PATTERNS: { id: ArpPattern; label: string }[] = [
   { id: 'chord', label: 'Akkord' },
 ];
 
-/** The slim title bar and body every chain card shares. */
+/** The slim title bar and body every chain card shares; folded it is a slim strip with the name on its side, like a folded Live device. */
 export function CardFrame({ title, on, onToggle, folded, onFold, right, color = C.accent, children, style }: { title: string; on?: boolean; onToggle?: () => void; folded?: boolean; onFold?: () => void; right?: ReactNode; color?: string; children?: ReactNode; style?: object }) {
+  const led = onToggle && (
+    <Pressable onPress={onToggle} accessibilityLabel={`${title} ${on ? 'ausschalten' : 'einschalten'}`} hitSlop={8} style={s.ledBox}>
+      <View style={[s.led, on && { backgroundColor: color, shadowColor: color, shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } }]} />
+    </Pressable>
+  );
+  if (folded && onFold) {
+    return (
+      <View style={[on === false && { opacity: 0.6 }, style, { width: FOLDED_W }]}>
+        <PluginFrame style={[s.card, s.strip]} radius={8}>
+          {led}
+          <Pressable onPress={onFold} accessibilityLabel={`${title} ausklappen`} style={s.stripBody}>
+            <Txt style={[s.stripText, { color }, NOWRAP]}>
+              {title}
+            </Txt>
+          </Pressable>
+        </PluginFrame>
+      </View>
+    );
+  }
   return (
     <View style={[on === false && { opacity: 0.6 }, style]}>
-      <PluginFrame style={s.card} radius={8}>
+      <PluginFrame style={[s.card, { flexGrow: 1 }]} radius={8}>
         <View style={s.head}>
-          {onToggle && (
-            <Pressable onPress={onToggle} accessibilityLabel={`${title} ${on ? 'ausschalten' : 'einschalten'}`} hitSlop={8} style={s.ledBox}>
-              <View style={[s.led, on && { backgroundColor: color, shadowColor: color, shadowOpacity: 0.9, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } }]} />
-            </Pressable>
-          )}
+          {led}
           <Pressable onPress={onFold} disabled={!onFold} accessibilityLabel={`${title} ${folded ? 'ausklappen' : 'einklappen'}`} style={{ flex: 1 }}>
             <Txt numberOfLines={1} style={[s.title, { color }]}>
               {title}
@@ -160,7 +181,10 @@ export function InstrumentCard({ track, folded, onFold }: { track: Track; folded
     if (next.startsWith('w:')) set({ wave: next.slice(2) as OscWave, tableA: undefined, posA: undefined });
     else set({ tableA: next.slice(2), posA: synth.posA ?? 0, ...(!synth.tableA && synth.cutoff < 6000 ? { cutoff: 9000 } : {}) });
   };
+  // A sound or a sample dragged from the browser replaces the instrument (a sample makes it a sampler).
+  const drop = useDropTarget(`inst:${id}`, { sound: (p) => loadSound(p.presetId, id), sample: (p) => loadSampleIntoSampler(id, p.sampleId) });
   return (
+    <View ref={drop.ref} style={[{ flexDirection: 'row' }, drop.dragging && s.dropLive, drop.over && s.dropOver]}>
     <CardFrame title={isOsc ? 'SYNTH' : synth.wave === 'sample' ? 'SAMPLER' : 'DRUMS'} folded={folded} onFold={onFold} right={expandBtn('instrument')} style={{ width: CARD_W_SYNTH }}>
       <Switcher name={name} onStep={stepPreset} label="Sound" />
       {isOsc ? (
@@ -181,8 +205,12 @@ export function InstrumentCard({ track, folded, onFold }: { track: Track; folded
         <Txt style={s.note}>{synth.wave === 'sample' ? 'Dein Sample, chromatisch gespielt.' : synth.wave === 'kit909' ? 'Drum-Kit auf den Drum-Rack-Noten.' : 'Synthetischer Drum-Klang.'} Mit ⤢ öffnest du den großen Editor.</Txt>
       )}
     </CardFrame>
+    </View>
   );
 }
+
+/** One line at its own width (RN-web's numberOfLines would cap it at the narrow strip's width). */
+const NOWRAP = web({ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }) as TextStyle;
 
 const s = StyleSheet.create({
   card: { padding: 8 },
@@ -204,4 +232,10 @@ const s = StyleSheet.create({
   cell: { flex: 1, height: 34, borderLeftWidth: 1, borderLeftColor: '#26262b', backgroundColor: '#0d0d10', justifyContent: 'flex-end', alignItems: 'center', paddingBottom: 2, borderRadius: 2 },
   bar: { width: '70%', justifyContent: 'flex-end', flex: 1 },
   note: { color: C.muted, fontSize: 11.5, lineHeight: 16, marginTop: 8 },
+  strip: { flexGrow: 1, alignItems: 'center', gap: 8, paddingHorizontal: 0 },
+  stripBody: { flex: 1, alignSelf: 'stretch', alignItems: 'center', overflow: 'hidden' },
+  // Turned on its side: a 220 px line rotated about its centre, which sits in the middle of the strip, the text starting at the top.
+  stripText: { ...font(700), fontSize: 10, letterSpacing: 1.4, position: 'absolute', top: 112, left: -93, width: 220, textAlign: 'right', transform: [{ rotate: '-90deg' }] },
+  dropLive: { borderRadius: 9, borderWidth: 1, borderStyle: 'dashed', borderColor: C.accent },
+  dropOver: { backgroundColor: 'rgba(198,255,61,0.12)' },
 });
